@@ -33,8 +33,18 @@ const dimensions=async(page,selectors)=>page.evaluate(selectors=>selectors.flatM
  const ownsPoint=(x,y)=>{const hit=document.elementFromPoint(x,y);return hit===node||node.contains(hit)};
  const edgeY=rect.top-Math.min(3,Math.max(.5,(40-rect.height)/2-.25));
  const edgeX=rect.left-Math.min(3,Math.max(.5,(40-rect.width)/2-.25));
- return {selector:node.id?'#'+node.id:selector,visualWidth:rect.width,visualHeight:rect.height,hitWidth:rect.width-left-right,hitHeight:rect.height-top-bottom,topHit:rect.height>=40||ownsPoint(rect.left+rect.width/2,edgeY),leftHit:rect.width>=40||ownsPoint(edgeX,rect.top+rect.height/2)};
+ const scope=node.closest('#chat-top,.workspace-top,#chat-composer,#media-viewer-card,#box-list,#provider-list');
+ const neighbours=[...scope.querySelectorAll('button,a,summary,input,select,textarea,[role="button"]')].filter(other=>{
+  if(other===node||node.contains(other)||other.contains(node)||!other.checkVisibility())return false;
+  const bounds=other.getBoundingClientRect(),style=getComputedStyle(other);
+  return bounds.width&&bounds.height&&style.visibility!=='hidden'&&style.display!=='none'&&
+   bounds.right>=rect.left-20&&bounds.left<=rect.right+20&&bounds.bottom>=rect.top-20&&bounds.top<=rect.bottom+20;
+ }).map(other=>{const bounds=other.getBoundingClientRect(),x=bounds.left+bounds.width/2,y=bounds.top+bounds.height/2,hit=document.elementFromPoint(x,y);
+  return {name:other.id||other.getAttribute('aria-label')||other.textContent.trim().slice(0,30),hit:hit===other||other.contains(hit)};
+ });
+ return {selector:node.id?'#'+node.id:selector,visualWidth:rect.width,visualHeight:rect.height,hitWidth:rect.width-left-right,hitHeight:rect.height-top-bottom,topHit:rect.height>=40||ownsPoint(rect.left+rect.width/2,edgeY),leftHit:rect.width>=40||ownsPoint(edgeX,rect.top+rect.height/2),neighbours};
 })),selectors);
+function assertNeighbourCentres(kind,items){for(const item of items)for(const neighbour of item.neighbours)assert(neighbour.hit,`${kind}: ${item.selector} covers neighbouring ${neighbour.name}`)}
 async function assertProviderTopbarColor(page,usage,providers){
  const colors=await page.evaluate(([usageSelector,providerSelector])=>[usageSelector,providerSelector].map(selector=>{const style=getComputedStyle(document.querySelector(selector));return {background:style.backgroundColor,color:style.color,border:style.borderTopColor}}),[usage,providers]);
  assert.deepEqual(colors[1],colors[0],'Providers resting colors match Usage');
@@ -71,25 +81,32 @@ test('phone controls have 40px hit areas while desktop bounds stay unchanged',as
    const mobile=width===390,phone=await browser.newPage();await phone.setViewport({width,height:mobile?844:900,isMobile:mobile,hasTouch:mobile});await phone.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
    const suffix=width+'-'+theme;
    await phone.goto(base+'/chat');await phone.waitForSelector('#chat-menu');await new Promise(done=>setTimeout(done,250));
-   let found=await dimensions(phone,targets.chatTop);if(process.env.VMBOX_TOUCH_REPORT)console.log('chatTop',suffix,JSON.stringify(found));assert(found.length>=3,JSON.stringify(found));if(verify&&mobile)assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));if(verify&&!mobile)assertDesktopBounds('chatTop',found);
+   let found=await dimensions(phone,targets.chatTop);if(process.env.VMBOX_TOUCH_REPORT)console.log('chatTop',suffix,JSON.stringify(found));assert(found.length>=3,JSON.stringify(found));if(verify&&mobile){assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));assertNeighbourCentres('chatTop',found)}if(verify&&!mobile)assertDesktopBounds('chatTop',found);
    await assertProviderTopbarColor(phone,'#usage-toggle','#chat-providers');
    if(captureDir&&mobile)await phone.screenshot({path:`${captureDir}/chat-list-${suffix}.png`});
    await phone.goto(base+'/chat#box=builder');await phone.waitForSelector('.media-button');await phone.waitForSelector('#chat-composer .ai-wand');await new Promise(done=>setTimeout(done,350));
-   found=await dimensions(phone,targets.composer);if(process.env.VMBOX_TOUCH_REPORT)console.log('composer',suffix,JSON.stringify(found));assert.equal(found.length,2,JSON.stringify(found));if(verify&&mobile)assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));if(verify&&!mobile)assertDesktopBounds('composer',found);
+   found=await dimensions(phone,targets.composer);if(process.env.VMBOX_TOUCH_REPORT)console.log('composer',suffix,JSON.stringify(found));assert.equal(found.length,2,JSON.stringify(found));if(verify&&mobile){assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));assertNeighbourCentres('composer',found)}if(verify&&!mobile)assertDesktopBounds('composer',found);
    if(captureDir&&mobile)await phone.screenshot({path:`${captureDir}/chat-${suffix}.png`});
    await phone.$eval('.media-button',node=>node.click());await phone.waitForFunction(()=>!document.querySelector('#media-viewer-zoom').hidden);
-   found=await dimensions(phone,targets.viewer);if(process.env.VMBOX_TOUCH_REPORT)console.log('viewer',suffix,JSON.stringify(found));assert.equal(found.length,4);if(verify&&mobile)assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));if(verify&&!mobile)assertDesktopBounds('viewer',found);
+   found=await dimensions(phone,targets.viewer);if(process.env.VMBOX_TOUCH_REPORT)console.log('viewer',suffix,JSON.stringify(found));assert.equal(found.length,4);if(verify&&mobile){assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));assertNeighbourCentres('viewer',found)}if(verify&&!mobile)assertDesktopBounds('viewer',found);
    if(captureDir&&mobile)await phone.screenshot({path:`${captureDir}/viewer-${suffix}.png`});
    await phone.$eval('#media-viewer-zoom-in',node=>node.click());await phone.waitForFunction(()=>document.querySelector('#media-viewer-zoom-level').textContent==='150%');
    await phone.$eval('#media-viewer-close',node=>node.click());await phone.waitForFunction(()=>document.querySelector('#media-viewer').hidden);await phone.close();
    const manage=await browser.newPage();await manage.setViewport({width,height:mobile?844:900,isMobile:mobile,hasTouch:mobile});await manage.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
    await manage.goto(base+'/#boxes');await manage.waitForSelector('#box-list .box-details-action');await new Promise(done=>setTimeout(done,250));
-   found=await dimensions(manage,targets.boxes);if(process.env.VMBOX_TOUCH_REPORT)console.log('boxes',suffix,JSON.stringify(found));assert(found.length>=5,JSON.stringify(found));if(verify&&mobile)assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));if(verify&&!mobile)assertDesktopBounds('boxes',found);
+   found=await dimensions(manage,targets.boxes);if(process.env.VMBOX_TOUCH_REPORT)console.log('boxes',suffix,JSON.stringify(found));assert(found.length>=5,JSON.stringify(found));if(verify&&mobile){assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));assertNeighbourCentres('boxes',found)}if(verify&&!mobile)assertDesktopBounds('boxes',found);
    await assertProviderTopbarColor(manage,'#manage-usage','#manage-providers');
    if(captureDir&&mobile)await manage.screenshot({path:`${captureDir}/boxes-${suffix}.png`});
    await manage.$eval('#box-list .box-details-action',node=>node.click());await manage.waitForSelector('#box-detail:not([hidden])');await manage.$eval('#box-detail-close',node=>node.click());
+   if(mobile){
+    await manage.click('#manage-menu');
+    const menuHits=await manage.$$eval('#manage-menu-panel a',links=>links.map(link=>{const rect=link.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);return {name:link.textContent,hit:hit===link||link.contains(hit)}}));
+    assert(menuHits.every(item=>item.hit),JSON.stringify(menuHits));
+    await manage.click('#manage-menu-panel a[href="#profiles"]');assert.equal(await manage.$eval('#manage-menu-panel',node=>node.hidden),true);
+    await manage.click('#manage-menu');await manage.click('#manage-menu-panel a[href="#providers"]');assert.equal(await manage.$eval('#manage-menu-panel',node=>node.hidden),true);
+   }
    await manage.goto(base+'/#providers');await manage.waitForSelector('#provider-list .provider-actions>button');
-   found=await dimensions(manage,targets.providers);if(process.env.VMBOX_TOUCH_REPORT)console.log('providers',suffix,JSON.stringify(found));assert(found.length>=7,JSON.stringify(found));if(verify&&mobile)assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));if(verify&&!mobile)assertDesktopBounds('providers',found);
+   found=await dimensions(manage,targets.providers);if(process.env.VMBOX_TOUCH_REPORT)console.log('providers',suffix,JSON.stringify(found));assert(found.length>=7,JSON.stringify(found));if(verify&&mobile){assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));assertNeighbourCentres('providers',found)}if(verify&&!mobile)assertDesktopBounds('providers',found);
    if(captureDir&&mobile)await manage.screenshot({path:`${captureDir}/providers-${suffix}.png`});
    await manage.$eval('#provider-list .provider-actions-more>summary',node=>node.click());assert.equal(await manage.$eval('#provider-list .provider-actions-more',node=>node.open),true);await manage.close();
   }
