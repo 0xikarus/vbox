@@ -44,11 +44,37 @@ type ResourceLimitsProvider interface {
 	SetResourceLimits(context.Context, string, Resources) error
 }
 
+// ResourceUsageProvider reports a live observation for an assigned slot.
+// Providers without this capability still expose their configured limits.
+type ResourceUsageProvider interface {
+	ResourceUsage(context.Context, string) (ResourceUsage, error)
+}
+
+type ResourceUsage struct {
+	MemoryUsedBytes       int64      `json:"memoryUsedBytes"`
+	SwapUsedBytes         int64      `json:"swapUsedBytes"`
+	DiskUsedBytes         *int64     `json:"diskUsedBytes,omitempty"`
+	DiskTotalBytes        *int64     `json:"diskTotalBytes,omitempty"`
+	DiskEnforced          bool       `json:"diskEnforced"`
+	DiskObservedAt        *time.Time `json:"diskObservedAt,omitempty"`
+	DiskPartial           bool       `json:"diskPartial,omitempty"`
+	DiskUnavailableReason string     `json:"diskUnavailableReason,omitempty"`
+	HostDiskUsedBytes     *int64     `json:"hostDiskUsedBytes,omitempty"`
+	HostDiskTotalBytes    *int64     `json:"hostDiskTotalBytes,omitempty"`
+	ObservedAt            time.Time  `json:"observedAt"`
+}
+
 type HostResources struct {
 	MemoryTotalBytes     int64     `json:"memoryTotalBytes"`
 	MemoryAvailableBytes int64     `json:"memoryAvailableBytes"`
 	SwapTotalBytes       int64     `json:"swapTotalBytes"`
 	SwapFreeBytes        int64     `json:"swapFreeBytes"`
+	DiskTotalBytes       int64     `json:"diskTotalBytes"`
+	DiskUsedBytes        int64     `json:"diskUsedBytes"`
+	CPUCores             float64   `json:"cpuCores"`
+	CPULoad1             float64   `json:"cpuLoad1"`
+	CPUPercent           float64   `json:"cpuPercent"`
+	CPUScope             string    `json:"cpuScope,omitempty"`
 	Scope                string    `json:"scope,omitempty"`
 	SwapLimitKnown       bool      `json:"swapLimitKnown,omitempty"`
 	SwapUnlimited        bool      `json:"swapUnlimited,omitempty"`

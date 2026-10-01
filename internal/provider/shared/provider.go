@@ -129,6 +129,16 @@ func (p *Provider) HostResources(ctx context.Context) (provider.HostResources, e
 	}
 	return *result.HostResources, nil
 }
+func (p *Provider) ResourceUsage(ctx context.Context, id string) (provider.ResourceUsage, error) {
+	result, err := p.rpc(ctx, sharedworker.Request{Operation: "resource-usage", ID: id})
+	if err != nil {
+		return provider.ResourceUsage{}, err
+	}
+	if result.ResourceUsage == nil {
+		return provider.ResourceUsage{}, errors.New("shared worker omitted resource usage")
+	}
+	return *result.ResourceUsage, nil
+}
 func (p *Provider) Delete(ctx context.Context, id string, owner provider.Owner) error {
 	_, err := p.rpc(ctx, sharedworker.Request{Operation: "delete", ID: id, Owner: owner})
 	return err

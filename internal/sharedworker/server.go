@@ -29,6 +29,7 @@ type Response struct {
 	Boxes         []provider.Box          `json:"boxes,omitempty"`
 	Storage       *provider.Storage       `json:"storage,omitempty"`
 	Resources     *provider.Resources     `json:"resources,omitempty"`
+	ResourceUsage *provider.ResourceUsage `json:"resourceUsage,omitempty"`
 	HostResources *provider.HostResources `json:"hostResources,omitempty"`
 	Capacity      int                     `json:"capacity,omitempty"`
 	Error         string                  `json:"error,omitempty"`
@@ -92,7 +93,7 @@ func (s *Server) dispatch(ctx context.Context, request Request) (response Respon
 		err = s.Store.Health()
 	case "host-resources":
 		var resources provider.HostResources
-		resources, err = HostResources()
+		resources, err = HostResources(filepath.Join(s.Store.Root, "workspaces"))
 		if err == nil {
 			response.HostResources = &resources
 		}
@@ -134,6 +135,12 @@ func (s *Server) dispatch(ctx context.Context, request Request) (response Respon
 		resources, err = s.Store.ResourceLimits(ctx, request.ID)
 		if err == nil {
 			response.Resources = &resources
+		}
+	case "resource-usage":
+		var usage provider.ResourceUsage
+		usage, err = s.Store.ResourceUsage(ctx, request.ID)
+		if err == nil {
+			response.ResourceUsage = &usage
 		}
 	case "set-resource-limits":
 		err = s.Store.SetResourceLimits(ctx, request.ID, request.Resources)
