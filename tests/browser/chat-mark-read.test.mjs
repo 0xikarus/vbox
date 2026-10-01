@@ -51,7 +51,7 @@ test('read actions clear row badges and synced markers advance across devices',a
   await page.$eval('#row-menu button',button=>{if(button.textContent!=='Mark as read')throw Error('missing row action');button.click()});
   await page.waitForFunction(()=>document.querySelector('[data-box-id="builder"] .unread')?.hidden&&document.querySelector('#chat-back-count')?.textContent==='1');
   await page.$eval('[data-group-id="focus"]',row=>row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:300})));
-  await page.$eval('#row-menu button',button=>{if(button.textContent!=='Mark all as read')throw Error('missing group action');button.click()});
+  await page.$$eval('#row-menu button',buttons=>{const button=buttons.find(button=>button.textContent==='Mark all as read');if(!button)throw Error('missing group action');button.click()});
   await page.waitForFunction(()=>document.querySelector('#chat-back-count')?.hidden);
   await page.waitForFunction(()=>Object.keys(window.localStorage).includes('vmboxChatSeen'));
   await new Promise(resolve=>setTimeout(resolve,250));

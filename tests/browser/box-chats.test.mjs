@@ -1,22 +1,23 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','box-chats.html','box-chats.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','box-chats.html','box-chats.js','sheet-scroll.css','dialog-theme.css','workspace-nav.css','login.css','fonts.css','vbox-logo.png','vbox-logo-dark.png'].map(async name=>[name,await readFile('internal/controller/web/'+name,name.endsWith('.png')?undefined:'utf8')])));
 const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',pairKey=a+'/'+b,now=new Date().toISOString();
 const illustration=id=>Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#142433"/><rect x="24" y="24" width="592" height="352" rx="16" fill="${id==='image-3'?'#294b48':'#244060'}" stroke="#8cb8df"/><text x="50" y="85" fill="#f3f8ff" font-family="sans-serif" font-size="28" font-weight="bold">${id==='image-1'?'Build output · 1':id==='image-2'?'Build output · 2':'Review result'}</text><path d="M90 205h460" stroke="#9bc8ec" stroke-width="7"/><g fill="#eaf3ff" font-family="sans-serif" font-size="23"><text x="68" y="175">Source</text><text x="274" y="175">Build</text><text x="472" y="175">Review</text></g><circle cx="95" cy="205" r="19" fill="#94c5ee"/><circle cx="320" cy="205" r="19" fill="#94c5ee"/><circle cx="545" cy="205" r="19" fill="#94c5ee"/></svg>`);
 
-async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null,boxMessagesB=null}={}){
- let sidebarLayout=null;
+async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null,boxMessagesB=null,role='owner',createBehavior=null,initialLayout=null}={}){
+ let sidebarLayout=initialLayout;
+ const createdBoxes=[];
  const server=http.createServer(async(request,response)=>{
   const path=request.url.split('?')[0];
   if(path==='/chat'||path==='/box-chats'){response.setHeader('Content-Type','text/html');if(path==='/box-chats')response.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'");return response.end(files[path==='/chat'?'chat.html':'box-chats.html'])}
-  if(files[path.slice(1)]){response.setHeader('Content-Type',path.endsWith('.css')?'text/css':'text/javascript');return response.end(files[path.slice(1)])}
+  if(files[path.slice(1)]){response.setHeader('Content-Type',path.endsWith('.css')?'text/css':path.endsWith('.png')?'image/png':'text/javascript');return response.end(files[path.slice(1)])}
   if(path.startsWith('/v1/messages/')){response.setHeader('Content-Type','image/svg+xml');return response.end(illustration(path.split('/').at(-1)))}
   response.setHeader('Content-Type','application/json');
-  if(path==='/v1/whoami')return response.end(JSON.stringify({role:'owner',accountId:'account-a'}));
+  if(path==='/v1/whoami')return response.end(JSON.stringify({role,accountId:'account-a'}));
   if(path==='/v1/chat-sidebar-layout'){
    if(request.method==='PUT'){
     let body='';for await(const chunk of request)body+=chunk;
@@ -24,7 +25,13 @@ async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null,boxMe
    }
    return response.end(JSON.stringify(sidebarLayout||{exists:false,groups:[],members:{}}));
   }
-  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return response.end(JSON.stringify([{id:a,name:'Builder',state:'running',defaultAgent:'claude',provider:'railway'},{id:b,name:'Reviewer',state:'running',defaultAgent:'codex',provider:'railway'}]));
+  if(path==='/v1/logical-boxes'&&request.method==='POST'){
+   let body='';for await(const chunk of request)body+=chunk;
+   if(createBehavior?.fail){response.statusCode=500;return response.end('{"error":"Create failed"}')}
+   const submitted=JSON.parse(body),box={id:'created-'+(createdBoxes.length+1),name:submitted.name,state:'running',defaultAgent:submitted.defaultAgent,provider:'railway'};
+   createdBoxes.push(box);return response.end(JSON.stringify(box));
+  }
+  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return response.end(JSON.stringify([{id:a,name:'Builder',state:'running',defaultAgent:'claude',provider:'railway'},{id:b,name:'Reviewer',state:'running',defaultAgent:'codex',provider:'railway'},...(createBehavior?.showCreated===false?[]:createdBoxes)]));
   if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:pairMessages?.at(-1)?.createdAt||now,lastText:pairMessages?.at(-1)?.text||'The review is ready'}]));
   if(path==='/v1/box-conversations/'+a+'/'+b+'/messages'){
    if(pairDelay)await new Promise(resolve=>setTimeout(resolve,pairDelay));
@@ -39,6 +46,8 @@ async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null,boxMe
   }
   if(path==='/v1/logical-boxes/'+b+'/messages')return response.end(JSON.stringify(boxMessagesB||[]));
   if(path==='/v1/tool-presets')return response.end('[]');
+  if(path==='/v1/login-profiles')return response.end('[]');
+  if(path==='/v1/controller-defaults')return response.end('{}');
   if(path==='/v1/chat-commands')return response.end('[]');
   if(path==='/v1/push/vapid-key'){response.statusCode=404;return response.end('{}')}
   if(path.endsWith('/messages'))return response.end('[]');
@@ -390,6 +399,119 @@ test('chat groups sync across browser profiles',async()=>{
   assert.equal(await page.$('.chat-folder'),null,'an empty saved layout replaces stale browser groups');
   await first.close();await second.close();
  });
+});
+
+test('new boxes can be created into a group or Pinned from the section menus',async()=>{
+ const createBehavior={showCreated:false,fail:false};
+ await withChat(async(browser,base,savedLayout)=>{
+  const page=await browser.newPage();await page.setViewport({width:1440,height:900});
+  await page.goto(base+'/chat');await page.waitForSelector('[data-box-id]');
+  await page.$eval('#new-chat-group',button=>button.click());await page.type('#chat-group-name','Projects');await page.click('#chat-group-form button[type=submit]');
+  await page.waitForSelector('.chat-folder');
+  await page.click('[data-box-id="'+a+'"]',{button:'right'});
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Pin chat').click());
+  await page.waitForSelector('[data-section="pinned"]');
+  const firstItem=()=>page.$eval('#row-menu > button',button=>button.textContent);
+  await page.click('.chat-folder-menu');assert.equal(await firstItem(),'New box here');
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+  assert.equal(await page.$eval('#new-box-target-label',node=>node.textContent),'Added to: Projects');
+  await page.click('#new-box-target-remove');assert.equal(await page.$eval('#new-box-target',node=>node.hidden),true);
+  await page.click('#new-box-cancel');
+  await page.click('#new-box');assert.equal(await page.$eval('#new-box-target',node=>node.hidden),true);await page.click('#new-box-close');
+  await page.click('[data-section="pinned"] .section-menu');assert.equal(await firstItem(),'New box here');
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+  assert.equal(await page.$eval('#new-box-target-label',node=>node.textContent),'Added to: Pinned');
+  await page.click('#new-box-cancel');
+  await page.click('[data-section="boxes"] .section-menu');assert.equal(await firstItem(),'New box here');
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+  assert.equal(await page.$eval('#new-box-target-label',node=>node.textContent),'Added to: Boxes');
+  await page.click('#new-box-cancel');
+  await page.click('[data-section="pairs"] .section-menu');assert.notEqual(await firstItem(),'New box here');
+  await page.keyboard.press('Escape');
+
+  await page.click('.chat-folder-toggle');
+  await page.click('.chat-folder-menu');await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+  await page.type('#create-box input[name=name]','group-created');await page.click('#create-box-submit');
+  await page.waitForFunction(()=>document.querySelector('#new-box-modal').hidden);
+  await page.waitForFunction(async()=>!!(await (await fetch('/v1/chat-sidebar-layout')).json()).members?.['box:created-1']);
+  assert.equal(savedLayout().members['box:created-1'],savedLayout().groups[0].id);
+  assert.equal(await page.$eval('.chat-folder-toggle',button=>button.getAttribute('aria-expanded')),'true');
+  assert.equal(await page.$('[data-box-id="created-1"]'),null,'membership is saved before the box reaches the list');
+  createBehavior.showCreated=true;await page.click('#refresh');
+  await page.waitForSelector('[data-box-id="created-1"]');
+  const groupRows=await page.$eval('.chat-folder',header=>{const ids=[];for(let row=header.nextElementSibling;row&&!row.matches('.chat-folder,.conversation-divider,.conversation-group');row=row.nextElementSibling)if(row.dataset.boxId)ids.push(row.dataset.boxId);return ids});
+  assert.ok(groupRows.includes('created-1'),'new box appears under its group');
+  await page.reload();await page.waitForSelector('[data-box-id="created-1"]');
+  assert.equal(savedLayout().members['box:created-1'],savedLayout().groups[0].id,'reload retains server-side membership');
+  assert.ok((await page.$eval('.chat-folder',header=>{const ids=[];for(let row=header.nextElementSibling;row&&!row.matches('.chat-folder,.conversation-divider,.conversation-group');row=row.nextElementSibling)if(row.dataset.boxId)ids.push(row.dataset.boxId);return ids})).includes('created-1'),'reloaded row stays in its group');
+
+  await page.click('[data-section="pinned"] .section-menu');await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+  await page.type('#create-box input[name=name]','pinned-created');await page.click('#create-box-submit');
+  await page.waitForFunction(()=>document.querySelector('#new-box-modal').hidden);
+  await page.waitForFunction(async()=>((await (await fetch('/v1/chat-sidebar-layout')).json()).pins||[]).includes('box:created-2'));
+  assert.ok(savedLayout().pins.includes('box:created-2'));
+  assert.ok((await page.$eval('[data-section="pinned"]',header=>{const ids=[];for(let row=header.nextElementSibling;row&&!row.matches('.chat-folder,.conversation-divider,.conversation-group');row=row.nextElementSibling)if(row.dataset.boxId)ids.push(row.dataset.boxId);return ids})).includes('created-2'),'new box appears under Pinned');
+
+  await page.click('[data-section="boxes"] .section-menu');await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+  await page.type('#create-box input[name=name]','boxes-created');await page.click('#create-box-submit');
+  await page.waitForFunction(()=>document.querySelector('#new-box-modal').hidden);
+  assert.equal(savedLayout().members['box:created-3'],undefined);
+  assert.equal(savedLayout().pins.includes('box:created-3'),false);
+
+  createBehavior.fail=true;const before=JSON.stringify(savedLayout());
+  await page.click('.chat-folder-menu');await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+  await page.type('#create-box input[name=name]','failed-created');await page.click('#create-box-submit');
+  await page.waitForFunction(()=>document.querySelector('#new-box-status').textContent.includes('Create failed'));
+  assert.equal(JSON.stringify(savedLayout()),before,'failed creation leaves layout unchanged');
+  await page.click('#new-box-cancel');
+  await page.close();
+
+  const captures=process.env.VMBOX_GROUP_NEW_BOX_CAPTURES;
+  if(captures){
+   await mkdir(captures,{recursive:true});
+   for(const theme of ['light','dark'])for(const width of [390,1440]){
+    const shot=await browser.newPage();await shot.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
+    await shot.setViewport({width,height:width===390?844:900,deviceScaleFactor:1,isMobile:width===390,hasTouch:width===390});
+    await shot.goto(base+'/chat');await shot.waitForSelector('.chat-folder-menu');
+    await shot.click('.chat-folder-menu');await shot.screenshot({path:captures+'/menu-'+theme+'-'+width+'.png'});
+    await shot.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+    await shot.waitForFunction(()=>!document.querySelector('#new-box-target').hidden);
+    await shot.screenshot({path:captures+'/sheet-'+theme+'-'+width+'.png'});
+    await shot.close();
+   }
+  }
+ },{createBehavior});
+});
+
+test('deleting a group while New box is open clears its destination',async()=>{
+ await withChat(async(browser,base,savedLayout)=>{
+  const page=await browser.newPage();await page.goto(base+'/chat');await page.waitForSelector('[data-box-id]');
+  await page.$eval('#new-chat-group',button=>button.click());await page.type('#chat-group-name','Temporary');await page.click('#chat-group-form button[type=submit]');
+  await page.waitForSelector('.chat-folder-menu');await page.click('.chat-folder-menu');
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+  assert.equal(await page.$eval('#new-box-target-label',node=>node.textContent),'Added to: Temporary');
+  page.once('dialog',dialog=>dialog.accept());
+  await page.$eval('.chat-folder-menu',button=>button.click());
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Delete group…').click());
+  await page.waitForFunction(()=>document.querySelector('#new-box-target').hidden);
+  await page.type('#create-box input[name=name]','ungrouped-created');await page.click('#create-box-submit');
+  await page.waitForFunction(()=>document.querySelector('#new-box-modal').hidden);
+  assert.equal(savedLayout().members['box:created-1'],undefined);
+  await page.close();
+ });
+});
+
+test('non-owners cannot create boxes from group or section menus',async()=>{
+ const initialLayout={exists:true,groups:[{id:'saved-group',name:'Projects',collapsed:false}],members:{},pins:['box:'+a],mutes:{},sections:{}};
+ await withChat(async(browser,base)=>{
+  const page=await browser.newPage();await page.goto(base+'/chat');await page.waitForSelector('.chat-folder-menu');
+  for(const selector of ['.chat-folder-menu','[data-section="pinned"] .section-menu','[data-section="boxes"] .section-menu']){
+   await page.$eval(selector,button=>button.click());
+   assert.equal(await page.$$eval('#row-menu button',buttons=>buttons.some(button=>button.textContent==='New box here')),false);
+   await page.keyboard.press('Escape');
+  }
+  await page.close();
+ },{role:'viewer',initialLayout});
 });
 
 test('chat groups migrate from browser storage when the account has no saved layout',async()=>{

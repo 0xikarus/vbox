@@ -1259,6 +1259,7 @@
   key:[['circle',{cx:'8',cy:'15',r:'4'}],['path',{d:'m10.8 12.2 9-9L22 5l-2 2 2 2-2 2-2-2-5.2 5.2'}]],
   'refresh-cw':[['path',{d:'M20 11a8 8 0 0 0-14-5L4 8'}],['path',{d:'M4 4v4h4'}],['path',{d:'M4 13a8 8 0 0 0 14 5l2-2'}],['path',{d:'M16 16h4v4'}]],
   'power':[['path',{d:'M12 2v10'}],['path',{d:'M18.4 6.6a9 9 0 1 1-12.8 0'}]],
+  plus:[['path',{d:'M12 5v14M5 12h14'}]],
   'chevron-right':[['path',{d:'m9 6 6 6-6 6'}]],
   copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
   forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
@@ -2935,19 +2936,37 @@
    renderPreview();
   }catch(e){$('#new-box-status').textContent=e.message}
  }
-  function openNewBoxModal(){
+  let newBoxTarget=null;
+  function currentNewBoxTarget(){
+   if(newBoxTarget?.kind==='group'&&!chatGroups.some(group=>group.id===newBoxTarget.id))newBoxTarget=null;
+   return newBoxTarget;
+  }
+  function renderNewBoxTarget(){
+   const target=currentNewBoxTarget(),line=$('#new-box-target');
+   line.hidden=!target;
+   if(!target)return;
+   const name=target.kind==='group'?chatGroups.find(group=>group.id===target.id).name:target.kind==='pinned'?'Pinned':'Boxes';
+   line.querySelector('.new-box-target-icon').innerHTML=target.kind==='pinned'?IC.pin:IC.folder;
+   $('#new-box-target-label').textContent='Added to: '+name;
+  }
+  function closeNewBoxModal(){newBoxModal.hidden=true;newBoxTarget=null;renderNewBoxTarget()}
+  function openNewBoxModal(target=null){
+   newBoxTarget=target&&['group','pinned','boxes'].includes(target.kind)?{...target}:null;
+   renderNewBoxTarget();
    createForm.reset();createInstructionSource='';void syncCreateInstructionText();createForm.elements.defaultAgent.onchange?.();$('#new-box-status').textContent='';newBoxModal.hidden=false;
    void primeBoxExtras();
    if(owner)void refreshUsage();
    createForm.elements.name.focus();
    renderPreview();
   }
- $('#new-box').onclick=openNewBoxModal;
+ $('#new-box').onclick=()=>openNewBoxModal();
  document.getElementById('empty-new-box')?.addEventListener('click',()=>$('#new-box').click());
  document.getElementById('empty-search')?.addEventListener('click',()=>$('#chat-filter')?.focus());
  document.getElementById('empty-list-new-box')?.addEventListener('click',event=>{const el=event.currentTarget;if(el.dataset.action==='clear'){const f=document.getElementById('chat-filter');if(f){f.value='';f.dispatchEvent(new Event('input',{bubbles:true}))}return}$('#new-box').click()});
- $('#new-box-close').onclick=()=>{newBoxModal.hidden=true};
- $('#new-box-backdrop').onclick=()=>{newBoxModal.hidden=true};
+ $('#new-box-close').onclick=closeNewBoxModal;
+ $('#new-box-backdrop').onclick=closeNewBoxModal;
+ $('#new-box-cancel').onclick=closeNewBoxModal;
+ $('#new-box-target-remove').onclick=()=>{newBoxTarget=null;renderNewBoxTarget()};
  newBoxModal.addEventListener('transitionend',renderPreview);
  document.addEventListener('change',event=>{if(event.target?.name==='agentReasoningEffort'&&!newBoxModal.hidden)renderPreview()});
  createForm.addEventListener('change',event=>{if(event.target?.name==='disk'&&!newBoxModal.hidden)renderPreview()});
@@ -2973,7 +2992,10 @@
    const instructions=await createInstructionSelection();
    if(instructions)body.instructions=instructions;
    const created=await api('/v1/logical-boxes','POST',{'Idempotency-Key':crypto.randomUUID()},body);
-   newBoxModal.hidden=true;toast('Box '+created.name+' requested — it appears in the list as it starts.');
+   const target=currentNewBoxTarget();
+   if(created?.id&&target?.kind==='group')moveChatToGroup(pinKey('box',created.id),target.id);
+   else if(created?.id&&target?.kind==='pinned')moveChatToPinned(pinKey('box',created.id));
+   closeNewBoxModal();toast('Box '+created.name+' requested — it appears in the list as it starts.');
    await loadBoxes();
    if(created?.id&&boxes.has(created.id)){history.replaceState(null,'',location.pathname+'#box='+created.id);await openBox(created.id);toast('Box '+created.name+' is starting.');}
   }catch(e){
@@ -3112,6 +3134,7 @@
  function openGroupMenu(id,point){
   const group=chatGroups.find(group=>group.id===id);if(!group)return;
   showActionMenu([
+   ...(owner?[["New box here",()=>openNewBoxModal({kind:'group',id}),null,null,lucide('plus').outerHTML]]:[]),
    ['Mark all as read',()=>markManyRead(key=>chatGroupMembers.get(key)===id),null,null,menuIcons.read],
    muteMenuItem('group:'+id),
    [group.collapsed?'Expand group':'Collapse group',()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()},null,null,group.collapsed?menuIcons.down:menuIcons.up],
@@ -3121,12 +3144,13 @@
     chatGroups.splice(chatGroups.indexOf(group),1);
     for(const [key,groupId] of chatGroupMembers)if(groupId===id)chatGroupMembers.delete(key);
     chatMutes.delete('group:'+id);
-    groupNodes.delete(id);saveChatGroups();renderRows();
+    groupNodes.delete(id);renderNewBoxTarget();saveChatGroups();renderRows();
    },'danger',null,IC.trash],
   ],point,group.name);
  }
  function openSectionMenu(id,point){
   showActionMenu([
+   ...(owner&&id!=='pairs'?[['New box here',()=>openNewBoxModal({kind:id}),null,null,lucide('plus').outerHTML]]:[]),
    ['Mark all as read',()=>markSectionRead(id),null,null,menuIcons.read],
    muteMenuItem('section:'+id),
    [sectionCollapsed[id]?'Expand':'Collapse',()=>{sectionCollapsed[id]=!sectionCollapsed[id];saveChatGroups();renderRows()},null,null,sectionCollapsed[id]?menuIcons.down:menuIcons.up],
@@ -3134,7 +3158,7 @@
  }
  menuBackdrop.onclick=closeRowMenu;
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
-  addEventListener('keydown',event=>{if(event.key==='Escape'){const overlayOpen=!!document.querySelector('.sheet:not([hidden])')||!newBoxModal.hidden||!deleteModal.hidden||!takeover.hidden;closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();if(inspectOpen&&!overlayOpen){closeInspect();$('#chat-info').focus()}}});
+  addEventListener('keydown',event=>{if(event.key==='Escape'){const overlayOpen=!!document.querySelector('.sheet:not([hidden])')||!newBoxModal.hidden||!deleteModal.hidden||!takeover.hidden;closeRowMenu();closeSheets();if(!newBoxModal.hidden)closeNewBoxModal();if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();if(inspectOpen&&!overlayOpen){closeInspect();$('#chat-info').focus()}}});
  // Re-push the instructions the box already carries. A replaced worker or a
  // restored hibernation can leave a running box behind its saved config, and
  // re-typing the same Markdown just to trigger a write is a poor way to fix it.
