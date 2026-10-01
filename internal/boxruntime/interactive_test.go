@@ -16,7 +16,7 @@ func TestInteractiveShellUsesSpecsWelcome(t *testing.T) {
 	for agent, want := range map[string][]string{
 		"shell":    {"vmbox-runtime", "welcome"},
 		"codex":    {"codex", "--remote", codexTUIProxyURL("managed-session"), "-c", "check_for_update_on_startup=false", "-c", "suppress_unstable_features_warning=true", "-c", "notice.hide_rate_limit_model_nudge=true"},
-		"claude":   {"env", "DISABLE_AUTOUPDATER=1", "claude", "--add-dir", "/data/home/.local/share/vmbox/chat", "--dangerously-load-development-channels", "server:vmbox-desktop"},
+		"claude":   {"env", "DISABLE_AUTOUPDATER=1", "claude", "--add-dir", "/data/home/.local/share/vmbox/chat", "--channels", "server:vmbox-desktop"},
 		"opencode": {"opencode", "--auto", "--hostname", "127.0.0.1", "--port", port},
 	} {
 		got, err := interactiveArgv("managed-session", agent)
