@@ -5,7 +5,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
 const root='internal/controller/web/';
-const files=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','ai-helper.js','ai-helper.css'];
+const files=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','ai-helper.js','ai-helper.css','sheet-scroll.js','sheet-scroll.css','dialog-theme.css','text-size.js','fonts.css'];
 const assets=Object.fromEntries(await Promise.all(files.map(async name=>[name,await readFile(root+name)])));
 const requests=[];
 const sentMessages=[];
@@ -158,6 +158,12 @@ try{
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-wand-mobile.png'});
   await page.hover('#chat-composer .ai-wand');await page.mouse.down();await new Promise(done=>setTimeout(done,650));await page.mouse.up();
   await page.waitForSelector('.ai-prompt-dialog[open]');
+  await page.waitForFunction(()=>document.activeElement?.classList.contains('ai-prompt-dialog'));
+  const promptHeader=await page.evaluate(()=>{
+   const dialog=document.querySelector('.ai-prompt-dialog'),header=dialog.querySelector('.vb-sheet-header'),title=header.querySelector('h2'),close=header.querySelector('button');
+   return {titleBorder:getComputedStyle(title).borderBottomWidth,headerBorder:getComputedStyle(header).borderBottomWidth,closeRing:getComputedStyle(close).boxShadow,closeFocused:document.activeElement===close};
+  });
+  assert.deepEqual(promptHeader,{titleBorder:'0px',headerBorder:'1px',closeRing:'none',closeFocused:false});
   await page.click('.ai-prompt-dialog .ai-model-row button');
   await page.waitForSelector('.ai-model-dialog[open] .ai-model-option[data-model="openrouter/anthropic/claude-test"]');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/ai-prompt-model-picker-mobile.png'});

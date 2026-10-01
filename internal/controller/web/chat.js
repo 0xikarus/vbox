@@ -33,9 +33,45 @@
  const presetBodyCache=new Map();
  let boxInstructionTarget=null,boxCredentialTarget=null,createInstructionSource='';
  const seen=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatSeen')||'{}')}catch{return{}}})();
- const saveSeen=()=>localStorage.setItem('vmboxChatSeen',JSON.stringify(seen));
+ const saveSeen=()=>{try{localStorage.setItem('vmboxChatSeen',JSON.stringify(seen))}catch{}};
  const seenPairs=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatPairSeen')||'{}')}catch{return{}}})();
  const saveSeenPairs=()=>{try{localStorage.setItem('vmboxChatPairSeen',JSON.stringify(seenPairs))}catch{}};
+ const pendingReadMarkers=new Map();let readWriteTimer=0,readSyncTimer=0,readWriteQueue=Promise.resolve();
+ const readStamp=value=>{const n=Date.parse(value||'');return Number.isFinite(n)?n:0};
+ function mergeReadMarkers(remote){
+  let changed=false;
+  for(const [key,value] of Object.entries(remote||{})){
+   const target=key.startsWith('box:')?seen:key.startsWith('pair:')?seenPairs:null;
+   if(!target)continue;
+   const id=key.slice(key.indexOf(':')+1),at=readStamp(value);
+   if(at>readStamp(target[id])){target[id]=new Date(at).toISOString();changed=true}
+  }
+  if(changed){saveSeen();saveSeenPairs();for(const id of boxes.keys())summarize(id);renderRows()}
+ }
+ function queueReadMarker(key,value,immediate=false){
+  const at=readStamp(value);if(!at)return;
+  const target=key.startsWith('box:')?seen:seenPairs,id=key.slice(key.indexOf(':')+1);
+  if(at<=readStamp(target[id]))return;
+  target[id]=new Date(at).toISOString();if(key.startsWith('box:'))saveSeen();else saveSeenPairs();
+  pendingReadMarkers.set(key,target[id]);clearTimeout(readWriteTimer);
+  readWriteTimer=setTimeout(flushReadMarkers,immediate?0:1500);
+ }
+ function flushReadMarkers(){
+  clearTimeout(readWriteTimer);if(!pendingReadMarkers.size)return readWriteQueue;
+  const batch=Object.fromEntries(pendingReadMarkers);pendingReadMarkers.clear();
+  readWriteQueue=readWriteQueue.catch(()=>{}).then(async()=>{
+   try{mergeReadMarkers(await api('/v1/chat-read-markers','PUT',{},batch))}
+   catch(e){for(const [key,value] of Object.entries(batch))if(readStamp(value)>readStamp(pendingReadMarkers.get(key)))pendingReadMarkers.set(key,value);console.warn('Could not sync read markers:',e)}
+  });return readWriteQueue;
+ }
+ async function loadReadMarkers(){
+  try{
+   const remote=await api('/v1/chat-read-markers');mergeReadMarkers(remote);
+   for(const [id,value] of Object.entries(seen))if(readStamp(value)>readStamp(remote['box:'+id]))pendingReadMarkers.set('box:'+id,value);
+   for(const [id,value] of Object.entries(seenPairs))if(readStamp(value)>readStamp(remote['pair:'+id]))pendingReadMarkers.set('pair:'+id,value);
+   if(pendingReadMarkers.size){clearTimeout(readWriteTimer);readWriteTimer=setTimeout(flushReadMarkers,1500)}
+  }catch(e){console.warn('Could not load read markers:',e)}
+ }
  const pins=(()=>{try{const saved=JSON.parse(localStorage.getItem('vmboxChatPins')||'[]');return new Set(Array.isArray(saved)?saved.filter(key=>typeof key==='string'):[])}catch{return new Set()}})();
  const expandedMCPEvents=new Set();
  const pinKey=(kind,id)=>kind+':'+id;
@@ -984,7 +1020,7 @@
  function applyPairSeen(pair,force=false){
   if(!pair||(!force&&(!stickToBottom||!conversationVisible())))return;
   const last=pair.messages?.at(-1)?.createdAt||pair.lastAt;
-  if(last&&new Date(last).getTime()>(seenPairs[pairKey(pair)]?new Date(seenPairs[pairKey(pair)]).getTime():0)){seenPairs[pairKey(pair)]=last;saveSeenPairs()}
+  if(last)queueReadMarker('pair:'+pairKey(pair),last);
  }
  const pairGroup=mk('li');pairGroup.className='conversation-group';
  const pinnedGroup=mk('li');pinnedGroup.className='conversation-group';
@@ -1015,7 +1051,6 @@
    const toggle=document.createElement('button');toggle.type='button';toggle.className='section-toggle';
    toggle.append(mk('span','▾'),mk('span',label));
    const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));toggle.append(bell);
-   const badge=document.createElement('span');badge.className='unread';toggle.append(badge);
    toggle.onclick=()=>{sectionCollapsed[id]=!sectionCollapsed[id];saveChatGroups();renderRows()};
    const menu=document.createElement('button');menu.type='button';menu.className='section-menu header-menu-button';menu.textContent='⋯';menu.setAttribute('aria-label','Actions for '+label);
    menu.onclick=event=>{event.stopPropagation();const rect=menu.getBoundingClientRect();openSectionMenu(id,{x:rect.right,y:rect.bottom})};
@@ -1028,8 +1063,6 @@
   toggle.setAttribute('aria-expanded',String(!sectionCollapsed[id]));
   toggle.setAttribute('aria-label',label+', '+unread+' unread, '+(muted?'muted, ':'')+(sectionCollapsed[id]?'collapsed':'expanded'));
   row.querySelector('.mute-bell').hidden=!muted;
-  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unreadLabel(alertUnread||unread);badge.setAttribute('aria-label',unread+' unread'+(alertUnread&&alertUnread!==unread?', '+alertUnread+' unmuted':''));
-  badge.classList.toggle('muted',!alertUnread);
   return row;
  }
  bindChatDrop(pinnedGroup,moveChatToPinned);
@@ -1042,8 +1075,7 @@
    const toggle=document.createElement('button');toggle.type='button';toggle.className='chat-folder-toggle';
    const arrow=mk('span','▸');arrow.className='chat-folder-arrow';arrow.setAttribute('aria-hidden','true');
    const name=mk('span',group.name);name.className='chat-folder-name';
-   const badge=mk('span');badge.className='unread';badge.hidden=true;
-   toggle.append(arrow,name,badge);toggle.onclick=()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()};
+   toggle.append(arrow,name);toggle.onclick=()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()};
    const menu=document.createElement('button');menu.type='button';menu.className='chat-folder-menu header-menu-button';menu.textContent='⋯';menu.setAttribute('aria-label','Group actions for '+group.name);
    menu.onclick=event=>{event.stopPropagation();const rect=menu.getBoundingClientRect();openGroupMenu(group.id,{x:rect.right,y:rect.bottom})};
    row.oncontextmenu=event=>{event.preventDefault();openGroupMenu(group.id,{x:event.clientX,y:event.clientY})};
@@ -1056,9 +1088,8 @@
   row.querySelector('.chat-folder-arrow').textContent=group.collapsed?'▸':'▾';
   const toggle=row.querySelector('.chat-folder-toggle');toggle.setAttribute('aria-expanded',String(!group.collapsed));
   toggle.setAttribute('aria-label',group.name+', '+count+' chats, '+unread+' new messages, '+(group.collapsed?'collapsed':'expanded'));
-  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unreadLabel(alertUnread||unread);badge.setAttribute('aria-label',unread+' unread'+(alertUnread&&alertUnread!==unread?', '+alertUnread+' unmuted':''));
-  const muted=activeMute('group:'+group.id);badge.classList.toggle('muted',!alertUnread);
-  let bell=row.querySelector('.mute-bell');if(!bell){bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));row.querySelector('.chat-folder-toggle').insertBefore(bell,badge)}bell.hidden=!muted;
+  const muted=activeMute('group:'+group.id);
+  let bell=row.querySelector('.mute-bell');if(!bell){bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));row.querySelector('.chat-folder-toggle').append(bell)}bell.hidden=!muted;
   return row;
  }
  function renderRows(){
@@ -1727,7 +1758,7 @@
   const box=boxes.get(id);if(!box)return;
   if(id===selected&&(!stickToBottom||!conversationVisible())){summarize(id);return}
   const last=(box.messages||[]).filter(countsAsUnread).pop();
-  if(last&&new Date(last.createdAt).getTime()>(seen[id]?new Date(seen[id]).getTime():0)){seen[id]=last.createdAt;saveSeen()}
+  if(last)queueReadMarker('box:'+id,last.createdAt);
   summarize(id);
  }
  let headerAvatarKey='';
@@ -1833,6 +1864,7 @@
  }
  async function openPair(key){
   const pair=pairs.get(key);if(!pair)return;
+  void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
   selected='';selectedPair=key;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
@@ -1902,6 +1934,7 @@
  }
  async function openBox(id){
   if(!boxes.has(id))return;
+  void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
   selectedPair='';$('#chat-conversation').classList.remove('pair-view');
   // Never show one box's transcript while another is loading: drop the old
@@ -2159,7 +2192,7 @@
    updateSendState();
   }
  };
- $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
+ $('#chat-back').onclick=()=>{void flushReadMarkers();appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
  // The transcript tracks a rightward back gesture. The list moves at 30% of
  // the chat's distance, so it is visible beneath the page while dragging.
  let backSwipe=null,backSettleTimer=0,backFrame=0;
@@ -2949,7 +2982,8 @@
  }
  const IC={pin:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 4h6l-3 3 3 3h-2l-2 7-5-5-4 4-1-1 4-4-5-5 7-2z"/></svg>',info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>',wake:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>',moon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',restart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>',trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'};
  const bellOffIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 3.2A6 6 0 0 1 18 9v4l2 3H7M4.9 4.9A6 6 0 0 0 6 9v4l-2 3h12M10 20h4M2 2l20 20"/></svg>';
- const menuIcons={
+  const menuIcons={
+  read:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12 4 4 7-7M10 16l4 4 8-8"/></svg>',
   bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>',
   down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 9 7 7 7-7"/></svg>',
   up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 15 7-7 7 7"/></svg>',
@@ -2989,12 +3023,34 @@
   if(key==='section:pairs'||key.startsWith('pair:'))return ['Always muted',()=>{},null,null,bellOffIcon,true];
   return activeMute(key)?['Unmute',()=>setChatMute(key,false),null,null,menuIcons.bell]:['Mute',null,null,muteDurationOptions(key),bellOffIcon];
  }
+ function markChatRead(key,paint=true){
+  if(key.startsWith('box:')){
+   const box=boxes.get(key.slice(4));if(!box)return;
+   const last=box.messages?.at(-1)?.createdAt||box.last?.createdAt;
+   if(last){queueReadMarker(key,last,true);summarize(box.id)}
+  }else if(key.startsWith('pair:')){
+   const pair=pairs.get(key.slice(5));if(!pair)return;
+   const last=pair.messages?.at(-1)?.createdAt||pair.lastAt;
+   if(last)queueReadMarker(key,last,true);
+  }
+  if(paint)renderRows();
+ }
+ function markManyRead(predicate){
+  for(const box of boxes.values())if(predicate(pinKey('box',box.id)))markChatRead(pinKey('box',box.id),false);
+  for(const pair of pairs.values()){const key=pinKey('pair',pairKey(pair));if(predicate(key))markChatRead(key,false)}
+  renderRows();
+  void flushReadMarkers();
+ }
+ function markSectionRead(id){
+  markManyRead(key=>!groupForChat(key)&&(id==='pinned'?pins.has(key):id==='pairs'?key.startsWith('pair:')&&!pins.has(key):key.startsWith('box:')&&!pins.has(key)));
+ }
  function openRowMenu({box,pair},point){
   const key=box?pinKey('box',box.id):pinKey('pair',pairKey(pair));
   const items=[
    [pins.has(key)?'Unpin chat':'Pin chat',()=>togglePin(key),null,null,IC.pin],
    muteMenuItem(key),
   ];
+  if(box?.unread||pair&&pairUnreadCount(pair))items.unshift(['Mark as read',()=>markChatRead(key),null,null,menuIcons.read]);
   const current=groupForChat(key);
   const groups=[];
   if(current)groups.push(['Remove from group',()=>removeChatFromGroup(key)]);
@@ -3012,6 +3068,7 @@
  function openGroupMenu(id,point){
   const group=chatGroups.find(group=>group.id===id);if(!group)return;
   showActionMenu([
+   ['Mark all as read',()=>markManyRead(key=>chatGroupMembers.get(key)===id),null,null,menuIcons.read],
    muteMenuItem('group:'+id),
    [group.collapsed?'Expand group':'Collapse group',()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()},null,null,group.collapsed?menuIcons.down:menuIcons.up],
    ['Rename group…',()=>openGroupDialog(group),null,null,menuIcons.pencil],
@@ -3026,6 +3083,7 @@
  }
  function openSectionMenu(id,point){
   showActionMenu([
+   ['Mark all as read',()=>markSectionRead(id),null,null,menuIcons.read],
    muteMenuItem('section:'+id),
    [sectionCollapsed[id]?'Expand':'Collapse',()=>{sectionCollapsed[id]=!sectionCollapsed[id];saveChatGroups();renderRows()},null,null,sectionCollapsed[id]?menuIcons.down:menuIcons.up],
   ],point,id==='pinned'?'Pinned':id==='boxes'?'Chats':'Box conversations');
@@ -3252,6 +3310,7 @@
   try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){showLogin(e.message)}
  };
  $('#logout').onclick=async()=>{
+  await flushReadMarkers();clearInterval(readSyncTimer);
   groupStorageKey='';
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
   await disablePushSubscription();
@@ -3274,7 +3333,7 @@
  };
  async function enter(initial=false){
   try{
-   const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';await loadChatGroups(who.accountId||'default');
+   const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';await loadChatGroups(who.accountId||'default');await loadReadMarkers();
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
    $('#usage-toggle').hidden=!owner;
    $('#presets-toggle').hidden=!owner;
@@ -3290,9 +3349,14 @@
    if(owner)void loadChatCommands().catch(e=>{if(selected)statusEl.textContent=e.message});
    if(owner){clearInterval(usageTimer);void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)}
    schedule();renderInstallState();renderPushState();void checkPushState({repair:true});
+   clearInterval(readSyncTimer);readSyncTimer=setInterval(()=>void loadReadMarkers(),30000);
   }catch(e){showLogin(initial&&e.message==='Please log in to the controller.'?'':e.message)}
  }
- addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
+ addEventListener('pagehide',()=>{
+  if(pendingReadMarkers.size)try{void fetch('/v1/chat-read-markers',{method:'PUT',credentials:'same-origin',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(pendingReadMarkers))})}catch{}
+  clearInterval(readSyncTimer);clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)
+ });
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)void flushReadMarkers()});
 
  /* ---------- imported profile usage ---------- */
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
