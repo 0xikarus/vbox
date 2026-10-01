@@ -1057,7 +1057,7 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .sheet-card .primary,#new-box-card button.primary{background:var(--accent);color:var(--accent-ink)}
 
 /* Details occupy a stable rail on wide screens and an overlay on smaller ones. */
-#inspect{position:absolute;top:4.3rem;right:0;bottom:0;width:min(19rem,100%);max-height:none;border:0;border-left:1px solid var(--line);background:var(--bg2);box-shadow:var(--shadow-pop);z-index:12}
+#inspect{position:absolute;top:4.55rem;right:0;bottom:0;width:min(19rem,100%);max-height:none;border:0;border-left:1px solid var(--line);background:var(--bg2);box-shadow:var(--shadow-pop);z-index:12}
 #inspect-header{background:var(--bg2)}
 #inspect-close{display:inline-flex;align-items:center;gap:.25rem;padding:.35rem .55rem;border:1px solid var(--line);background:var(--surface2);color:var(--ink);font:650 var(--vb-type-rem-0-74) system-ui,-apple-system,"Segoe UI",sans-serif;white-space:nowrap}
 #inspect-close:hover{border-color:var(--accent);color:var(--accent-text)}

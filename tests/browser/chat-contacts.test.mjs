@@ -14,6 +14,7 @@ const tokensCSS=await readFile('internal/controller/web/vbox-tokens.css','utf8')
 const vboxCSS=await readFile('internal/controller/web/vbox-c.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
 const loginCSS=await readFile('internal/controller/web/login.css','utf8');
+const workspaceNavJS=await readFile('internal/controller/web/workspace-nav.js','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 
@@ -47,6 +48,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/vbox-c.css'){res.setHeader('Content-Type','text/css');return res.end(vboxCSS)}
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
   if(path==='/login.css'){res.setHeader('Content-Type','text/css');return res.end(loginCSS)}
+  if(path==='/workspace-nav.js'){res.setHeader('Content-Type','text/javascript');return res.end(workspaceNavJS)}
   if(!path.startsWith('/v1/'))return res.end();
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
@@ -118,16 +120,18 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    };
    window.openWorkspaceTerminal=(id,session,_status,options)=>{window.viewerTerminal={id,session,root:options.root.id};return()=>{}};
   });
-  await p.setViewport({width:420,height:820,deviceScaleFactor:1});
+  await p.setViewport({width:1280,height:820,deviceScaleFactor:1});
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await p.waitForFunction(()=>!document.querySelector('#chat-app').hidden);
   await p.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
-  await p.click('#chat-menu');await p.click('#usage-toggle');
+  await p.waitForFunction(()=>!document.querySelector('#usage-toggle').hidden);
+  await p.click('#usage-toggle');
   await p.waitForFunction(()=>document.querySelector('#usage-list').textContent.includes('claude · personal'));
   await p.click('#usage-refresh');
   await p.waitForFunction(()=>document.querySelector('#usage-status').textContent==='Usage updated.');
   assert.ok(requests.includes('POST /v1/profile-usage/refresh'),'manual usage refresh must start a new check');
   await p.click('#usage-modal button[data-close]');
+  await p.setViewport({width:420,height:820,deviceScaleFactor:1});
   await p.evaluate(()=>{document.querySelector('#login').hidden=false});
   const loginLayout=await p.evaluate(()=>{const form=document.querySelector('#login'),card=form.querySelector('.login-card'),style=getComputedStyle(form);return {position:style.position,z:Number(style.zIndex),card:!!card,modal:card?.getAttribute('aria-modal')}});
   assert.deepEqual(loginLayout,{position:'fixed',z:1000,card:true,modal:'true'});
@@ -142,7 +146,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>document.querySelector('#chat-messages .msg.agent .text')?.textContent==='Done.'||[...document.querySelectorAll('#chat-messages .msg.agent .text')].some(e=>e.textContent==='Done.'),{timeout:1500});
   assert.equal(await p.$eval('#chat-messages',element=>!!element.querySelector('.msg.processing')),false,'processing must end when the agent reply appears');
   explicitIdle=true;
-  await p.click('#refresh');
+  await p.$eval('#refresh',button=>button.click());
   await new Promise(resolve=>setTimeout(resolve,150));
   await p.type('#chat-input','Quick check');
   await p.click('#send');
@@ -151,10 +155,10 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.deepEqual(await p.$$eval('#chat-messages .msg',rows=>rows.slice(-2).map(row=>({kind:row.classList.contains('user')?'user':'processing',text:row.textContent.includes('Quick check')?'Quick check':''}))),[{kind:'user',text:'Quick check'},{kind:'processing',text:''}]);
   await p.waitForFunction(()=>[...document.querySelectorAll('#chat-messages .msg.agent .text')].some(e=>e.textContent==='Quick answer'),{timeout:5000});
   assert.equal(await p.$eval('#chat-messages',element=>!!element.querySelector('.msg.processing')),false,'fast replies must clear the in-flight indicator');
-  const beforeListRefresh=requests.filter(r=>r==='GET /v1/grid-boxes').length;
+  const beforeListRefresh=requests.filter(r=>r==='GET /v1/logical-boxes').length;
   await p.evaluate(()=>{for(let i=0;i<5;i++)navigator.serviceWorker?.dispatchEvent(new MessageEvent('message',{data:{type:'vmbox-push'}}))});
   await new Promise(resolve=>setTimeout(resolve,650));
-  assert.equal(requests.filter(r=>r==='GET /v1/grid-boxes').length,beforeListRefresh+1,'push burst should fetch the list once');
+  assert.equal(requests.filter(r=>r==='GET /v1/logical-boxes').length,beforeListRefresh+1,'push burst should fetch the list once');
   await p.mouse.move(0,0);
   await p.focus('#chat-header-avatar .preview-trigger');
   await p.waitForFunction(()=>!document.querySelector('.tv-preview').hidden);
@@ -225,7 +229,9 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent.includes('directly')&&document.querySelector('#inspect-tags').textContent.includes('backend'));
   await p.waitForFunction(()=>document.querySelector('#inspect-runtime-rows').textContent.includes('worker-west-2'));
   assert.match(await p.$eval('#inspect-runtime-rows',e=>e.textContent),/svc-42.*#2 · slot-builder/);
-  assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/contact directly/);
+  assert.equal(await p.$eval('#inspect-contact-role',e=>e.textContent),'Configured directly on this box');
+  if(!await p.$eval('#inspect-contacts',node=>node.open))await p.$eval('#inspect-contacts > summary',node=>node.click());
+  await p.waitForFunction(()=>document.querySelector('#inspect-contacts').open);
   assert.equal(await p.$$eval('#inspect-contact-list li',rows=>rows.length),1,'direct contacts remain visible');
   await p.click('#inspect-add-contact');
   assert.equal(await p.$eval('#inspect-contact-picker',picker=>picker.hidden),false,'contact picker opens inline');
@@ -245,6 +251,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.setViewport({width:420,height:1200,deviceScaleFactor:1});
   await p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body'),contacts=document.querySelector('#inspect-contacts');inspect.style.maxHeight='none';inspect.style.overflow='visible';body.style.overflow='visible';contacts.style.overflow='visible'});
   await (await p.$('#inspect-contacts')).screenshot({path:'docs/chat-ui/screenshots/mobile-chat-contacts.png'});
+  if(!await p.$eval('#inspect-access',node=>node.open))await p.$eval('#inspect-access > summary',node=>node.click());
   await p.click('#inspect-edit-roles');
   await p.waitForFunction(()=>!document.querySelector('#role-editor-modal').hidden&&document.querySelector('#role-editor-title').textContent.includes('builder'));
   await p.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='');
@@ -332,13 +339,13 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal('roleIds' in creations.at(-1),false,'new boxes do not inherit a role bundle');
   const threadTime=new Date().toISOString();
   builderMessages=[{id:'thread-a',taskId:'real-thread-task',threadId:'thread-a',direction:'user',state:'delivered',text:'Start',createdAt:threadTime},{id:'thread-b',taskId:'real-thread-task',threadId:'thread-a',direction:'agent',state:'delivered',text:'Answer',createdAt:threadTime}];
-  await p.click('#refresh');
+  await p.$eval('#refresh',button=>button.click());
   await p.waitForFunction(()=>[...document.querySelectorAll('#chat-messages .msg .text')].some(element=>element.textContent==='Start'));
-  assert.equal(await p.$$eval('#chat-messages .msg-thread',nodes=>nodes.length),0,'a two-message exchange must not show a thread count');
+  assert.deepEqual(await p.$$eval('#chat-messages .msg-thread',nodes=>nodes.map(node=>node.textContent)),['↳ 1 reply','↳ 1 reply'],'a two-message thread shows its reply count');
   builderMessages.push({id:'thread-c',taskId:'real-thread-task',threadId:'thread-a',direction:'user',state:'delivered',text:'Follow-up',createdAt:threadTime});
-  await p.click('#refresh');
+  await p.$eval('#refresh',button=>button.click());
   await p.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg-thread').length>0);
-  await p.click('#chat-messages .msg-thread');
+  await p.$eval('#chat-messages .msg-thread',node=>node.click());
   await p.waitForFunction(()=>document.querySelector('#thread-origin')?.textContent==='builder · opencode');
   await p.close();
  }finally{await browser.close();await new Promise(r=>server.close(r))}
