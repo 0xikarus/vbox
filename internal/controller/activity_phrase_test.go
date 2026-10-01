@@ -25,6 +25,25 @@ func TestActivityPhraseDropsTrivialToolOnlyEvidence(t *testing.T) {
 	}
 }
 
+func TestRecentOwnFixRejectsRelayedWorkerAction(t *testing.T) {
+	for _, text := range []string{
+		"assistant: Builder fixed the mascot eyes and is rerunning tests.",
+		"assistant: The design report lists several fixes.",
+	} {
+		if recentOwnFix(text) {
+			t.Fatalf("relayed fix accepted: %q", text)
+		}
+	}
+	for _, text := range []string{
+		"assistant: I'm fixing the mascot eyes now.",
+		"assistant: Fixing the mobile layout now.",
+	} {
+		if !recentOwnFix(text) {
+			t.Fatalf("own fix rejected: %q", text)
+		}
+	}
+}
+
 func TestActivityPhraseRejectsInvalidGenerations(t *testing.T) {
 	for _, phrase := range []string{
 		"fixing the build",                      // Must start with a capital.
@@ -36,6 +55,7 @@ func TestActivityPhraseRejectsInvalidGenerations(t *testing.T) {
 		"Merging deepseek merge",                // Repeated verb stem.
 		"Waking image-6.png",                    // Non-file verb before filename.
 		"Running cd",                            // Trivial shell command.
+		"Running gh",                            // Vague tool label.
 		"Using a tool",                          // Generic tool name.
 		"Planning mascot plan",                  // Repeated stem after doubled consonant.
 		"Holding deepseek screenshots",          // Garbled screenshot action.

@@ -26,6 +26,12 @@ func LatestToolLabel(text string) string {
 	}
 	latest := strings.TrimSpace(lines[len(lines)-1])
 	if label, ok := strings.CutPrefix(latest, "tool: "); ok {
+		if strings.HasPrefix(label, "Running ") {
+			command := strings.TrimPrefix(label, "Running ")
+			if command == "shell commands" || command == "shell" || command == "gh" || command == "bash" || command == "tool" || command == "command" {
+				return ""
+			}
+		}
 		for _, prefix := range []string{"Editing ", "Running ", "Reading ", "Reviewing ", "Messaging ", "Checking ", "Searching "} {
 			if strings.HasPrefix(label, prefix) && label != "Running tool" && label != "Running command" {
 				return label
