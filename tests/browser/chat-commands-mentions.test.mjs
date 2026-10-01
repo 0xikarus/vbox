@@ -67,6 +67,7 @@ test('saved slash commands stay in drafts until send, mentions send IDs, and sto
   await page.click('[data-box-id=builder]');
   await page.waitForFunction(()=>document.querySelector('[data-box-id=builder]').classList.contains('active'));
   await page.click('#chat-menu');await page.click('#commands-toggle');
+  await page.waitForFunction(()=>!document.querySelector('#commands-modal').hidden&&document.activeElement===document.querySelector('#command-form input[name=name]'));
   await page.type('#command-form input[name=name]','review');
   await page.type('#command-form textarea[name=prompt]','Review this change and list two risks.');
   await page.click('#command-form button[type=submit]');
