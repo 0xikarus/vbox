@@ -12,6 +12,12 @@ import (
 // The harness MCP process owns this heartbeat. It knows which managed
 // conversation it serves and reads that harness's native transcript locally.
 const mascotSampleBytes = 8192
+const mascotKeepaliveInterval = 30 * time.Second
+
+type mascotHeartbeatState struct {
+	text   string
+	sentAt time.Time
+}
 
 func mascotClientAgent(name string) string {
 	name = strings.ToLower(name)
@@ -27,21 +33,21 @@ func mascotClientAgent(name string) string {
 	}
 }
 
-func sendMascotHeartbeat(ctx context.Context, assignment, home, session, agent, previous string) (string, error) {
+func sendMascotHeartbeat(ctx context.Context, assignment, home, session, agent string, state mascotHeartbeatState, now time.Time) (mascotHeartbeatState, error) {
 	sample, err := mascotNativeSample(ctx, home, session, agent)
 	text := mascotTranscriptEvidence(sample)
 	if err != nil || text == "" {
-		return previous, err
+		return state, err
 	}
-	if text == previous {
-		return previous, nil
+	if text == state.text && !state.sentAt.IsZero() && now.Sub(state.sentAt) < mascotKeepaliveInterval {
+		return state, nil
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := desktopAgentAPI(requestCtx, assignment, http.MethodPost, "/v1/agent-desktop/mascot-observation", map[string]string{"session": session, "text": text}, nil); err != nil {
-		return previous, err
+		return state, err
 	}
-	return text, nil
+	return mascotHeartbeatState{text: text, sentAt: now}, nil
 }
 
 // Native transcript roles are specific to box harnesses. Send only agent
@@ -62,7 +68,11 @@ func mascotTranscriptEvidence(sample string) string {
 		if strings.HasPrefix(line, "user: ") {
 			continue
 		}
-		line = strings.TrimPrefix(strings.TrimPrefix(line, "assistant: "), "tool: ")
+		if tool, ok := strings.CutPrefix(line, "tool: "); ok {
+			retained = append(retained, "tool: "+tool)
+			continue
+		}
+		line = strings.TrimPrefix(strings.TrimPrefix(line, "assistant: "), "tool-output: ")
 		// Code examples and echoed commands are not status reports.
 		if strings.HasPrefix(line, "```") {
 			insideFence = !insideFence
@@ -77,6 +87,11 @@ func mascotTranscriptEvidence(sample string) string {
 		retained[left], retained[right] = retained[right], retained[left]
 	}
 	return strings.Join(retained, "\n")
+}
+
+// MascotTranscriptEvidence applies the heartbeat's agent-only line filter.
+func MascotTranscriptEvidence(sample string) string {
+	return mascotTranscriptEvidence(sample)
 }
 
 // MCP clients may scrub the child's environment. Codex's app server still
@@ -118,9 +133,9 @@ func runMascotHeartbeat(ctx context.Context, assignment, agent string) {
 	}
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-	var previous string
+	var state mascotHeartbeatState
 	for {
-		previous, _ = sendMascotHeartbeat(ctx, assignment, home, session, agent, previous)
+		state, _ = sendMascotHeartbeat(ctx, assignment, home, session, agent, state, time.Now())
 		select {
 		case <-ctx.Done():
 			return
