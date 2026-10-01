@@ -456,7 +456,7 @@ function renderProfiles(identity,profiles){
  const choices=$('#profile-choices'),selected=choices.querySelector('select')?.value||'';choices.replaceChildren();
  renderCreationProfileChoices(choices,profiles,$('#create select[name="defaultAgent"]'),selected);
 }
-let profileLoginSessionID='',profileLoginTimer=0,profileLoginFromCreate=false,profileVerifiedKey='',profileLoginTerminalStop=null;
+let profileLoginSessionID='',profileLoginTimer=0,profileLoginFromCreate=false,profileVerifiedKey='',profileLoginTerminalStop=null,profileLoginCallbackSent=false;
 const profileLoginForm=$('#profile-login-form');
 function profileLoginFields(){
  const f=profileLoginForm.elements,app=f.application.value;
@@ -464,14 +464,14 @@ function profileLoginFields(){
  const apiMode=f.method.value==='api';
  const providers=app==='opencode'?[['openrouter','OpenRouter'],['venice','Venice']]:app==='claude'?[['anthropic','Anthropic']]:[['openai','OpenAI']];
  const previous=f.provider.value;f.provider.replaceChildren();for(const [value,label] of providers){const option=node('option',label);option.value=value;f.provider.append(option)}if(providers.some(([value])=>value===previous))f.provider.value=previous;
- $('.profile-login-provider').hidden=!apiMode;$('.profile-login-key').hidden=!apiMode;$('.profile-login-model').hidden=!apiMode;$('.profile-login-email').hidden=apiMode||app!=='claude';
+ $('.profile-login-provider').hidden=!apiMode;$('.profile-login-key').hidden=!apiMode;$('.profile-login-model').hidden=!apiMode;$('.profile-login-email').hidden=apiMode||app!=='claude';$('.profile-login-flow').hidden=apiMode||app!=='codex';
  $('#profile-login-verify').hidden=!apiMode;$('#profile-login-submit').textContent=apiMode?'Save API profile':'Start browser login';
  $('#profile-login-submit').disabled=apiMode;
- $('#profile-login-method-note').textContent=apiMode?'API usage is billed by '+(app==='opencode'?f.provider.selectedOptions[0]?.textContent:app==='claude'?'Anthropic':'OpenAI')+'. Verify the key to choose an available model.':app==='codex'?'Codex uses the official device sign-in. Enable device login in your ChatGPT security or workspace settings, then enter the shown code in your browser.':'Claude Code opens its official sign-in page. If it asks for a browser code, paste that code here.';
+ $('#profile-login-method-note').textContent=apiMode?'API usage is billed by '+(app==='opencode'?f.provider.selectedOptions[0]?.textContent:app==='claude'?'Anthropic':'OpenAI')+'. Verify the key to choose an available model.':app==='codex'?(f.flow.value==='browser'?'Open the official ChatGPT sign-in link. After login, copy the localhost callback URL from your browser address bar into this dialog.':'Device code also signs in to your ChatGPT account. Enable it in ChatGPT security or workspace settings, then enter the shown code in your browser.'):'Claude Code opens its official sign-in page. If it asks for a browser code, paste that code here.';
  profileVerifiedKey='';f.model.replaceChildren(new Option('Verify the key first',''));
 }
 function openProfileLogin(fromCreate=false){
- profileLoginFromCreate=fromCreate;profileLoginForm.reset();$('#profile-login-progress').hidden=true;profileLoginForm.hidden=false;$('#profile-login-status').textContent='';$('#profile-login-form-status').textContent='';
+ profileLoginFromCreate=fromCreate;profileLoginCallbackSent=false;profileLoginForm.reset();$('#profile-login-progress').hidden=true;profileLoginForm.hidden=false;$('#profile-login-status').textContent='';$('#profile-login-form-status').textContent='';
  if(fromCreate){const app=$('#create select[name="defaultAgent"]').value;if(['codex','claude','opencode'].includes(app))profileLoginForm.elements.application.value=app}
  profileLoginFields();modalEl('profile-login-modal').hidden=false;profileLoginForm.elements.name.focus();
 }
@@ -483,7 +483,7 @@ async function cancelProfileLogin(){
 function closeProfileLogin(){modalEl('profile-login-modal').hidden=true;profileLoginForm.elements.key.value='';profileVerifiedKey='';void cancelProfileLogin()}
 $('#profile-new').addEventListener('click',()=>openProfileLogin());
 $('#create-profile-open').addEventListener('click',()=>openProfileLogin(true));
-for(const name of ['application','method','provider'])profileLoginForm.elements[name].addEventListener('change',profileLoginFields);
+for(const name of ['application','method','provider','flow'])profileLoginForm.elements[name].addEventListener('change',profileLoginFields);
 profileLoginForm.elements.key.addEventListener('input',()=>{profileVerifiedKey='';$('#profile-login-submit').disabled=true;profileLoginForm.elements.model.replaceChildren(new Option('Verify the key first',''))});
 $('#profile-login-verify').addEventListener('click',action(async()=>{
  const f=profileLoginForm.elements,body={application:f.application.value,provider:f.provider.value,key:f.key.value};
@@ -501,7 +501,7 @@ profileLoginForm.addEventListener('submit',action(async event=>{
   const profile=await api('/v1/login-profiles/api-key','POST',{application:app,provider:f.provider.value,name,key:f.key.value,model:f.model.value,replaceExisting});
   f.key.value='';profileVerifiedKey='';modalEl('profile-login-modal').hidden=true;await refresh();selectNewProfile(profile);notice('Saved '+app+' profile '+name+'.');return;
  }
- const session=await api('/v1/login-profiles/browser','POST',{application:app,name,email:f.email.value.trim(),replaceExisting});
+ const session=await api('/v1/login-profiles/browser','POST',{application:app,name,email:f.email.value.trim(),flow:app==='codex'?f.flow.value:'device',replaceExisting});
  profileLoginSessionID=session.id;profileLoginForm.hidden=true;$('#profile-login-progress').hidden=false;renderProfileLoginStatus(session);
  profileLoginTerminalStop=window.openProfileLoginTerminal(session.id,$('#profile-login-terminal'));pollProfileLogin();
 }));
@@ -512,9 +512,10 @@ function selectNewProfile(profile){
  if([...select.options].some(option=>option.value===value)){select.value=value;select.dispatchEvent(new Event('change'))}
 }
 function renderProfileLoginStatus(session){
- $('#profile-login-status').textContent=session.message||({starting:'Starting isolated login…',waiting:'Finish sign-in in your browser.',saved:'Profile saved.',failed:'Login failed.',expired:'Login timed out.',canceled:'Login canceled.'}[session.status]||session.status);
+ $('#profile-login-status').textContent=session.message||(session.status==='waiting'&&profileLoginCallbackSent?'Callback sent. Waiting for Codex…':({starting:'Starting isolated login…',waiting:'Finish sign-in in your browser.',saved:'Profile saved.',failed:'Login failed.',expired:'Login timed out.',canceled:'Login canceled.'}[session.status]||session.status));
  const link=$('#profile-login-url');link.hidden=!session.url;if(session.url)link.href=session.url;else link.removeAttribute('href');
  $('#profile-login-device').hidden=!session.code;$('#profile-login-device-code').textContent=session.code||'';
+ $('#profile-login-callback-form').hidden=!(session.status==='waiting'&&profileLoginForm.elements.application.value==='codex'&&profileLoginForm.elements.flow.value==='browser');
  $('#profile-login-code-form').hidden=!(session.status==='waiting'&&profileLoginForm.elements.application.value==='claude');
  $('#profile-login-cancel').hidden=['saved','failed','expired','canceled'].includes(session.status);
  $('#profile-login-retry').hidden=!['failed','expired','canceled'].includes(session.status);
@@ -528,6 +529,7 @@ async function pollProfileLogin(){
  if(id===profileLoginSessionID)profileLoginTimer=setTimeout(pollProfileLogin,1500);
 }
 $('#profile-login-code-form').addEventListener('submit',action(async event=>{const code=event.currentTarget.elements.code.value;await api('/v1/login-profiles/browser/'+encodeURIComponent(profileLoginSessionID)+'/code','POST',{code});event.currentTarget.reset();$('#profile-login-status').textContent='Code sent. Waiting for Claude Code…'}));
+$('#profile-login-callback-form').addEventListener('submit',action(async event=>{const url=event.currentTarget.elements.url.value;await api('/v1/login-profiles/browser/'+encodeURIComponent(profileLoginSessionID)+'/callback','POST',{url});profileLoginCallbackSent=true;event.currentTarget.reset();$('#profile-login-status').textContent='Callback sent. Waiting for Codex…'}));
 $('#profile-login-cancel').addEventListener('click',action(async()=>{await cancelProfileLogin();renderProfileLoginStatus({status:'canceled'})}));
 $('#profile-login-retry').addEventListener('click',()=>{profileLoginForm.hidden=false;$('#profile-login-progress').hidden=true;$('#profile-login-status').textContent='';profileLoginForm.elements.name.focus()});
 document.querySelectorAll('[data-close="profile-login-modal"]').forEach(element=>element.addEventListener('click',closeProfileLogin));

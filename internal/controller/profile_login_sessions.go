@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,9 +27,10 @@ import (
 const profileLoginLifetime = 10 * time.Minute
 
 type profileLoginManager struct {
-	mu       sync.Mutex
-	sessions map[string]*profileLoginSession
-	commands map[string]string // fixed production commands; tests substitute synthetic CLIs
+	mu           sync.Mutex
+	sessions     map[string]*profileLoginSession
+	commands     map[string]string // fixed production commands; tests substitute synthetic CLIs
+	callbackHTTP *http.Client      // tests supply a synthetic loopback listener
 }
 
 type profileLoginSession struct {
@@ -36,6 +38,7 @@ type profileLoginSession struct {
 	id             string
 	owner          Principal
 	app            string
+	flow           string // Codex: device or browser; Claude: browser
 	name           string
 	replace        bool
 	expires        time.Time
@@ -94,7 +97,7 @@ func officialProfileLoginURL(app, raw string) string {
 		return ""
 	}
 	host := strings.ToLower(u.Hostname())
-	allowed := app == "codex" && host == "auth.openai.com" && (u.Path == "/codex/device" || u.Path == "/codex/device/")
+	allowed := app == "codex" && host == "auth.openai.com" && (u.Path == "/codex/device" || u.Path == "/codex/device/" || u.Path == "/oauth/authorize")
 	if app == "claude" {
 		allowed = host == "claude.ai" || host == "claude.com" || host == "console.anthropic.com" || host == "platform.claude.com"
 	}
@@ -134,10 +137,16 @@ func (s *profileLoginSession) ingest(output []byte) {
 	}
 	for _, raw := range profileLoginURLs.FindAllString(s.output, -1) {
 		if validated := officialProfileLoginURL(s.app, raw); validated != "" {
-			s.url = validated
+			parsed, _ := url.Parse(validated)
+			if s.app != "codex" || (s.flow == "browser" && parsed.Path == "/oauth/authorize" && validCodexBrowserCallbackURL(codexBrowserRedirect(parsed))) || (s.flow != "browser" && parsed.Path == "/codex/device") {
+				s.url = validated
+			}
 		}
 	}
-	if s.app == "codex" && s.url != "" {
+	if s.app == "codex" && s.flow == "browser" && s.url != "" {
+		s.status = "waiting"
+	}
+	if s.app == "codex" && s.flow != "browser" && s.url != "" {
 		if code := profileDeviceCode.FindString(s.output); code != "" {
 			s.code = code
 			s.status = "waiting"
@@ -146,6 +155,77 @@ func (s *profileLoginSession) ingest(output []byte) {
 	if s.app == "claude" && s.url != "" {
 		s.status = "waiting"
 	}
+}
+
+func codexBrowserRedirect(authURL *url.URL) string {
+	return authURL.Query().Get("redirect_uri")
+}
+
+func validCodexBrowserCallbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "http" && (u.Host == "127.0.0.1:1455" || u.Host == "localhost:1455") && u.Path == "/auth/callback" && u.User == nil && u.Fragment == ""
+}
+
+// The user's browser cannot reach the controller's loopback listener. The
+// owner pastes the failed localhost callback URL, which is forwarded only to
+// Codex's fixed loopback endpoint after its OAuth state has been checked.
+func (s *Server) browserProfileLoginCallback(w http.ResponseWriter, r *http.Request, p Principal) {
+	w.Header().Set("Cache-Control", "no-store")
+	session := s.profileLogins.get(r.PathValue("id"), p)
+	if session == nil {
+		writeError(w, 404, fmt.Errorf("login session not found"))
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8192)
+	var req struct {
+		URL string `json:"url"`
+	}
+	if decodeJSON(r, &req) != nil || len(req.URL) > 4096 {
+		writeError(w, 400, fmt.Errorf("paste the localhost callback URL from your browser"))
+		return
+	}
+	callback, err := url.Parse(req.URL)
+	if err != nil || !validCodexBrowserCallbackURL(req.URL) || callback.RawQuery == "" {
+		writeError(w, 400, fmt.Errorf("paste the localhost callback URL from your browser"))
+		return
+	}
+	query := callback.Query()
+	if len(query) != 2 || len(query["code"]) != 1 || len(query["state"]) != 1 || query.Get("code") == "" || query.Get("state") == "" {
+		writeError(w, 400, fmt.Errorf("the callback URL is missing a sign-in code or state"))
+		return
+	}
+	session.mu.Lock()
+	authURL, parseErr := url.Parse(session.url)
+	ready := session.app == "codex" && session.flow == "browser" && session.status == "waiting" && session.pty != nil && parseErr == nil && authURL != nil && authURL.Query().Get("state") != "" && authURL.Query().Get("state") == query.Get("state")
+	session.mu.Unlock()
+	if !ready {
+		writeError(w, 409, fmt.Errorf("this callback does not match an active Codex browser sign-in"))
+		return
+	}
+	transport := &http.Transport{Proxy: nil, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", "127.0.0.1:1455")
+	}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Timeout: 5 * time.Second, Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if s.profileLogins.callbackHTTP != nil {
+		client = s.profileLogins.callbackHTTP
+	}
+	forward, err := http.NewRequestWithContext(r.Context(), http.MethodGet, callback.String(), nil)
+	if err != nil {
+		writeError(w, 400, fmt.Errorf("invalid callback URL"))
+		return
+	}
+	response, err := client.Do(forward)
+	if err != nil {
+		writeError(w, 409, fmt.Errorf("Codex is no longer listening for the browser callback; retry login"))
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= 400 {
+		writeError(w, 409, fmt.Errorf("Codex rejected the browser callback; retry login"))
+		return
+	}
+	writeJSON(w, 200, session.view())
 }
 
 func (s *profileLoginSession) finish(status, message string) {
@@ -173,9 +253,17 @@ func (s *Server) startBrowserProfileLogin(w http.ResponseWriter, r *http.Request
 		Name            string `json:"name"`
 		Email           string `json:"email"`
 		ReplaceExisting bool   `json:"replaceExisting"`
+		Flow            string `json:"flow"`
+	}
+	if req.Flow == "" {
+		req.Flow = "device"
 	}
 	if decodeJSON(r, &req) != nil || (req.Application != "codex" && req.Application != "claude") || !loginProfileName.MatchString(req.Name) || len(req.Email) > 254 || (req.Email != "" && !profileEmail.MatchString(req.Email)) {
 		writeError(w, 400, fmt.Errorf("choose Codex or Claude and a valid profile name"))
+		return
+	}
+	if req.Application == "codex" && req.Flow != "device" && req.Flow != "browser" {
+		writeError(w, 400, fmt.Errorf("choose a valid Codex sign-in method"))
 		return
 	}
 	var exists bool
@@ -195,6 +283,14 @@ func (s *Server) startBrowserProfileLogin(w http.ResponseWriter, r *http.Request
 	manager.mu.Lock()
 	active := 0
 	for _, current := range manager.sessions {
+		current.mu.Lock()
+		if req.Application == "codex" && req.Flow == "browser" && current.app == "codex" && current.flow == "browser" && (current.status == "starting" || current.status == "waiting") {
+			current.mu.Unlock()
+			manager.mu.Unlock()
+			writeError(w, 409, fmt.Errorf("another ChatGPT browser sign-in is active; finish or cancel it first"))
+			return
+		}
+		current.mu.Unlock()
 		if current.owner.AccountID == p.AccountID && current.owner.UserID == p.UserID {
 			current.mu.Lock()
 			if current.status == "starting" || current.status == "waiting" {
@@ -221,7 +317,7 @@ func (s *Server) startBrowserProfileLogin(w http.ResponseWriter, r *http.Request
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), profileLoginLifetime)
-	session := &profileLoginSession{id: hex.EncodeToString(random[:]), owner: p, app: req.Application, name: req.Name, replace: req.ReplaceExisting, expires: time.Now().Add(profileLoginLifetime), status: "starting", cancel: cancel}
+	session := &profileLoginSession{id: hex.EncodeToString(random[:]), owner: p, app: req.Application, flow: req.Flow, name: req.Name, replace: req.ReplaceExisting, expires: time.Now().Add(profileLoginLifetime), status: "starting", cancel: cancel}
 	manager.sessions[session.id] = session
 	manager.mu.Unlock()
 	go s.runBrowserProfileLogin(ctx, session, path, req.Email)
@@ -281,7 +377,10 @@ func (s *Server) runBrowserProfileLogin(ctx context.Context, session *profileLog
 			session.finish("failed", "Could not configure Codex login.")
 			return
 		}
-		args = []string{"login", "--device-auth"}
+		args = []string{"login"}
+		if session.flow != "browser" {
+			args = append(args, "--device-auth")
+		}
 	} else {
 		args = []string{"auth", "login", "--claudeai"}
 		if email != "" {
@@ -291,6 +390,9 @@ func (s *Server) runBrowserProfileLogin(ctx context.Context, session *profileLog
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = home
 	cmd.Env = isolatedProfileEnv(home, session.app)
+	if session.app == "codex" && session.flow == "browser" {
+		cmd.Env = append(cmd.Env, "BROWSER=/bin/true")
+	}
 	terminal, err := pty.Start(cmd)
 	if err != nil {
 		session.finish("failed", "Login helper could not start. Check its installed version and retry.")

@@ -300,6 +300,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   the [local prompt API guide](LOCAL-AGENT-PROMPT.md) covers its contract and
   retry limits. The generated `~/.config/vmbox/mcp-tools.md` includes the
   request format for agents working inside the box.
+- `multicall` accepts 2–8 independent vmbox MCP calls and runs them in
+  parallel: `{"calls":[{"name":"get_contacts","arguments":{}},{"name":"get_run_budget","arguments":{}}]}`.
+  Each nested call still needs its own permission. Results appear in input
+  order with an individual error flag; inspect each one. Do not batch calls
+  that depend on an earlier result, and do not nest `multicall`.
 - The optional Lifecycle MCP tool `heartbeat` manages a single box-local timer
   in `~/.local/share/vmbox/heartbeat.json`. Call it with
   `{"action":"start","intervalMinutes":5,"count":2}` to schedule ticks, or
@@ -333,7 +338,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   browser login session for the official Codex and Claude CLIs or a verified
   provider API key. The CLI upload path remains available. Browser login CLIs
   run with a private temporary home and scrubbed environment; the terminal is
-  attached to that fixed login command, not a general shell. Saved credentials
+  attached to that fixed login command, not a general shell. Codex offers a
+  ChatGPT device code or normal browser OAuth link. For browser OAuth, the owner
+  pastes the browser's failed `127.0.0.1:1455/auth/callback` URL into the
+  dialog; the controller checks the active session's state and forwards only to
+  the local Codex callback listener. Browser OAuth sessions are serialized
+  because the CLI uses a fixed callback port. Saved credentials
   use the same encrypted account profile store. A box has at most one imported agent
   profile, and its application authoritatively selects the managed harness.
   Replacing it uses the locked, integrity-checked transfer, removes portable

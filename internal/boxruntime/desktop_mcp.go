@@ -74,6 +74,7 @@ func desktopMCPTools() []map[string]any {
 		makeTool("set_busy", "Report whether this agent is actively working. Submitted chat messages set busy automatically and chat_message/chat_ask clear it automatically; call this only to override activity outside that normal request/reply flow.", map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
 		makeTool("chat_message", "Send a message of at most 2000 characters to the vbox Agent chat. For the account owner, pass text and optionally replyTo; OMIT contact entirely. replyTo is the chat message reference, never a box contact. Call this once for each completed response, including any image files the user should receive. To send to another box, pass contact as a compact id or exact box name returned by get_contacts. To reply to an incoming contact message, pass its From-Box-ID as contact and omit replyTo. Image files are supported for both owner and contact messages.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": maxDesktopMCPMessageCharacters}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
 		makeTool("chat_ask", "Ask the user to choose one or more options in vbox Agent chat when their decision is required. The question and all choices together must fit within 2000 characters. replyTo is optional; without it the question is delivered on its own. Pass a compact id or exact box name returned by get_contacts to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": maxDesktopMCPMessageCharacters}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
+		makeTool("multicall", "Run 2–8 independent vmbox MCP calls concurrently. Each call uses its own current tool permission and returns its own result or error in input order. Do not nest multicall or put dependent operations in one batch; pass the exact tool name and its JSON arguments for each call.", map[string]any{"calls": map[string]any{"type": "array", "minItems": 2, "maxItems": 8, "items": map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}, "arguments": map[string]any{"type": "object"}}, "required": []string{"name", "arguments"}, "additionalProperties": false}}}, "calls"),
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("generate_password", "Generate and securely store a password for a new account on the focused HTTPS password field's origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
 		makeTool("type_secret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
@@ -240,7 +241,7 @@ func notifyDesktopChatReady(ctx context.Context, assignment, home, session strin
 func writeDesktopMCPGuide(home string) error {
 	var guide strings.Builder
 	guide.WriteString("# vmbox-desktop MCP tools\n\n")
-	guide.WriteString("Call tools by the exact snake_case name below and pass one JSON object matching its schema. Do not invent language-style pseudo calls.\n\n")
+	guide.WriteString("Call tools by the exact snake_case name below and pass one JSON object matching its schema. Do not invent language-style pseudo calls. For 2–8 independent calls, use `multicall {\"calls\":[{\"name\":\"get_contacts\",\"arguments\":{}},{\"name\":\"get_run_budget\",\"arguments\":{}}]}`. Results retain input order; inspect each result for errors. Never batch a call that depends on another call's result. Each nested call must be independently permitted.\n\n")
 	guide.WriteString("## Contacting other boxes\n\n")
 	guide.WriteString("Each result has a compact `id` and exact box `name`; either is accepted. Discover new contacts first and never guess an internal UUID. An incoming contact message includes a full `From-Box-ID` that is accepted for replies while that box remains an authorized contact.\n\n")
 	guide.WriteString("1. Discover allowed contacts: `get_contacts {}`\n")
@@ -329,7 +330,7 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
 			}
-			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{"listChanged": true}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vbox Agent chat arrive as channel messages. Call exact snake_case MCP tool names with a JSON object: chat_message {\"replyTo\":\"message-ref\",\"text\":\"...\"} for replies and chat_ask for choices. To contact another box, call get_contacts {}, then chat_message {\"contact\":\"reviewer\",\"text\":\"...\"} using either its returned compact id or exact name. To reply to an incoming contact message, use its From-Box-ID as contact and omit replyTo. The tool list automatically refreshes when this box's owner changes its permissions. Busy state is automatic for normal replies; use set_busy only for other work. Incoming chat images arrive with an image_path channel attribute; read that path. Read ~/.config/vmbox/mcp-tools.md for every exact call and example. HTTP tools: read ~/.local/share/vmbox/mcp-http.json, then POST JSON to {url}/tools/{name} with its Bearer token. A script can POST {\"text\":\"...\"} to promptUrl to deliver a user message to this already-running agent conversation; it never wakes a stopped box."}
+			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{"listChanged": true}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vbox Agent chat arrive as channel messages. Call exact snake_case MCP tool names with a JSON object: chat_message {\"replyTo\":\"message-ref\",\"text\":\"...\"} for replies and chat_ask for choices. To contact another box, call get_contacts {}, then chat_message {\"contact\":\"reviewer\",\"text\":\"...\"} using either its returned compact id or exact name. Use multicall {\"calls\":[{\"name\":\"get_contacts\",\"arguments\":{}},{\"name\":\"get_run_budget\",\"arguments\":{}}]} for independent parallel calls; inspect each result. The tool list automatically refreshes when this box's owner changes its permissions. Busy state is automatic for normal replies; use set_busy only for other work. Incoming chat images arrive with an image_path channel attribute; read that path. Read ~/.config/vmbox/mcp-tools.md for every exact call and example. HTTP tools: read ~/.local/share/vmbox/mcp-http.json, then POST JSON to {url}/tools/{name} with its Bearer token. A script can POST {\"text\":\"...\"} to promptUrl to deliver a user message to this already-running agent conversation; it never wakes a stopped box."}
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":
@@ -357,9 +358,11 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			} else if !allowed[params.Name] {
 				err = fmt.Errorf("MCP tool %s is not allowed for this box", params.Name)
 			} else {
-				result, err = callDesktopTool(callCtx, assignment, params.Name, params.Arguments)
+				result, err = executeDesktopTool(callCtx, assignment, params.Name, params.Arguments, resolve)
 			}
-			_ = queueLocalMCPActivity(assignment, params.Name, params.Arguments, err)
+			if params.Name != "multicall" || err != nil {
+				_ = queueLocalMCPActivity(assignment, params.Name, params.Arguments, err)
+			}
 			cancel()
 			if err != nil {
 				result = map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": err.Error()}}}
@@ -378,6 +381,9 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 func desktopToolTimeout(name string) time.Duration {
 	if name == "compact_agent_box_context" {
 		return 50 * time.Second
+	}
+	if name == "multicall" {
+		return 60 * time.Second
 	}
 	return 30 * time.Second
 }
