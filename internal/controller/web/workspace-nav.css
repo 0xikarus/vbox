@@ -55,7 +55,9 @@ dialog.providers-dialog .vb-sheet-header .providers-refresh:disabled{opacity:.55
 .providers-table th:first-child{width:21%}.providers-table th:nth-child(2){width:9%}.providers-table th:nth-child(3){width:15%}.providers-table th:nth-child(4),.providers-table th:nth-child(5){width:17%}.providers-table th:nth-child(6){width:12%}.providers-table th:last-child{width:5%}
 .providers-identity strong,.providers-identity small{display:block}.providers-identity strong{font-weight:700}.providers-identity small{margin-top:2px;color:var(--vb-ink-soft)}
 .providers-default{display:inline-block;margin-top:6px;padding:2px 7px;border-radius:var(--r-pill);background:var(--vb-accent-soft);color:var(--vb-accent-text);font-size:var(--vb-type-px-11);font-weight:700}
-.providers-table td.is-warning{color:var(--vb-danger-text);font-weight:700}
+.providers-configured{display:block;margin-top:2px;color:var(--vb-ink-soft);font-size:var(--vb-type-px-12)}
+.providers-table td.is-warning{color:var(--vb-warn-text);font-weight:700}
+.providers-table td.is-danger{color:var(--vb-danger-text);font-weight:700}
 .providers-table .providers-row-error{margin:7px 0 0;color:var(--vb-danger-text);font-size:var(--vb-type-px-12)}
 .providers-actions-space{min-width:40px}
 @media(max-width:600px){

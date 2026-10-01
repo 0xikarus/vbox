@@ -16,7 +16,7 @@ window.VMBoxWorkspaceNav=(()=>{
   const frame=el('div');frame.className='sheet-scroll-frame';const body=el('div');body.className='sheet-scroll-body';
   const status=el('p');status.className='providers-status';status.setAttribute('role','status');
   const table=el('table');table.className='providers-table';const head=el('thead'),heading=el('tr');
-  for(const label of ['Provider','Workers','Slots used / free','RAM used / total','Swap used / total','Observed',''])heading.append(el('th',label));
+  for(const label of ['Provider','Workers','Slots','RAM used / total','Swap used / total','Observed',''])heading.append(el('th',label));
   head.append(heading);const rows=el('tbody');table.append(head,rows);body.append(status,table);frame.append(body);dialog.append(header,frame);document.body.append(dialog);
   let owner=false,generation=0;
   function cell(label,value){const td=el('td',value);td.dataset.label=label;return td}
@@ -30,17 +30,18 @@ window.VMBoxWorkspaceNav=(()=>{
    const workers=fleet?(provider.provider==='shared-worker'?(slots.length?1:0):new Set(slots.map(slot=>slot.serviceId||slot.id).filter(Boolean)).size):'—';
    const used=Number.isFinite(fleet?.occupiedSlots)?fleet.occupiedSlots:'—',free=Number.isFinite(fleet?.freeSlots)?fleet.freeSlots:'—';
    const capacity=Number.isFinite(config?.compute_box_slots)?config.compute_box_slots:null;
-   const slotText=used+' / '+free+(capacity!==null?' · '+capacity+' set':'');
+   const slotCell=cell('Slots');slotCell.append(el('span',used+' used · '+free+' free'));
+   if(capacity!==null){const configured=el('small','of '+capacity+' configured');configured.className='providers-configured';slotCell.append(configured)}
    const resource=(label,usedBytes,totalBytes,unavailable)=>{
     const total=number(totalBytes),used=Math.max(0,number(usedBytes)),item=cell(label,unavailable?'Unavailable':total?gib(used)+' / '+gib(total):label==='Swap'?'No swap':'—');
-    if(!unavailable&&total&&used/total>=.85)item.classList.add('is-warning');return item;
+    if(!unavailable&&total){const ratio=used/total;if(ratio>=.95)item.classList.add('is-danger');else if(ratio>=.85)item.classList.add('is-warning')}return item;
    };
    const ram=resource('RAM',number(host?.memoryTotalBytes)-number(host?.memoryAvailableBytes),host?.memoryTotalBytes,!!snapshot.hostError);
    const swap=resource('Swap',number(host?.swapTotalBytes)-number(host?.swapFreeBytes),host?.swapTotalBytes,!!snapshot.hostError);
    if(provider.provider!=='shared-worker'){ram.textContent='—';swap.textContent='—'}
    const observed=cell('Observed',age(host?.observedAt));if(host?.observedAt)observed.title=new Date(host.observedAt).toLocaleString();
    const actions=cell('Actions');actions.className='providers-actions-space';actions.setAttribute('aria-hidden','true');
-   row.append(identity,cell('Workers',String(workers)),cell('Slots',slotText),ram,swap,observed,actions);
+   row.append(identity,cell('Workers',String(workers)),slotCell,ram,swap,observed,actions);
   }
   async function load(){
    const request=++generation;refresh.disabled=true;status.textContent='Loading providers…';table.hidden=true;rows.replaceChildren();
