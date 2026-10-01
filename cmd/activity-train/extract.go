@@ -20,7 +20,7 @@ import (
 type snippet struct {
 	ID         string   `json:"id"`
 	Text       string   `json:"text"`
-	Candidates []string `json:"candidates"`
+	Candidates []string `json:"candidates,omitempty"`
 }
 
 var (
@@ -340,6 +340,17 @@ func emitTool(label string, emit func(string)) {
 }
 
 func extractSnippets(codex, claude inputPaths, out string, limit int, additionalRedactions ...string) (int, error) {
+	return extractSnippetsMode(codex, claude, out, limit, false, additionalRedactions...)
+}
+
+// extractGeneratorSnippets samples after agent prose, including prose with no
+// extractive verb candidate. These are the cases where the generator currently
+// returns an empty activity phrase most often.
+func extractGeneratorSnippets(codex, claude inputPaths, out string, limit int, additionalRedactions ...string) (int, error) {
+	return extractSnippetsMode(codex, claude, out, limit, true, additionalRedactions...)
+}
+
+func extractSnippetsMode(codex, claude inputPaths, out string, limit int, agentTail bool, additionalRedactions ...string) (int, error) {
 	codexPaths, err := jsonlPaths(codex)
 	if err != nil {
 		return 0, err
@@ -361,6 +372,9 @@ func extractSnippets(codex, claude inputPaths, out string, limit int, additional
 		if len(*history) > 16 {
 			*history = (*history)[len(*history)-16:]
 		}
+		if agentTail && !strings.HasPrefix(event, "assistant: ") {
+			return
+		}
 		for _, width := range []int{4, 8, 12} {
 			start := len(*history) - width
 			if start < 0 {
@@ -368,6 +382,9 @@ func extractSnippets(codex, claude inputPaths, out string, limit int, additional
 			}
 			text := boxruntime.MascotTranscriptEvidence(strings.Join((*history)[start:], "\n"))
 			text = anonymizeActivityWithPatterns(text, redactions)
+			if agentTail {
+				text = activityphrase.NormalizeEvidence(text)
+			}
 			if text == "" || len(text) > 2400 {
 				continue
 			}
@@ -377,7 +394,7 @@ func extractSnippets(codex, claude inputPaths, out string, limit int, additional
 					candidates = append(candidates, candidate.Text)
 				}
 			}
-			if len(candidates) == 0 {
+			if len(candidates) == 0 && !agentTail {
 				continue
 			}
 			hash := sha256.Sum256([]byte(text))
