@@ -24,7 +24,7 @@ test('owner provider popup works on every topbar and isolates pool errors',async
    if(path==='/v1/fleet/host-resources'){
     hostRequests++;
     if(credential==='beta'){res.statusCode=503;return res.end('{"error":"Worker offline"}')}
-    return res.end(JSON.stringify({memoryTotalBytes:8*1024**3,memoryAvailableBytes:1*1024**3,swapTotalBytes:4*1024**3,swapFreeBytes:Math.floor(.1*1024**3),observedAt}));
+    return res.end(JSON.stringify({memoryTotalBytes:8*1024**3,memoryAvailableBytes:1*1024**3,swapTotalBytes:4*1024**3,swapFreeBytes:Math.floor(.1*1024**3),diskTotalBytes:100*1024**3,diskUsedBytes:87*1024**3,cpuCores:4,cpuLoad1:1.5,cpuPercent:97,observedAt}));
    }
    res.statusCode=404;return res.end('{}');
   }
@@ -57,12 +57,14 @@ test('owner provider popup works on every topbar and isolates pool errors',async
    await page.waitForFunction(()=>document.querySelectorAll('.providers-dialog tbody tr').length===2&&document.querySelector('.providers-dialog .providers-row-error'));
    const state=await page.evaluate(()=>{
     const dialog=document.querySelector('.providers-dialog'),rows=[...dialog.querySelectorAll('tbody tr')];
-    return {open:dialog.open,link:dialog.querySelector('.providers-open-link').getAttribute('href'),rows:rows.map(row=>({text:row.innerText,warning:!!row.querySelector('.is-warning'),danger:!!row.querySelector('.is-danger'),error:!!row.querySelector('.providers-row-error')}))};
+    return {open:dialog.open,link:dialog.querySelector('.providers-open-link').getAttribute('href'),rows:rows.map(row=>({text:row.innerText,warning:!!row.querySelector('.is-warning'),danger:!!row.querySelector('.is-danger'),diskWarning:row.querySelector('[data-label="Disk"]')?.classList.contains('is-warning'),cpuDanger:row.querySelector('[data-label="CPU"]')?.classList.contains('is-danger'),error:!!row.querySelector('.providers-row-error')}))};
    });
    assert.equal(state.open,true);assert.equal(state.link,'/#providers');
-   assert.match(state.rows[0].text,/alpha[\s\S]*Default[\s\S]*1 used · 1 free[\s\S]*of 4 configured[\s\S]*7\.0 GiB \/ 8\.0 GiB[\s\S]*2 min ago/);
+   assert.match(state.rows[0].text,/alpha[\s\S]*Default[\s\S]*1 used · 1 free[\s\S]*of 4 configured[\s\S]*7\.0 GiB \/ 8\.0 GiB[\s\S]*87\.0 GiB \/ 100\.0 GiB[\s\S]*97% · load 1\.5 \/ 4 cores[\s\S]*2 min ago/);
    assert.equal(state.rows[0].warning,true,'RAM pressure at 87.5% is highlighted');
    assert.equal(state.rows[0].danger,true,'swap pressure at 97.5% uses danger colour');
+   assert.equal(state.rows[0].diskWarning,true,'shared filesystem pressure at 87% uses warning colour');
+   assert.equal(state.rows[0].cpuDanger,true,'CPU pressure at 97% uses danger colour');
    assert.match(state.rows[1].text,/beta[\s\S]*Resource usage unavailable: Worker offline/);
    assert.equal(state.rows[1].error,true,'failed host observation stays in its row');
    if(name==='chat'){
@@ -84,8 +86,8 @@ test('owner provider popup works on every topbar and isolates pool errors',async
    await page.goto('http://127.0.0.1:'+server.address().port+'/chat');
    await page.evaluate(()=>{document.getElementById('login').hidden=true;window.providerNav=window.VMBoxWorkspaceNav.initProviders('chat-providers');window.providerNav.setOwner(true)});
    await page.click('#chat-providers');await page.waitForFunction(()=>document.querySelectorAll('.providers-dialog tbody tr').length===2&&document.querySelector('.providers-dialog .providers-row-error'));
-   const layout=await page.evaluate(()=>({width:document.documentElement.scrollWidth,cards:getComputedStyle(document.querySelector('.providers-table tr')).display}));
-   assert.ok(layout.width<=width,'popup fits '+width+'px');if(width===390)assert.equal(layout.cards,'grid','mobile rows become cards');
+   const layout=await page.evaluate(()=>{const style=getComputedStyle(document.querySelector('.providers-table tr'));return {width:document.documentElement.scrollWidth,cards:style.display,columns:style.gridTemplateColumns.split(' ').length}});
+   assert.ok(layout.width<=width,'popup fits '+width+'px');if(width===390){assert.equal(layout.cards,'grid','mobile rows become cards');assert.equal(layout.columns,3,'six mobile stats form a 3×2 grid')}
    if(captureDir)await page.screenshot({path:`${captureDir}/providers-${width}-${theme}.png`});
    await page.close();
   }

@@ -73,7 +73,10 @@ func (r *ContainerRuntime) run(ctx context.Context, args ...string) ([]byte, err
 }
 
 type containerInspect struct {
-	State      struct{ Running bool }
+	State struct {
+		Running bool
+		Pid     int
+	}
 	Config     struct{ Labels map[string]string }
 	HostConfig struct{ Memory, MemorySwap int64 }
 }

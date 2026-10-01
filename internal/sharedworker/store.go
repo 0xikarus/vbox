@@ -53,6 +53,8 @@ type Runtime interface {
 
 type Store struct {
 	mu          sync.Mutex
+	diskMu      sync.Mutex
+	diskCache   map[string]diskObservation
 	Root        string
 	Capacity    int
 	Incarnation string
@@ -60,6 +62,13 @@ type Store struct {
 	state       State
 	lock        *os.File
 	failure     error
+}
+
+type diskObservation struct {
+	used       *int64
+	observedAt time.Time
+	startedAt  time.Time
+	running    bool
 }
 
 func NewID() string {

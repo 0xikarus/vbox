@@ -31,12 +31,37 @@ func (s *Server) boxResources(w http.ResponseWriter, r *http.Request, p Principa
 		writeError(w, 502, err)
 		return
 	}
+	response := map[string]any{"slotId": a.Slot.ID, "assignmentGeneration": a.Box.AssignmentGeneration, "resources": resources}
+	if usageReader, ok := prov.(provider.ResourceUsageProvider); ok {
+		if usage, err := usageReader.ResourceUsage(r.Context(), a.Slot.ServiceID); err == nil {
+			response["memoryUsedBytes"] = usage.MemoryUsedBytes
+			response["swapUsedBytes"] = usage.SwapUsedBytes
+			if usage.DiskUsedBytes != nil {
+				response["diskUsedBytes"] = *usage.DiskUsedBytes
+			}
+			if usage.DiskTotalBytes != nil {
+				response["diskTotalBytes"] = *usage.DiskTotalBytes
+			}
+			response["diskEnforced"] = usage.DiskEnforced
+			if usage.DiskObservedAt != nil {
+				response["diskObservedAt"] = usage.DiskObservedAt
+			}
+			if usage.DiskPartial {
+				response["diskPartial"] = true
+			}
+			if usage.HostDiskUsedBytes != nil && usage.HostDiskTotalBytes != nil {
+				response["hostDiskUsedBytes"] = *usage.HostDiskUsedBytes
+				response["hostDiskTotalBytes"] = *usage.HostDiskTotalBytes
+			}
+			response["observedAt"] = usage.ObservedAt
+		}
+	}
 	current, err := s.Store.assignment(r.Context(), p.AccountID, a.Box.ID)
 	if err != nil || nativeFence(current) != nativeFence(a) || current.Box.State != "running" {
 		writeError(w, 409, fmt.Errorf("assignment changed; reload resource settings"))
 		return
 	}
-	writeJSON(w, 200, map[string]any{"slotId": a.Slot.ID, "assignmentGeneration": a.Box.AssignmentGeneration, "resources": resources})
+	writeJSON(w, 200, response)
 }
 
 type boxResourceRequest struct {
@@ -102,6 +127,14 @@ func (s *Server) setBoxResources(w http.ResponseWriter, r *http.Request, p Princ
 	if !ok {
 		writeError(w, 409, fmt.Errorf("provider does not support resource limit settings"))
 		return
+	}
+	if usageReader, ok := prov.(provider.ResourceUsageProvider); ok {
+		if usage, err := usageReader.ResourceUsage(ctx, slot.ServiceID); err == nil {
+			if request.MemoryMiB*1024*1024 < usage.MemoryUsedBytes || request.SwapMiB != nil && *request.SwapMiB*1024*1024 < usage.SwapUsedBytes {
+				writeError(w, 409, fmt.Errorf("requested RAM or swap is below current usage"))
+				return
+			}
+		}
 	}
 	resources := provider.Resources{CPU: request.CPU, MemoryMiB: request.MemoryMiB}
 	if request.SwapMiB != nil {

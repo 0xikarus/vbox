@@ -51,7 +51,7 @@ window.VMBoxWorkspaceNav=(()=>{
   const frame=el('div');frame.className='sheet-scroll-frame';const body=el('div');body.className='sheet-scroll-body';
   const status=el('p');status.className='providers-status';status.setAttribute('role','status');
   const table=el('table');table.className='providers-table';const head=el('thead'),heading=el('tr');
-  for(const label of ['Provider','Workers','Slots','RAM used / total','Swap used / total','Observed',''])heading.append(el('th',label));
+  for(const label of ['Provider','Workers','Slots','RAM used / total','Swap used / total','Disk used / total','CPU','Observed',''])heading.append(el('th',label));
   head.append(heading);const rows=el('tbody');table.append(head,rows);body.append(status,table);frame.append(body);dialog.append(header,frame);document.body.append(dialog);
   let owner=false,generation=0;
   function cell(label,value){const td=el('td',value);td.dataset.label=label;return td}
@@ -73,10 +73,13 @@ window.VMBoxWorkspaceNav=(()=>{
    };
    const ram=resource('RAM',number(host?.memoryTotalBytes)-number(host?.memoryAvailableBytes),host?.memoryTotalBytes,!!snapshot.hostError);
    const swap=resource('Swap',number(host?.swapTotalBytes)-number(host?.swapFreeBytes),host?.swapTotalBytes,!!snapshot.hostError);
-   if(provider.provider!=='shared-worker'){ram.textContent='—';swap.textContent='—'}
+   const disk=resource('Disk',host?.diskUsedBytes,host?.diskTotalBytes,!!snapshot.hostError);
+   const cpu=cell('CPU',snapshot.hostError?'Unavailable':Number.isFinite(host?.cpuPercent)&&Number.isFinite(host?.cpuCores)?number(host.cpuPercent).toFixed(0)+'% · load '+number(host.cpuLoad1).toFixed(1)+' / '+number(host.cpuCores).toFixed(1).replace(/\.0$/,'')+' cores':'—');
+   if(!snapshot.hostError&&Number.isFinite(host?.cpuPercent)){const ratio=host.cpuPercent/100;if(ratio>=.95)cpu.classList.add('is-danger');else if(ratio>=.85)cpu.classList.add('is-warning')}
+   if(provider.provider!=='shared-worker'){ram.textContent='—';swap.textContent='—';disk.textContent='—';cpu.textContent='—'}
    const observed=cell('Observed',age(host?.observedAt));if(host?.observedAt)observed.title=new Date(host.observedAt).toLocaleString();
    const actions=cell('Actions');actions.className='providers-actions-space';const remove=el('button','Delete');remove.type='button';remove.className='providers-delete';remove.onclick=()=>void openProviderDelete(provider,load);actions.append(remove);
-   row.append(identity,cell('Workers',String(workers)),slotCell,ram,swap,observed,actions);
+   row.append(identity,cell('Workers',String(workers)),slotCell,ram,swap,disk,cpu,observed,actions);
   }
   async function load(){
    const request=++generation;refresh.disabled=true;status.textContent='Loading providers…';table.hidden=true;rows.replaceChildren();

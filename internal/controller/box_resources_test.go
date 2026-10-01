@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -16,6 +17,84 @@ type limitsTestProvider struct {
 	fakeProvider
 	calls     int
 	resources provider.Resources
+}
+
+type usageTestProvider struct {
+	limitsTestProvider
+	usage provider.ResourceUsage
+}
+
+func (p *usageTestProvider) ResourceUsage(context.Context, string) (provider.ResourceUsage, error) {
+	return p.usage, nil
+}
+
+func TestBoxResourcesIncludesOptionalUsage(t *testing.T) {
+	for _, withUsage := range []bool{false, true} {
+		t.Run(fmt.Sprint(withUsage), func(t *testing.T) {
+			store, mock := testStore(t)
+			var prov provider.Provider = &limitsTestProvider{resources: provider.Resources{CPU: 1, MemoryMiB: 2048, DiskGiB: 2}}
+			observed := time.Now().UTC()
+			diskUsed, diskTotal := int64(1500000000), int64(2<<30)
+			if withUsage {
+				prov = &usageTestProvider{limitsTestProvider: limitsTestProvider{resources: provider.Resources{CPU: 1, MemoryMiB: 2048, DiskGiB: 2}}, usage: provider.ResourceUsage{MemoryUsedBytes: 1200000000, SwapUsedBytes: 100000000, DiskUsedBytes: &diskUsed, DiskTotalBytes: &diskTotal, DiskObservedAt: &observed, ObservedAt: observed}}
+			}
+			server := NewServer(store, provider.NewRegistry())
+			server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return prov, nil }
+			for range 2 {
+				mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(sharedResourceBoxRow())
+				mock.ExpectQuery("SELECT COALESCE\\(fencing_token").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"fencing_token"}).AddRow("fence-1"))
+				mock.ExpectQuery("FROM compute_slots").WithArgs("account-a", "slot-1").WillReturnRows(occupiedSlotRow(observed))
+			}
+			req := httptest.NewRequest("GET", "/v1/logical-boxes/box-1/resources", nil)
+			req.SetPathValue("id", "box-1")
+			rec := httptest.NewRecorder()
+			server.boxResources(rec, req, Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"})
+			if rec.Code != 200 {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			var data map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
+				t.Fatal(err)
+			}
+			_, hasUsage := data["memoryUsedBytes"]
+			if hasUsage != withUsage || data["resources"] == nil {
+				t.Fatalf("usage presence=%v body=%s", hasUsage, rec.Body.String())
+			}
+			if withUsage && (data["diskTotalBytes"] != float64(diskTotal) || data["diskEnforced"] != false || data["diskObservedAt"] == nil) {
+				t.Fatalf("usage=%s", rec.Body.String())
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func sharedResourceBoxRow() *sqlmock.Rows {
+	now := time.Now().UTC()
+	return sqlmock.NewRows([]string{"id", "account_id", "owner_user_id", "name", "provider", "provider_credential", "default_agent", "role", "state", "volume_id", "volume_name", "slot_id", "assignment_generation", "lease_owner", "lease_expires_at", "restoration_state", "failure_reason", "created_at", "updated_at", "tools"}).
+		AddRow("box-1", "account-a", "user-a", "research", "shared-worker", "primary", "claude", "worker", "running", "volume-1", "volume-name", "slot-1", int64(3), "", nil, "", "", now, now, "[]")
+}
+
+func TestBoxResourceUpdateRejectsLimitBelowLiveUsage(t *testing.T) {
+	store, mock := testStore(t)
+	prov := &usageTestProvider{usage: provider.ResourceUsage{MemoryUsedBytes: 1200000000}}
+	server := NewServer(store, provider.NewRegistry())
+	server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return prov, nil }
+	mock.ExpectBegin()
+	mock.ExpectQuery("FROM logical_boxes.*FOR UPDATE").WithArgs("account-a", "box-1").WillReturnRows(sharedResourceBoxRow())
+	mock.ExpectQuery("FROM compute_slots.*FOR UPDATE OF s").WithArgs("account-a", "slot-1").WillReturnRows(occupiedSlotRow(time.Now()))
+	mock.ExpectRollback()
+	req := httptest.NewRequest("PUT", "/v1/logical-boxes/box-1/resources", strings.NewReader(`{"slotId":"slot-1","assignmentGeneration":3,"cpu":1,"memoryMiB":1024,"swapMiB":0}`))
+	req.SetPathValue("id", "box-1")
+	rec := httptest.NewRecorder()
+	server.setBoxResources(rec, req, Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"})
+	if rec.Code != 409 || prov.calls != 0 || !strings.Contains(rec.Body.String(), "below current usage") {
+		t.Fatalf("status=%d calls=%d body=%s", rec.Code, prov.calls, rec.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (p *limitsTestProvider) ResourceLimits(context.Context, string) (provider.Resources, error) {

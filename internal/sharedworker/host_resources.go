@@ -13,8 +13,23 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
-func HostResources() (provider.HostResources, error) {
-	return hostResourcesFromPaths("/proc/meminfo", "/sys/fs/cgroup")
+func HostResources(workspaceRoot string) (provider.HostResources, error) {
+	result, err := hostResourcesFromPaths("/proc/meminfo", "/sys/fs/cgroup")
+	if err != nil {
+		return result, err
+	}
+	if _, err := os.Stat(workspaceRoot); errors.Is(err, os.ErrNotExist) {
+		workspaceRoot = filepath.Dir(workspaceRoot)
+	} else if err != nil {
+		return result, err
+	}
+	metrics, err := readHostMetrics("/proc/loadavg", "/sys/fs/cgroup", workspaceRoot, nil, 0)
+	if err != nil {
+		return result, err
+	}
+	result.DiskTotalBytes, result.DiskUsedBytes = metrics.diskTotal, metrics.diskUsed
+	result.CPUCores, result.CPULoad1, result.CPUPercent, result.CPUScope = metrics.cores, metrics.load1, metrics.percent, metrics.scope
+	return result, nil
 }
 
 func hostResourcesFromPaths(meminfoPath, cgroupRoot string) (provider.HostResources, error) {

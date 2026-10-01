@@ -5,7 +5,7 @@
  const boxes=new Map(),rows=new Map(),pairs=new Map(),pairRows=new Map(),imageURLs=new Map(),imagePreviewURLs=new Map(),imagePending=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
  let imageGeneration=0;
  const resumeChecks=new Map();
- let selected='',selectedPair='',owner=false,boxTimer,msgTimer,activityTimer,activityPending=null,activityGeneration=0,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,viewEpoch=0;
+ let selected='',selectedPair='',owner=false,boxTimer,msgTimer,activityTimer,activityPending=null,activityGeneration=0,resourceTimer,resourceRequest=0,resourceSnapshot=null,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,viewEpoch=0;
  let usageProfiles=[],usageLoaded=false,selectedUsageProfile=null,chatUsageRequest=0,usageScope=null;
  const providersNav=window.VMBoxWorkspaceNav?.initProviders('chat-providers');
  const scrollMemory=new Map(),followMemory=new Map();
@@ -1904,6 +1904,7 @@
   $('#thread-composer button').disabled=box.state!=='running';
   updateSendState();
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
+  renderResourceChips();
   updateBanner();
  }
  // One banner for the two things that silently confuse people: a dropped
@@ -2097,7 +2098,7 @@ function pairTileStatus(tile,mode,label){
   const pair=pairs.get(key);if(!pair)return;
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
-  selected='';selectedPair=key;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();hideTvPreview();closeTakeover();stopPairHero();
+  selected='';selectedPair=key;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);closeResourcePopover();renderResourceChips();selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();hideTvPreview();closeTakeover();stopPairHero();
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
   // Box-to-box chats are read-only activity logs: opening one starts at its
@@ -2172,7 +2173,7 @@ function pairTileStatus(tile,mode,label){
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
-  if(selected!==id)cancelReply();selected=id;lastSignature='';hideComposerPicker();
+  if(selected!==id)cancelReply();closeResourcePopover();selected=id;resourceRequest++;resourceSnapshot=null;renderResourceChips();scheduleResources(0);lastSignature='';hideComposerPicker();
   selectedUsageProfile=null;renderChatUsage();if(owner)void loadChatUsageProfile(id);
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
@@ -2181,7 +2182,7 @@ function pairTileStatus(tile,mode,label){
   const restoredDraft=inputDrafts[id]||'';
   if(inputEl.value!==restoredDraft){inputEl.value=restoredDraft;grow()}
   renderDrafts();
-  $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;
+  $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;scheduleResources(0);
   appEl.classList.add('in-chat');
   renderHeader();
   statusEl.textContent='';
@@ -2711,14 +2712,14 @@ function pairTileStatus(tile,mode,label){
    row.append(t,d);target.append(row);
   }
  };
- function mountInspectMemory(box){
+ function mountInspectMemory(box,force=false){
   const root=$('#inspect-memory-settings');
   if(!owner||box.provider!=='shared-worker'||box.state!=='running'){root.hidden=true;root.dataset.boxId='';root.replaceChildren();return}
   root.hidden=false;
-  if(root.dataset.boxId===box.id&&root.dataset.generation===String(box.assignmentGeneration))return;
+  if(!force&&root.dataset.boxId===box.id&&root.dataset.generation===String(box.assignmentGeneration))return;
   root.dataset.boxId=box.id;root.dataset.generation=String(box.assignmentGeneration);
-  root.innerHTML='<h4>RAM and swap</h4><div class="memory-availability" aria-live="polite">Checking worker availability…</div><form><label>RAM <span>GiB</span><input name="memory" type="number" min="1" max="8" required></label><label>Swap <span>GiB</span><input name="swap" type="number" min="0" max="4" required></label><button type="submit">Apply live</button></form><p role="status">Loading limits…</p>';
-  const form=root.querySelector('form'),status=root.querySelector('[role="status"]'),availability=root.querySelector('.memory-availability');form.hidden=true;
+  root.innerHTML='<h4>RAM and swap</h4><div class="memory-availability" aria-live="polite">Checking worker availability…</div><form><label>RAM <span>GiB</span><input name="memory" type="number" min="1" max="8" step="1" required></label><label>Swap <span>GiB</span><input name="swap" type="number" min="0" max="4" step="1" required></label><button type="submit">Apply live</button></form><p class="memory-usage-warning" role="alert" hidden></p><p role="status">Loading limits…</p>';
+  const form=root.querySelector('form'),status=root.querySelector('[role="status"]'),availability=root.querySelector('.memory-availability'),warning=root.querySelector('.memory-usage-warning');form.hidden=true;
   const hostQuery=new URLSearchParams({provider:box.provider,providerCredential:box.providerCredential||''});
   void api('/v1/fleet/host-resources?'+hostQuery).then(host=>{
    if(root.dataset.boxId!==box.id||root.dataset.generation!==String(box.assignmentGeneration))return;
@@ -2737,17 +2738,27 @@ function pairTileStatus(tile,mode,label){
     return current;
    }catch(e){if(root.dataset.boxId===box.id)status.textContent=e.message;return null}
   };
-  let current=null;void load().then(value=>{current=value});
+  let current=null;
+  const updateWarning=()=>{
+   const memory=Number(form.elements.memory.value)*1024**3,swap=Number(form.elements.swap.value)*1024**3;
+   const unsafe=Number.isFinite(current?.memoryUsedBytes)&&memory<current.memoryUsedBytes?'RAM':Number.isFinite(current?.swapUsedBytes)&&swap<current.swapUsedBytes?'swap':'';
+   warning.textContent=unsafe?'Cannot set '+unsafe+' below current usage.':'';warning.hidden=!unsafe;
+   form.querySelector('button').disabled=!!unsafe;
+   return !!unsafe;
+  };
+  form.addEventListener('input',updateWarning);
+  void load().then(value=>{current=value;updateWarning()});
   form.onsubmit=async event=>{
    event.preventDefault();if(!current)return;
    const memory=Number(form.elements.memory.value),swap=Number(form.elements.swap.value);
    if(!Number.isInteger(memory)||memory<1||memory>8||!Number.isInteger(swap)||swap<0||swap>4){status.textContent='Choose 1–8 GiB RAM and 0–4 GiB swap.';return}
+   if(updateWarning())return;
    form.querySelector('button').disabled=true;status.textContent='Applying limits…';
    try{
     await api(boxPath(box.id)+'/resources','PUT',{}, {slotId:current.slotId,assignmentGeneration:current.assignmentGeneration,cpu:1,memoryMiB:memory*1024,swapMiB:swap*1024});
-    current=await load();if(current)status.textContent='Live limits saved.';
+    current=await load();if(current){status.textContent='Live limits saved.';void refreshBoxResources()}
    }catch(e){status.textContent=e.message}
-   finally{form.querySelector('button').disabled=false}
+   finally{form.querySelector('button').disabled=false;updateWarning()}
   };
  }
  function renderInspect(){
@@ -3562,12 +3573,15 @@ function pairTileStatus(tile,mode,label){
   boxTimer=setTimeout(tickBoxes,30000);
   msgTimer=setTimeout(tickMessages,3000);
   scheduleActivity(0);
+  scheduleResources(0);
  }
  function scheduleActivity(delay=5000){clearTimeout(activityTimer);if(!document.hidden&&!appEl.hidden)activityTimer=setTimeout(tickActivity,delay)}
  async function tickActivity(){const generation=activityGeneration;await refreshBoxActivity();if(generation===activityGeneration)scheduleActivity()}
+ function scheduleResources(delay=30000){clearTimeout(resourceTimer);if(owner&&selected&&!document.hidden&&!appEl.hidden&&!$('#chat-conversation').hidden)resourceTimer=setTimeout(tickResources,delay)}
+ async function tickResources(){await refreshBoxResources();scheduleResources()}
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
  async function tickMessages(){try{if(!document.hidden){if(selected)await refreshMessages();if(selectedPair)await refreshPairMessages()}reconnecting=false}catch(e){reconnecting=!!(selected||selectedPair);if(selectedPair)statusEl.textContent=e.message}if(selected)updateBanner();msgTimer=setTimeout(tickMessages,3000)}
- document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(activityTimer);stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();void tickActivity();if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(activityTimer);clearTimeout(resourceTimer);closeResourcePopover();stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();void tickActivity();scheduleResources(0);if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);await refreshBoxActivity();if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
@@ -3580,8 +3594,8 @@ function pairTileStatus(tile,mode,label){
  };
  $('#logout').onclick=async()=>{
   await flushReadMarkers();clearInterval(readSyncTimer);
-  groupStorageKey='';activityGeneration++;activityPending=null;
-  clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
+  groupStorageKey='';activityGeneration++;activityPending=null;resourceRequest++;resourceSnapshot=null;closeResourcePopover();
+  clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(resourceTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
   await disablePushSubscription();
   $('#usage-modal').hidden=true;
   usageGeneration++;usagePending=null;usageProfiles=[];usageLoaded=false;usageScope=null;selectedUsageProfile=null;chatUsageRequest++;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
@@ -3624,11 +3638,80 @@ function pairTileStatus(tile,mode,label){
  }
  addEventListener('pagehide',()=>{
   if(pendingReadMarkers.size)try{void fetch('/v1/chat-read-markers',{method:'PUT',credentials:'same-origin',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(pendingReadMarkers))})}catch{}
-  activityGeneration++;clearInterval(readSyncTimer);clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)
+  activityGeneration++;resourceRequest++;clearInterval(readSyncTimer);clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(resourceTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)
  });
  document.addEventListener('visibilitychange',()=>{if(document.hidden)void flushReadMarkers()});
 
  /* ---------- imported profile usage ---------- */
+ const resourcePopover=$('#chat-resource-popover'),memoryRoot=$('#inspect-memory-settings'),memoryHome=memoryRoot.parentElement;
+ let resourcePopoverTrigger=null;
+ const resourceGiB=bytes=>{const value=bytes/(1024**3);return Number.isInteger(value)?String(value):value.toFixed(1)};
+ const resourceTime=value=>value&&Number.isFinite(Date.parse(value))?new Date(value).toLocaleString():'Not observed';
+ function closeResourcePopover(){
+  if(memoryRoot.parentElement===resourcePopover)memoryHome.append(memoryRoot);
+  resourcePopover.hidden=true;resourcePopover.replaceChildren();
+  if(resourcePopoverTrigger){resourcePopoverTrigger.setAttribute('aria-expanded','false');resourcePopoverTrigger.focus({preventScroll:true});resourcePopoverTrigger=null}
+ }
+ function renderResourceChips(){
+  const box=boxes.get(selected),data=resourceSnapshot?.id===selected?resourceSnapshot.data:null;
+  for(const [kind,button] of [['ram',$('#chat-ram')],['disk',$('#chat-disk')]]){
+   button.hidden=!owner||!box||box.state!=='running'||!data;
+   if(button.hidden)continue;
+   const total=kind==='ram'?Number(data.resources?.memoryMiB||0)*1024**2:Number.isFinite(data.diskTotalBytes)?data.diskTotalBytes:Number(data.resources?.diskGiB||0)*1024**3;
+   const used=kind==='ram'?data.memoryUsedBytes:data.diskUsedBytes;
+   const measured=Number.isFinite(used)&&used>=0,ratio=measured&&total>0?used/total:null;
+   const label=kind==='ram'?'RAM':'Disk',text=label+' '+(measured?resourceGiB(used):'–')+'/'+(total?resourceGiB(total):'–')+' GB';
+   button.querySelector('.chat-resource-value').textContent=text;
+   button.querySelector('.chat-resource-ring-value').setAttribute('stroke-dasharray',(ratio===null?0:Math.max(0,Math.min(100,ratio*100)))+' 100');
+   button.classList.toggle('resource-warning',ratio!==null&&ratio>=.85&&(kind==='disk'&&data.diskEnforced===false||ratio<.95));
+   button.classList.toggle('resource-danger',ratio!==null&&ratio>=.95&&!(kind==='disk'&&data.diskEnforced===false));
+   button.classList.toggle('resource-unknown',ratio===null);
+   const detail=kind==='ram'?'Swap '+(Number.isFinite(data.swapUsedBytes)?resourceGiB(data.swapUsedBytes):'–')+'/'+resourceGiB(Number(data.resources?.swapMiB||0)*1024**2)+' GB':'Disk '+(data.diskPartial?'at least ':'')+(measured?resourceGiB(used):'–')+' GB used';
+   const observed=resourceTime(kind==='ram'?data.observedAt:data.diskObservedAt);
+   const hostDisk=kind==='disk'&&Number.isFinite(data.hostDiskUsedBytes)&&Number.isFinite(data.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0?' · Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'%':'';
+   const note=kind==='disk'&&data.diskEnforced===false?' · Limit '+resourceGiB(total)+' GB is not enforced on this shared worker':'';
+   button.title=text+' · '+detail+' · Observed '+observed+hostDisk+note;
+   button.setAttribute('aria-label',button.title);
+  }
+ }
+ async function refreshBoxResources(){
+  const box=boxes.get(selected);
+  if(!owner||!box||box.state!=='running'||document.hidden||appEl.hidden||$('#chat-conversation').hidden)return;
+  const id=selected,request=++resourceRequest;
+  try{
+   const data=await api(boxPath(id)+'/resources');
+   if(request!==resourceRequest||selected!==id||document.hidden||!owner)return;
+   resourceSnapshot={id,data};renderResourceChips();
+  }catch{
+   if(request===resourceRequest&&selected===id){resourceSnapshot=null;renderResourceChips()}
+  }
+ }
+ function openResourcePopover(kind){
+  const button=$(kind==='ram'?'#chat-ram':'#chat-disk'),box=boxes.get(selected),data=resourceSnapshot?.id===selected?resourceSnapshot.data:null;
+  if(button.hidden||!box||!data)return;
+  if(!resourcePopover.hidden&&resourcePopoverTrigger===button){closeResourcePopover();return}
+  closeResourcePopover();resourcePopoverTrigger=button;button.setAttribute('aria-expanded','true');
+  const header=mk('div');header.className='resource-popover-heading';const title=mk('strong',kind==='ram'?'RAM and swap':'Disk');const close=mk('button','×');close.type='button';close.setAttribute('aria-label','Close resource details');close.onclick=closeResourcePopover;header.append(title,close);resourcePopover.append(header);
+  const detail=mk('p',button.querySelector('.chat-resource-value').textContent);resourcePopover.append(detail);
+  if(kind==='ram'){
+   resourcePopover.append(mk('p','Swap '+(Number.isFinite(data.swapUsedBytes)?resourceGiB(data.swapUsedBytes):'–')+'/'+resourceGiB(Number(data.resources?.swapMiB||0)*1024**2)+' GB'));
+   resourcePopover.append(mk('p','Observed '+resourceTime(data.observedAt)));
+   if(box.provider==='shared-worker'){mountInspectMemory(box,true);resourcePopover.append(memoryRoot)}
+  }else{
+   resourcePopover.append(mk('p','Observed '+resourceTime(data.diskObservedAt)));
+   if(data.diskPartial)resourcePopover.append(mk('p','The scan is partial; actual usage may be higher.'));
+   if(Number.isFinite(data.hostDiskUsedBytes)&&Number.isFinite(data.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0)resourcePopover.append(mk('p','Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'% used'));
+   if(data.diskEnforced===false)resourcePopover.append(mk('p','Limit '+resourceGiB(Number.isFinite(data.diskTotalBytes)?data.diskTotalBytes:Number(data.resources?.diskGiB||0)*1024**3)+' GB is not enforced on this shared worker.'));
+  }
+  resourcePopover.hidden=false;
+  const rect=button.getBoundingClientRect(),width=resourcePopover.offsetWidth,height=resourcePopover.offsetHeight;
+  resourcePopover.style.left=Math.max(8,Math.min(rect.left,innerWidth-width-8))+'px';
+  resourcePopover.style.top=Math.max(8,Math.min(rect.bottom+8,innerHeight-height-8))+'px';
+  close.focus({preventScroll:true});
+ }
+ $('#chat-ram').onclick=()=>openResourcePopover('ram');$('#chat-disk').onclick=()=>openResourcePopover('disk');
+ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!resourcePopover.hidden){event.preventDefault();closeResourcePopover()}});
+ document.addEventListener('pointerdown',event=>{if(!resourcePopover.hidden&&!resourcePopover.contains(event.target)&&event.target!==resourcePopoverTrigger)closeResourcePopover()});
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
  function usageDate(value){if(!value)return 'unknown';const date=new Date(value);return Number.isNaN(date.getTime())?'unknown':date.toLocaleString()}
  function usageCompactDate(value){if(!value)return 'unknown';const date=new Date(value);if(Number.isNaN(date.getTime()))return 'unknown';const options={month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'};if(date.getFullYear()!==new Date().getFullYear())options.year='numeric';return date.toLocaleString([],options)}
