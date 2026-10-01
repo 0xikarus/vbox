@@ -93,7 +93,7 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   await page.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
   await page.waitForFunction(()=>innerWidth===390&&document.querySelector('#chat-app').classList.contains('in-chat')&&!document.querySelector('#chat-conversation').hidden&&document.querySelector('#chat-loading').hidden&&document.querySelector('#chat-messages').scrollHeight>document.querySelector('#chat-messages').clientHeight);
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-  await page.$eval('#chat-messages',element=>element.scrollTo({top:0,behavior:'instant'}));
+  await page.$eval('#chat-messages',element=>{element.scrollTo({top:0,behavior:'instant'});element.dispatchEvent(new Event('scroll'))});
   await page.waitForFunction(()=>document.querySelector('#chat-messages').scrollTop<3);
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
   messages=[...messages,{id:'while-reading-mobile',direction:'agent',state:'delivered',text:'NEW REPLY ON MOBILE',createdAt:timestamp(33),updatedAt:timestamp(33)}];

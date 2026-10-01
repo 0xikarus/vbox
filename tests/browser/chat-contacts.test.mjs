@@ -330,11 +330,15 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(await p.$eval('#create-box input[name=agentModel]',input=>input.value),'haiku');
   await p.click('#create-box .model-picker-open');
   await p.keyboard.press('Escape');
+  await p.waitForFunction(()=>!document.querySelector('dialog.model-picker-dialog').open);
   assert.equal(await p.$eval('#new-box-modal',modal=>modal.hidden),false,'closing model choices must not close the box form');
   await p.select('#create-box select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
   await p.type('#create-box input[name=name]','github-chat-fixture');
+  await p.waitForFunction(()=>document.querySelector('#create-box input[name=name]').value==='github-chat-fixture'&&document.querySelector('#create-box').checkValidity());
+  const created=p.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
   await p.$eval('#create-box',form=>form.requestSubmit());
-  await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden,{timeout:5000});
+  await created;
+  await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden);
   assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'haiku'},{application:'github',name:'gh-work'}]);
   assert.equal('roleIds' in creations.at(-1),false,'new boxes do not inherit a role bundle');
   const threadTime=new Date().toISOString();
