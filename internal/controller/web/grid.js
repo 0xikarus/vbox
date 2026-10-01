@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
  const $=s=>document.querySelector(s),tiles=[];let boxes=[],epoch=0,timer,automaticLayout=true;const unavailable=new Map();
- const workspaceNav=window.VMBoxWorkspaceNav?.init({menuId:'grid-menu',panelId:'grid-menu-panel',usageId:'grid-usage'});
+ const workspaceNav=window.VMBoxWorkspaceNav?.init({menuId:'grid-menu',panelId:'grid-menu-panel',usageId:'grid-usage',providersId:'grid-providers'});
  const node=(tag,text)=>{const e=document.createElement(tag);if(text)e.textContent=text;return e};
  const ICON={
   refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>',

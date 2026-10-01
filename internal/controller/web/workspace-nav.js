@@ -1,5 +1,72 @@
 'use strict';
 window.VMBoxWorkspaceNav=(()=>{
+ const el=(tag,text)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;return node};
+ const read=async path=>{const response=await fetch(path,{credentials:'same-origin',cache:'no-store'});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||`Could not load provider data (${response.status})`);return data};
+ const number=value=>Number.isFinite(Number(value))?Number(value):0;
+ const gib=bytes=>(number(bytes)/(1024**3)).toFixed(1)+' GiB';
+ function age(timestamp){const time=Date.parse(timestamp);if(!Number.isFinite(time))return '—';const seconds=Math.max(0,Math.floor((Date.now()-time)/1000));if(seconds<60)return 'Just now';const minutes=Math.floor(seconds/60);if(minutes<60)return minutes+' min ago';const hours=Math.floor(minutes/60);if(hours<24)return hours+' hr ago';return Math.floor(hours/24)+' d ago'}
+ function initProviders(id){
+  const button=document.getElementById(id);if(!button)return {setOwner(){}};
+  const dialog=el('dialog');dialog.className='vb-sheet-dialog providers-dialog';dialog.setAttribute('aria-labelledby',id+'-title');
+  const header=el('header');header.className='vb-sheet-header';const title=el('h2','Providers');title.id=id+'-title';
+  const refresh=el('button','Refresh');refresh.type='button';refresh.className='providers-refresh';
+  const link=el('a','Open providers →');link.href='/#providers';link.className='providers-open-link';
+  const close=el('button','×');close.type='button';close.className='providers-close';close.setAttribute('aria-label','Close providers');close.onclick=()=>dialog.close();
+  header.append(title,refresh,link,close);
+  const frame=el('div');frame.className='sheet-scroll-frame';const body=el('div');body.className='sheet-scroll-body';
+  const status=el('p');status.className='providers-status';status.setAttribute('role','status');
+  const table=el('table');table.className='providers-table';const head=el('thead'),heading=el('tr');
+  for(const label of ['Provider','Workers','Slots used / free','RAM used / total','Swap used / total','Observed',''])heading.append(el('th',label));
+  head.append(heading);const rows=el('tbody');table.append(head,rows);body.append(status,table);frame.append(body);dialog.append(header,frame);document.body.append(dialog);
+  let owner=false,generation=0;
+  function cell(label,value){const td=el('td',value);td.dataset.label=label;return td}
+  function renderRow(row,provider,isDefault,snapshot){
+   const {fleet,config,host,errors}=snapshot;
+   row.replaceChildren();
+   const identity=cell('Provider');identity.className='providers-identity';const name=el('strong',provider.name||'Default');const type=el('small',provider.provider==='shared-worker'?'Shared worker':provider.provider);identity.append(name,type);
+   if(isDefault){const badge=el('span','Default');badge.className='providers-default';identity.append(badge)}
+   if(errors.length){const error=el('p',errors.join(' · '));error.className='providers-row-error';identity.append(error)}
+   const slots=Array.isArray(fleet?.slots)?fleet.slots:[];
+   const workers=fleet?(provider.provider==='shared-worker'?(slots.length?1:0):new Set(slots.map(slot=>slot.serviceId||slot.id).filter(Boolean)).size):'—';
+   const used=Number.isFinite(fleet?.occupiedSlots)?fleet.occupiedSlots:'—',free=Number.isFinite(fleet?.freeSlots)?fleet.freeSlots:'—';
+   const capacity=Number.isFinite(config?.compute_box_slots)?config.compute_box_slots:null;
+   const slotText=used+' / '+free+(capacity!==null?' · '+capacity+' set':'');
+   const resource=(label,usedBytes,totalBytes,unavailable)=>{
+    const total=number(totalBytes),used=Math.max(0,number(usedBytes)),item=cell(label,unavailable?'Unavailable':total?gib(used)+' / '+gib(total):label==='Swap'?'No swap':'—');
+    if(!unavailable&&total&&used/total>=.85)item.classList.add('is-warning');return item;
+   };
+   const ram=resource('RAM',number(host?.memoryTotalBytes)-number(host?.memoryAvailableBytes),host?.memoryTotalBytes,!!snapshot.hostError);
+   const swap=resource('Swap',number(host?.swapTotalBytes)-number(host?.swapFreeBytes),host?.swapTotalBytes,!!snapshot.hostError);
+   if(provider.provider!=='shared-worker'){ram.textContent='—';swap.textContent='—'}
+   const observed=cell('Observed',age(host?.observedAt));if(host?.observedAt)observed.title=new Date(host.observedAt).toLocaleString();
+   const actions=cell('Actions');actions.className='providers-actions-space';actions.setAttribute('aria-hidden','true');
+   row.append(identity,cell('Workers',String(workers)),cell('Slots',slotText),ram,swap,observed,actions);
+  }
+  async function load(){
+   const request=++generation;refresh.disabled=true;status.textContent='Loading providers…';table.hidden=true;rows.replaceChildren();
+   try{
+    const [providers,defaultResult]=await Promise.all([read('/v1/provider-credentials'),read('/v1/controller-defaults').catch(()=>null)]);
+    if(request!==generation||!dialog.open)return;
+    if(!Array.isArray(providers))throw Error('Provider list unavailable');
+    status.textContent=providers.length?'':'No providers configured.';table.hidden=!providers.length;
+    await Promise.all(providers.map(async provider=>{
+     const row=el('tr');rows.append(row);const identity=cell('Provider',provider.name||'Default');identity.className='providers-identity';row.append(identity,cell('Status','Loading capacity…'));
+     const query=new URLSearchParams({provider:provider.provider,providerCredential:provider.name||''});
+     const results=await Promise.allSettled([read('/v1/fleet/status?'+query),read('/v1/fleet/slots?'+query),provider.provider==='shared-worker'?read('/v1/fleet/host-resources?'+query):Promise.resolve(null)]);
+     if(request!==generation||!dialog.open)return;
+     const value=index=>results[index].status==='fulfilled'?results[index].value:null;
+     const errors=[];if(results[0].status==='rejected')errors.push('Capacity unavailable: '+results[0].reason.message);if(results[1].status==='rejected')errors.push('Slot settings unavailable: '+results[1].reason.message);
+     const hostError=results[2].status==='rejected'?results[2].reason.message:'';if(hostError)errors.push('Resource usage unavailable: '+hostError);
+     renderRow(row,provider,defaultResult?.provider===provider.provider&&defaultResult?.providerCredential===(provider.name||''),{fleet:value(0),config:value(1),host:value(2),hostError,errors});
+    }));
+   }catch(error){if(request===generation&&dialog.open){status.textContent=error.message;table.hidden=true}}
+   finally{if(request===generation)refresh.disabled=false}
+  }
+  button.onclick=()=>{if(!owner)return;dialog.showModal();void load()};refresh.onclick=()=>void load();
+  dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close()});
+  dialog.addEventListener('close',()=>{generation++;button.focus()});
+  return {setOwner(value){owner=!!value;button.hidden=!owner;if(!owner&&dialog.open)dialog.close()}};
+ }
  function updateUsagePill(button,_profiles,owner=true){
   if(!button)return;
   button.hidden=!owner;
@@ -7,8 +74,9 @@ window.VMBoxWorkspaceNav=(()=>{
   button.setAttribute('aria-label','Usage');
   button.title='Usage';
  }
- function init({menuId,panelId,usageId}){
+ function init({menuId,panelId,usageId,providersId}){
   const menu=menuId?document.getElementById(menuId):null,panel=panelId?document.getElementById(panelId):null,usage=document.getElementById(usageId);
+  const providers=initProviders(providersId);
   if(!usage)return {setOwner(){},closeMenu(){}};
   const dialog=document.createElement('dialog');dialog.className='workspace-usage-dialog vb-sheet-dialog';dialog.setAttribute('aria-label','Profile usage limits');
   const header=document.createElement('header');header.className='vb-sheet-header';const title=document.createElement('h2');title.textContent='Profile usage limits';
@@ -58,7 +126,7 @@ window.VMBoxWorkspaceNav=(()=>{
    }catch(error){if(dialog.open)status.textContent=error.message}
   }
   usage.onclick=()=>void showUsage();
-  return {setOwner(value){owner=!!value;updateUsagePill(usage,null,owner);if(!owner&&dialog.open)dialog.close()},closeMenu};
+  return {setOwner(value){owner=!!value;updateUsagePill(usage,null,owner);providers.setOwner(owner);if(!owner&&dialog.open)dialog.close()},closeMenu};
  }
- return {init,updateUsagePill};
+ return {init,initProviders,updateUsagePill};
 })();

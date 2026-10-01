@@ -1,6 +1,6 @@
 'use strict';
 const $=s=>document.querySelector(s);
-const workspaceNav=window.VMBoxWorkspaceNav?.init({menuId:'manage-menu',panelId:'manage-menu-panel',usageId:'manage-usage'});
+const workspaceNav=window.VMBoxWorkspaceNav?.init({menuId:'manage-menu',panelId:'manage-menu-panel',usageId:'manage-usage',providersId:'manage-providers'});
 let token='',defaults=null,epoch=0;
 let boxRefreshTimer;
 let fleetSnapshots=[];

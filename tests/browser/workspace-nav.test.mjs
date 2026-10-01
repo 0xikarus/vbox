@@ -10,7 +10,7 @@ const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg
 const profiles=[{application:'claude',name:'work',snapshot:{windows:[{name:'session',usedPercent:39},{name:'weekly_all',usedPercent:90}]}}];
 const pages=[['chat','/chat','usage-toggle'],['manage','/','manage-usage'],['grid','/grid','grid-usage'],['workspace','/boxes/builder','workspace-usage']];
 
-test('all workspace topbars show only Usage and open the all-profile sheet',async()=>{
+test('all workspace topbars keep Usage beside Providers and open the all-profile sheet',async()=>{
  const server=http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;
   if(path==='/v1/profile-usage'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({profiles}))}
@@ -44,8 +44,8 @@ test('all workspace topbars show only Usage and open the all-profile sheet',asyn
    if(screenshotDir){
     const header=await page.$('.workspace-top');await header.screenshot({path:screenshotDir+'/'+name+'-'+theme+'-'+width+'.png'});
    }
-   const state=await page.$eval('#'+id,button=>({text:button.textContent,ring:!!button.querySelector('svg'),label:button.getAttribute('aria-label'),title:button.title,next:button.nextElementSibling?.classList.contains('workspace-nav-refresh'),height:button.getBoundingClientRect().height,scrollWidth:document.documentElement.scrollWidth}));
-   assert.equal(state.text,'Usage',name+' shows only Usage');assert.equal(state.ring,false);assert.equal(state.label,'Usage');assert.equal(state.title,'Usage');assert.equal(state.next,true,name+' keeps usage before the rightmost action');assert.equal(state.height,36);assert.ok(state.scrollWidth<=width,name+' fits the viewport');
+   const state=await page.$eval('#'+id,button=>({text:button.textContent,ring:!!button.querySelector('svg'),label:button.getAttribute('aria-label'),title:button.title,next:button.nextElementSibling?.classList.contains('workspace-nav-providers'),height:button.getBoundingClientRect().height,scrollWidth:document.documentElement.scrollWidth}));
+   assert.equal(state.text,'Usage',name+' shows only Usage');assert.equal(state.ring,false);assert.equal(state.label,'Usage');assert.equal(state.title,'Usage');assert.equal(state.next,true,name+' keeps usage beside Providers');assert.equal(state.height,36);assert.ok(state.scrollWidth<=width,name+' fits the viewport');
    await page.$eval('#'+id,button=>window.VMBoxWorkspaceNav.updateUsagePill(button,[],true));
    assert.equal(await page.$eval('#'+id,button=>button.textContent),'Usage',name+' is independent of profile usage');
    if(name==='chat')assert.equal(await page.evaluate(()=>!!document.querySelector('#chat-menu-sheet #usage-toggle')),false);

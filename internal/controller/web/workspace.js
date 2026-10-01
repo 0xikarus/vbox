@@ -5,7 +5,7 @@ let closeTerminal=()=>{},terminalAttached=false,terminalBusy=null;
 let closeDesktop=()=>{},desktopBusy=false,desktopAttached=false;
 let refreshDesktopPreview=()=>{};
 let selectedWorkspaceView='',workspaceRole='',managedSession='';
-const workspaceUsage=window.VMBoxWorkspaceNav?.init({usageId:'workspace-usage'});
+const workspaceUsage=window.VMBoxWorkspaceNav?.init({usageId:'workspace-usage',providersId:'workspace-providers'});
 const workspaceMascot=window.VBoxMascot?.Mascot?new window.VBoxMascot.Mascot($('.workspace-avatar-mascot'),boxID):null;
 function showLogin(message=''){workspaceUsage?.setOwner(false);$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
 

@@ -7,6 +7,7 @@
  const resumeChecks=new Map();
  let selected='',selectedPair='',owner=false,boxTimer,msgTimer,activityTimer,activityPending=null,activityGeneration=0,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,viewEpoch=0;
  let usageProfiles=[],usageLoaded=false,selectedUsageProfile=null,chatUsageRequest=0,usageScope=null;
+ const providersNav=window.VMBoxWorkspaceNav?.initProviders('chat-providers');
  const scrollMemory=new Map(),followMemory=new Map();
  let restoringTranscript=false;
  // Polling may update data during a touch gesture, but replacing rows while a
@@ -3557,7 +3558,7 @@ function pairTileStatus(tile,mode,label){
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);await refreshBoxActivity();if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
  /* ---------- auth ---------- */
- function showLogin(message=''){$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
+ function showLogin(message=''){providersNav?.setOwner(false);$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
  $('#login').onsubmit=async event=>{
   event.preventDefault();
   $('#login-error').textContent='';
@@ -3581,7 +3582,7 @@ function pairTileStatus(tile,mode,label){
   for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url);
   attachmentDrafts.clear();renderDrafts();pendingKey='';pendingFingerprint='';
   boxes.clear();rows.clear();pairs.clear();pairRows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;delete messagesEl.dataset.pair;
-  owner=false;extrasLoaded=false;chatCommands=[];mentionCache.clear();hideComposerPicker();closeSheets();
+  owner=false;providersNav?.setOwner(false);extrasLoaded=false;chatCommands=[];mentionCache.clear();hideComposerPicker();closeSheets();
   selected='';selectedPair='';restoringTranscript=false;newMessagesBtn.hidden=true;scrollMemory.clear();followMemory.clear();lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').classList.remove('pair-view');
   $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;showLogin();
  };
@@ -3590,6 +3591,7 @@ function pairTileStatus(tile,mode,label){
    const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';await loadChatGroups(who.accountId||'default');await loadReadMarkers();
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
    window.VMBoxWorkspaceNav?.updateUsagePill($('#usage-toggle'),null,owner);
+   providersNav?.setOwner(owner);
    $('#presets-toggle').hidden=!owner;
    $('#commands-toggle').hidden=!owner;
    $('#ai-settings-toggle').hidden=!owner;
