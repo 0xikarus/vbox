@@ -41,7 +41,7 @@
    const rows=shown.length?shown.map(mail=>`<button type="button" class="mail-list-row ${mail.unread?'is-unread':''}" data-mail-id="${mail.id}"><span class="mail-unread-dot" aria-hidden="true"></span><span class="mail-list-content"><span class="mail-list-top"><strong>${esc(mail.sender)}</strong><time>${esc(mail.time)}</time></span><span class="mail-list-subject">${esc(mail.subject)}${mail.attachment?' <span title="Has attachment" aria-label="Has attachment">⌕</span>':''}</span><span class="mail-list-preview">${esc(mail.preview)}</span></span></button>`).join(''):`<div class="mail-empty compact"><strong>No ${state.filter==='quarantine'?'quarantined':'unread'} mail</strong><p>You're all caught up here.</p></div>`;
    list=`<section class="ip-card mail-list-card">${tabs}<div class="mail-list">${rows}</div></section>`;
   }
-  return `${settings}<div class="mail-section-heading"><strong>Messages</strong><span>${count} unread</span></div>${list}`;
+  return `<div class="mail-section-heading"><strong>Messages</strong><span>${count} unread</span></div>${list}${settings}`;
  }
  function renderDetail(){
   const mail=fixtureMails.find(item=>item.id===state.mailId)||fixtureMails[0];

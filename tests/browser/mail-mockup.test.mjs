@@ -121,7 +121,12 @@ test('fixture-only mail mockup covers inbox, detail, approval, and quiet states'
    assert.equal(await page.$('#mail-mockup-sidebar-signal'),null);
    assert.equal(await page.$('#mail-mockup-push'),null);
    await page.click('#inspect-close');
-   if(width===390)assert.equal(await page.$eval('#mail-mockup-approval-mobile',node=>node.hidden),false);
+   if(width===390){
+    assert.equal(await page.$eval('#mail-mockup-approval-mobile',node=>node.hidden),false);
+    assert.equal(await page.$eval('#chat-usage',node=>getComputedStyle(node).display),'none');
+    assert.equal(await page.$eval('#chat-header-name',node=>node.scrollWidth<=node.clientWidth),true,'full box name fits in the phone header');
+   }
+   await save('chat-header');
    assert.equal(await page.$eval('#mail-mockup-chat-preview',node=>node.textContent.includes('3 new mails')),true);
    await save('chat-notices');
    await page.click('.mail-chat-line summary');
