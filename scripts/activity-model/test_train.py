@@ -1,4 +1,7 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
 
 import train
 
@@ -48,6 +51,18 @@ class ExtraRealLeakageTest(unittest.TestCase):
         kept, removed = train.filter_extra_real([first, second], [], set())
         self.assertEqual(len(kept), 1)
         self.assertEqual(removed.get("duplicate_extra_tail"), 1)
+
+    def test_synthetic_split_keeps_duplicate_text_out_of_holdout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic.jsonl"
+            rows = [{"id": f"example-{index}", "text": f"assistant: Checking synthetic task {index}", "phrase": "Checking task"}
+                    for index in range(40)]
+            rows.append({"id": "duplicate-id", "text": rows[0]["text"], "phrase": rows[0]["phrase"]})
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            training, validation, heldout = train.load_data(path)
+            self.assertEqual(len(training) + len(validation) + len(heldout), 40)
+            self.assertFalse({row.text for row in training} & {row.text for row in heldout})
+            self.assertFalse({row.text for row in training} & {row.text for row in validation})
 
 
 if __name__ == "__main__":

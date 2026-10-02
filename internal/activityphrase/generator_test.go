@@ -8,11 +8,12 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
 
-const generatorArtifactSHA256 = "ef43e1e311da14e4d3f2a9cab373e76becf8f9101afa7a58a9906ca644dd89cd"
+const generatorArtifactSHA256 = "3a107c0a1b720cb8abe9e055a88a989ca25baa4af9a09285817b9d3b184223fe"
 
 type generatorGolden struct {
 	ID     string  `json:"id"`
@@ -88,11 +89,42 @@ func TestGeneratorMatchesPythonExport(t *testing.T) {
 	}
 }
 
-func BenchmarkGenerator20Real(b *testing.B) {
+func TestGeneratorFixturesUseSyntheticCorpus(t *testing.T) {
+	ids := make(map[string]bool)
+	for _, row := range loadGeneratorRows(t, "../../scripts/activity-data/synthetic.jsonl") {
+		ids[row.ID] = true
+	}
+	for _, path := range []string{"testdata/activity_golden.jsonl", "testdata/activity_benchmark.jsonl"} {
+		for _, row := range loadGeneratorRows(t, path) {
+			if !ids[row.ID] {
+				t.Errorf("%s includes an example outside the synthetic corpus: %s", path, row.ID)
+			}
+		}
+	}
+}
+
+func TestGeneratorVocabularyUsesSyntheticCorpus(t *testing.T) {
+	terms := make(map[string]bool)
+	for _, row := range loadGeneratorRows(t, "../../scripts/activity-data/synthetic.jsonl") {
+		for _, text := range []string{NormalizeEvidence(row.Text), row.Phrase} {
+			for _, term := range generatorToken.FindAllString(strings.ToLower(text), -1) {
+				terms[term] = true
+			}
+		}
+	}
+	model := loadGeneratorArtifact(t)
+	for _, term := range model.vocab[6:] {
+		if !terms[term] {
+			t.Errorf("generator vocabulary has a token absent from synthetic examples: %q", term)
+		}
+	}
+}
+
+func BenchmarkGenerator20Synthetic(b *testing.B) {
 	model := loadGeneratorArtifact(b)
 	goldens := loadGeneratorRows(b, "testdata/activity_benchmark.jsonl")
 	if len(goldens) < 20 {
-		b.Fatal("need at least 20 real golden inputs")
+		b.Fatal("need at least 20 synthetic golden inputs")
 	}
 	durations := make([]time.Duration, 0, b.N*20)
 	b.ResetTimer()

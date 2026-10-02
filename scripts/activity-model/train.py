@@ -54,19 +54,22 @@ def read_jsonl(path):
                 yield json.loads(line)
 
 
-def load_data(synthetic_path, real_paths=None):
-    snippets = {}
-    if real_paths is None:
-        real_paths = [ROOT / "scripts/activity-data" / name for name in ("snippets.jsonl", "claude-snippets.jsonl")]
-    for path in real_paths:
-        for item in read_jsonl(path):
-            snippets[item["id"]] = item["text"]
-    labels = {item["id"]: item["phrase"] for item in read_jsonl(ROOT / "scripts/activity-data/labels.jsonl")}
-    if snippets.keys() != labels.keys():
-        raise ValueError("real snippets and labels have different IDs")
-    real = [Sample(key, snippets[key], labels[key], "real") for key in sorted(snippets)]
+def load_data(synthetic_path):
+    """Split one synthetic or caller-owned labeled JSONL by stable ID hash."""
+    rows = [Sample(item["id"], item["text"], item["phrase"], "synthetic")
+            for item in read_jsonl(synthetic_path)]
+    if any(not item.id or not item.text or not item.phrase for item in rows):
+        raise ValueError("examples need id, text, and phrase")
+    if len({item.id for item in rows}) != len(rows):
+        raise ValueError("duplicate example IDs")
+    # Generated corpora may repeat a normalized excerpt under multiple IDs.
+    # Keep one copy before splitting so no exact input appears in both train
+    # and held-out evaluation, even if its duplicate IDs hash differently.
+    unique = {}
+    for item in sorted(rows, key=lambda row: row.id):
+        unique.setdefault(item.text, item)
     train, validation, heldout = [], [], []
-    for item in real:
+    for item in unique.values():
         bucket = hashlib.sha256(item.id.encode()).digest()[0]
         if bucket % 5 == 0:
             heldout.append(item)
@@ -74,13 +77,9 @@ def load_data(synthetic_path, real_paths=None):
             validation.append(item)
         else:
             train.append(item)
-    synthetic = []
-    if synthetic_path is not None and synthetic_path.exists():
-        synthetic = [Sample(item["id"], item["text"], item["phrase"], "synthetic") for item in read_jsonl(synthetic_path)]
-        real_ids = {item.id for item in real}
-        if any(item.id in real_ids for item in synthetic):
-            raise ValueError("synthetic IDs overlap real evaluation data")
-    return train, validation, heldout, synthetic
+    if not train or not validation or not heldout:
+        raise ValueError("need examples in training, validation, and held-out splits")
+    return train, validation, heldout
 
 
 def normalize_file(input_path, output_path):
@@ -91,10 +90,7 @@ def normalize_file(input_path, output_path):
 
 def normalized_paths(synthetic_path, scratch_dir):
     scratch_dir.mkdir(parents=True, exist_ok=True)
-    real_paths = [normalize_file(ROOT / "scripts/activity-data" / name, scratch_dir / ("normalized-" + name))
-                  for name in ("snippets.jsonl", "claude-snippets.jsonl")]
-    synthetic = normalize_file(synthetic_path, scratch_dir / "normalized-synthetic.jsonl") if synthetic_path.exists() else synthetic_path
-    return real_paths, synthetic
+    return normalize_file(synthetic_path, scratch_dir / "normalized-synthetic.jsonl")
 
 
 def evidence_tail(text):
@@ -559,7 +555,7 @@ def evaluate(model, rows, vocab, output_path, golden_path, predictions_path, thr
     with open(golden_path, "w", encoding="utf-8") as output:
         for item in golden:
             output.write(json.dumps(item, ensure_ascii=False) + "\n")
-    print(f"REAL held-out: overlap>=0.6 {hits}/{len(rows)} ({hits/len(rows):.1%}), exact {exact}/{len(rows)}, coverage {coverage}/{len(rows)}, model-only {model_hits}/{len(rows)}, sources {source_counts}")
+    print(f"held-out: overlap>=0.6 {hits}/{len(rows)} ({hits/len(rows):.1%}), exact {exact}/{len(rows)}, coverage {coverage}/{len(rows)}, model-only {model_hits}/{len(rows)}, sources {source_counts}")
     for pair in pairs[:20]:
         print(f"  {pair['id']}: {pair['input_tail'][-70:]!r} -> {pair['output']!r} (teacher {pair['teacher']!r})")
 
@@ -568,13 +564,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--synthetic", type=Path, default=ROOT / "scripts/activity-data/synthetic.jsonl")
     parser.add_argument("--extra-real", type=Path,
-                        help="optional labeled prose corpus; omit to reproduce the bundled v2 weights")
+                        help="optional caller-owned labeled prose corpus; never commit it or its derived outputs")
     parser.add_argument("--extra-verb-cap", type=int, default=100,
                         help="maximum extra examples sharing an activity verb; zero disables balancing")
     parser.add_argument("--out", type=Path, default=ROOT / "internal/controller/activity_model.bin")
     parser.add_argument("--golden", type=Path, default=ROOT / "internal/activityphrase/testdata/activity_golden.jsonl")
     parser.add_argument("--eval", type=Path, default=ROOT / "scripts/activity-model/eval.json")
-    parser.add_argument("--predictions", type=Path, default=ROOT / "scripts/activity-model/heldout-predictions.jsonl")
+    parser.add_argument("--predictions", type=Path, default=ROOT / "scripts/activity-model/predictions.jsonl")
     parser.add_argument("--threshold", type=float, default=-.525)
     parser.add_argument("--eval-only", action="store_true", help="evaluate the already exported model")
     parser.add_argument("--epochs", type=int, default=20)
@@ -589,29 +585,29 @@ def main():
     torch.manual_seed(20261001)
     random.seed(20261001)
     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
-    real_paths, normalized_synthetic = normalized_paths(args.synthetic, args.checkpoint.parent)
-    train, validation, heldout, synthetic = load_data(normalized_synthetic, real_paths)
+    normalized_synthetic = normalized_paths(args.synthetic, args.checkpoint.parent)
+    train, validation, heldout = load_data(normalized_synthetic)
     if args.eval_only:
         exported, exported_vocab = load_export(args.out)
         evaluate(exported, heldout, exported_vocab, args.eval, args.golden, args.predictions, args.threshold)
         return
     extra = []
     if args.extra_real:
-        extra_path = normalize_file(args.extra_real, args.checkpoint.parent / "normalized-generator-v3-labeled.jsonl")
+        extra_path = normalize_file(args.extra_real, args.checkpoint.parent / "normalized-extra.jsonl")
         extra = [Sample(item["id"], item["text"], item["phrase"], "extra_real") for item in read_jsonl(extra_path)]
         original_ids = {item.id for item in train + validation + heldout}
         extra, removed = filter_extra_real(extra, validation + heldout, original_ids)
         extra, balanced = balance_extra_real(extra, args.extra_verb_cap)
         print(f"extra real: {len(extra)} kept, removed {removed}, verb-balanced away {balanced}", flush=True)
-    vocab = build_vocab(train + extra + synthetic)
+    vocab = build_vocab(train + extra)
     word_to_id = {word: index for index, word in enumerate(vocab)}
-    encoded_train = [encode_sample(item, word_to_id) for item in train + extra for _ in range(3)]
-    encoded_train += [encode_sample(item, word_to_id) for item in synthetic]
+    encoded_train = [encode_sample(item, word_to_id) for item in train]
+    encoded_train += [encode_sample(item, word_to_id) for item in extra for _ in range(3)]
     encoded_validation = [encode_sample(item, word_to_id) for item in validation]
     model = PointerGenerator(len(vocab))
     optimizer = torch.optim.AdamW(model.parameters(), lr=.001)
     best_loss, stale = float("inf"), 0
-    print(f"real train/validation/held-out {len(train)}+{len(extra)}/{len(validation)}/{len(heldout)}, synthetic {len(synthetic)}, vocab {len(vocab)}", flush=True)
+    print(f"train/validation/held-out {len(train)}+{len(extra)}/{len(validation)}/{len(heldout)}, vocab {len(vocab)}", flush=True)
     for epoch in range(args.epochs):
         model.train()
         total = 0.0
@@ -636,14 +632,14 @@ def main():
                 group = encoded_validation[start:start + args.batch_size]
                 val_total += float(model(*collate(group, "cpu"))) * len(group)
         val_loss = val_total / len(encoded_validation)
-        print(f"epoch {epoch + 1}: train {total/trained_rows:.4f}, real validation {val_loss:.4f}", flush=True)
+        print(f"epoch {epoch + 1}: train {total/trained_rows:.4f}, validation {val_loss:.4f}", flush=True)
         if val_loss < best_loss - .001:
             best_loss, stale = val_loss, 0
             torch.save(model.state_dict(), args.checkpoint)
         else:
             stale += 1
             if stale >= args.patience:
-                print("early stopping on real validation loss", flush=True)
+                print("early stopping on validation loss", flush=True)
                 break
     model.load_state_dict(torch.load(args.checkpoint, map_location="cpu", weights_only=True))
     args.out.parent.mkdir(parents=True, exist_ok=True)

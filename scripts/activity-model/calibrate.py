@@ -20,12 +20,14 @@ spec.loader.exec_module(train)
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=Path, required=True, help="export that produced the judged predictions")
-    parser.add_argument("--predictions", type=Path, default=HERE / "heldout-v1.predictions.jsonl")
-    parser.add_argument("--judgements", type=Path, default=HERE / "heldout-v1.judged.jsonl")
+    parser.add_argument("--data", type=Path, default=HERE.parent / "activity-data/synthetic.jsonl")
+    parser.add_argument("--predictions", type=Path, required=True)
+    parser.add_argument("--judgements", type=Path, required=True)
     parser.add_argument("--threshold", type=float, default=-.525)
     args = parser.parse_args()
     torch.set_num_threads(1)
-    _, _, heldout, _ = train.load_data(None)
+    normalized = train.normalized_paths(args.data, Path.home() / ".cache/activity-calibrate")
+    _, _, heldout = train.load_data(normalized)
     predictions = {item["id"]: item for item in train.read_jsonl(args.predictions)}
     judgements = {item["id"]: item["verdict"] for item in train.read_jsonl(args.judgements)}
     model, vocab = train.load_export(args.model)
