@@ -3091,6 +3091,9 @@ dialog:not([open]){display:none}
 #inspect.details-prototype .ip-page #inspect-create-limit[hidden]{display:none}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy{margin:0;padding:15px;border:0;background:transparent;box-shadow:none}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-top strong{color:var(--vb-ink);font-size:var(--vb-type-px-13)}
+#inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-badge{display:none}
+#inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-switch{margin-left:auto}
+#inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-switch input:disabled+span{opacity:.55;cursor:not-allowed}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-controls{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-controls label{display:flex;align-items:center;gap:6px;color:var(--vb-ink-soft);font-size:var(--vb-type-px-12)}
 #inspect.details-prototype .ip-page #inspect-create-limit input{width:62px;min-height:36px;border:1px solid var(--vb-line-strong);border-radius:var(--vb-radius-10);background:var(--vb-surface-2);color:var(--vb-ink);text-align:center}

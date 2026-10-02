@@ -49,6 +49,9 @@ test('box details reports attachment use and clears delivered media after confir
   await page.setViewport({width:390,height:844});await page.screenshot({path:captureDir+'/attachments-390.png'});
   await page.setViewport({width:1440,height:900});await page.screenshot({path:captureDir+'/attachments-1440.png'});
   assert.match(await page.$eval('#inspect-attachment-rows',element=>element.textContent),/5\.0 MiB.*6\.0 MiB \/ 1\.00 GiB.*Unused uploads.*1\.0 MiB/);
+  assert.doesNotMatch(await page.$eval('[data-ip-row="attachments"]',element=>element.textContent),/1 files/);
+  assert.match(await page.$eval('[data-ip-row="attachments"] .ip-row-value',element=>element.textContent),/^1 file$/);
+  assert.doesNotMatch(await page.$eval('#inspect-attachment-rows',element=>element.textContent),/1 files/);
   await page.$eval('#inspect-prototype-back',e=>e.click());
   await page.$eval('[data-ip-row="clear-attachments"]',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-status')?.textContent.includes('freed 5.0 MiB'));

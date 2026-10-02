@@ -2997,7 +2997,7 @@ function pairTileStatus(tile,mode,label){
  let inspectInstructionsFor='',inspectInstructions=null,inspectInstructionsRequest=0;
  let inspectAttachmentFor='',inspectAttachmentCache=null,inspectAttachmentRequest=0;
  const storageSize=bytes=>typeof bytes!=='number'||!Number.isFinite(bytes)||bytes<0?'–':bytes>=1024*1024*1024?(bytes/1073741824).toFixed(2)+' GiB':bytes>=1024*1024?(bytes/1048576).toFixed(1)+' MiB':bytes>=1024?(bytes/1024).toFixed(1)+' KiB':bytes+' B';
- const storageSummary=(bytes,count)=>storageSize(bytes)==='–'||!Number.isSafeInteger(count)||count<0?'No data':storageSize(bytes)+' · '+count+' files';
+ const storageSummary=(bytes,count)=>storageSize(bytes)==='–'||!Number.isSafeInteger(count)||count<0?'No data':storageSize(bytes)+' · '+count+' '+(count===1?'file':'files');
  async function loadInspectAttachmentStorage(box){
   const request=++inspectAttachmentRequest;inspectAttachmentFor=box.id;inspectAttachmentCache=null;
   try{
@@ -3233,9 +3233,9 @@ function pairTileStatus(tile,mode,label){
   setValue('power',(idleOn?(idle.querySelector('input[type=number]')?.value||'—')+'h idle':'Idle off')+' · '+(runOn?(budget.querySelector('input[type=number]')?.value||'—')+'h run':'No run limit'));
   setValue('instructions',instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null));
   setValue('credentials',profiles.length+' '+(profiles.length===1?'profile':'profiles'));
-  const contacts=(Array.isArray(inspectContactCache)?inspectContactCache:[]).filter(contact=>contact.override==='allow').length;setValue('contacts',contacts+' direct');
+  const contacts=(Array.isArray(inspectContactCache)?inspectContactCache:[]).filter(contact=>contact.override==='allow').length;setValue('contacts',contacts+' direct '+(contacts===1?'contact':'contacts'));
   setValue('access',inspectProtected?'Protected':'Permissions');
-  const count=inspectAttachmentCache?.boxCount;setValue('attachments',Number.isFinite(count)?count+' files':'Storage');
+  const count=inspectAttachmentCache?.boxCount;setValue('attachments',Number.isFinite(count)?count+' '+(count===1?'file':'files'):'Storage');
   setValue('technical','IDs & activity');
   for(const key of ['power','credentials','contacts','access','attachments'])$('[data-ip-row="'+key+'"]').hidden=!owner;
   $('#ip-instructions-summary').textContent='Last synced · '+instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null);
@@ -3302,7 +3302,7 @@ function pairTileStatus(tile,mode,label){
    adjust:(action,seconds,expectedDeadlineAt)=>api(boxPath(box.id)+'/run-budget-policy/adjust','POST',{},{action,seconds,expectedDeadlineAt}),
    onPolicy:()=>queueMicrotask(()=>{if(inspectOpen&&selected===box.id)renderInspectPrototype(box)})});
   const limitRoot=$('#inspect-create-limit');
-  if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,showWhenDisabled:true,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
+  if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,showWhenDisabled:true,showStateToggle:true,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
   else limitRoot.hidden=true;
   maybeLoadInspectProfiles(box);
   if(inspectInstructionsFor!==box.id)void loadInspectInstructions(box);

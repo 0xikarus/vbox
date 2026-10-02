@@ -229,6 +229,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent.includes('directly')&&document.querySelector('#inspect-tags').textContent.includes('backend'));
   await p.waitForFunction(()=>document.querySelector('#ip-overview').textContent.includes('worker-west-2'));
   assert.equal(await p.$eval('#inspect-contact-role',e=>e.textContent),'Configured directly on this box');
+  assert.match(await p.$eval('[data-ip-row="contacts"] .ip-row-value',node=>node.textContent),/^1 direct contact$/);
+  assert.match(await p.$eval('[data-ip-row="credentials"] .ip-row-value',node=>node.textContent),/^1 profile$/);
   await p.$eval('[data-ip-row="contacts"]',button=>button.click());
   await p.waitForFunction(()=>!document.querySelector('[data-ip-page="contacts"]').hidden);
   assert.equal(await p.$$eval('#inspect-contact-list li',rows=>rows.length),1,'direct contacts remain visible');
