@@ -917,11 +917,9 @@ details[open]>summary::before{transform:rotate(0)}
 /* details rail: titled screen, friendly facts, then technical detail */
 #inspect-screen{padding-bottom:.35rem}
 .inspect-screen-title{display:block;margin:.55rem .1rem 0;font-size:var(--vb-type-rem-0-72);font-weight:600;color:var(--vb-ink-soft);text-align:center}
-.inspect-facts{grid-column:1 / -1;display:flex;flex-direction:column;gap:.4rem;margin:.95rem 0 .4rem}
 .inspect-fact{display:flex;align-items:baseline;justify-content:space-between;gap:.75rem;min-width:0;padding:.55rem .7rem;border-radius:var(--r-surface);background:var(--vb-bg-soft)}
 .inspect-fact-label{flex:none;font-size:var(--vb-type-rem-0-68);font-weight:650;color:var(--vb-ink-faint)}
 .inspect-fact-value{font-size:var(--vb-type-rem-0-86);font-weight:650;color:var(--vb-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
-.inspect-technical-inner{padding-top:.35rem}
 
 @media (max-width:640px){
   #chat-messages .msg.agent:not(.note){margin-left:1.95rem}
@@ -1334,13 +1332,11 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-more-menu:not([hidden]){display:flex}
 #chat-more-menu [role=menuitem]{display:flex;align-items:center;gap:.5rem;width:100%;padding:.55rem .65rem;border:0;background:none;border-radius:var(--r-control);color:var(--vb-ink);font:inherit;font-size:var(--vb-type-rem-0-82);text-align:left;text-decoration:none;cursor:pointer}
 #chat-more-menu [role=menuitem]:hover{background:var(--vb-surface-2)}
-#inspect-usage{padding:.2rem 1rem}
 #chat-usage{display:flex;align-items:center;justify-content:space-between;gap:.7rem;width:100%;padding:.6rem .75rem;border:1px solid var(--vb-line);border-radius:var(--r-control);background:var(--vb-bg-soft);color:var(--vb-ink);font:inherit;font-size:var(--vb-type-rem-0-8);font-weight:600;cursor:pointer}
 #chat-usage[hidden]{display:none}
 #chat-usage:hover{background:var(--vb-surface-2)}
 #chat-usage .chat-usage-label{color:var(--vb-ink-soft);font-weight:560}
 #chat-usage.usage-low{color:var(--vb-danger-text);border-color:var(--vb-danger)}
-.inspect-footer{padding:.9rem 1rem 1.1rem}
 #chat-clear-context{display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.62rem;border:1px solid transparent;border-radius:var(--r-control);background:var(--vb-danger-soft);color:var(--vb-danger-text);font:inherit;font-weight:650;font-size:var(--vb-type-rem-0-84);cursor:pointer}
 #chat-clear-context:hover{background:color-mix(in srgb,var(--vb-danger) 18%,transparent)}
 #chat-clear-context:disabled{opacity:.5;cursor:default}
@@ -1423,7 +1419,6 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .chat-action-wrap{display:grid;justify-items:center}
 
 /* facts as one grouped card */
-.inspect-facts{display:flex;flex-direction:column;width:100%;margin:.9rem 0 0;padding:0;background:var(--vb-bg-soft);border:1px solid var(--vb-line);border-radius:var(--r-surface);overflow:hidden}
 .inspect-fact{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.72rem .9rem;border-radius:0;background:none;border-bottom:1px solid var(--vb-line)}
 .inspect-fact:last-child{border-bottom:0}
 .inspect-fact-label{color:var(--vb-ink-soft);font-size:var(--vb-type-rem-0-76);font-weight:560}
@@ -1436,12 +1431,8 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .inspect-block.inspect-fold>summary h3{margin:0;font-size:var(--vb-type-rem-0-85);font-weight:620}
 .inspect-block.inspect-fold>summary::after{content:'';margin-left:auto;flex:none;width:.9rem;height:.9rem;background:currentColor;opacity:.5;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E") center/contain no-repeat;transition:transform .15s var(--vb-ease)}
 .inspect-block.inspect-fold[open]>summary::after{transform:rotate(90deg)}
-.inspect-technical-inner{padding:0 .9rem .8rem}
-.inspect-technical .inspect-block.inspect-fold{background:var(--vb-surface);margin-top:.5rem}
-.inspect-usage{margin-top:.75rem}
 
 /* clear context: lighter full-width red row */
-.inspect-footer{padding:.75rem 1rem 1.1rem}
 #chat-clear-context{justify-content:flex-start;gap:.6rem;padding:.8rem .9rem;background:var(--vb-bg-soft);border:1px solid var(--vb-line);border-radius:var(--r-surface);color:var(--vb-danger-text);font-weight:620}
 #chat-clear-context:hover{background:var(--vb-danger-soft);border-color:var(--vb-danger)}
 #chat-clear-context:disabled{opacity:.5;cursor:default}
@@ -1472,7 +1463,6 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .inspect-block.inspect-fold .row-icon{width:1.1rem;height:1.1rem;flex:none;color:var(--vb-ink-soft)}
 .inspect-block.inspect-fold .row-chevron{width:1rem;height:1rem;flex:none;margin-left:auto;color:var(--vb-ink-faint);transition:transform .15s var(--vb-ease)}
 .inspect-block.inspect-fold[open]>summary .row-chevron{transform:rotate(90deg)}
-.inspect-technical{border-radius:var(--r-surface) var(--r-surface) 0 0;border-bottom:0;margin-bottom:0}
 .inspect-technical:not(:has(+#inspect-contacts:not([hidden]))){border-radius:var(--r-surface);border-bottom:1px solid var(--vb-line)}
 #inspect-contacts{border-radius:0 0 var(--r-surface) var(--r-surface);margin-top:-1px}
 
@@ -1673,7 +1663,6 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .chat-action-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* 5. one grouped card for technical + contacts, same inset */
-.inspect-technical{border-radius:var(--r-surface) var(--r-surface) 0 0;border-bottom:0;margin:0}
 #inspect-contacts{border-radius:0 0 var(--r-surface) var(--r-surface);border-top:0;margin:0}
 
 /* regression fixes v2 */

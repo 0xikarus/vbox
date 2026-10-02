@@ -11,7 +11,7 @@ const box={id:'builder',name:'Builder',state:'running',defaultAgent:'claude',pro
 const gib=1024**3;
 
 test('Details drawer uses grouped rows, subpages and the credentials sheet',async()=>{
- let runSeconds=28800;
+ let runSeconds=28800,contextClears=0;
  const server=http.createServer(async(request,response)=>{
   const path=new URL(request.url,'http://localhost').pathname;
   if(path.startsWith('/v1/')){
@@ -19,6 +19,9 @@ test('Details drawer uses grouped rows, subpages and the credentials sheet',asyn
    if(path==='/v1/logical-boxes/builder/run-budget-policy'){
     if(request.method==='PUT')runSeconds=JSON.parse(await readBody(request)).seconds;
     return response.end(JSON.stringify({seconds:runSeconds,state:'running',runningSince:new Date(Date.now()-90*60000).toISOString(),...(runSeconds?{deadlineAt:new Date(Date.now()+runSeconds*1000).toISOString()}:{})}));
+   }
+   if(path==='/v1/logical-boxes/builder/messages/clear-context'){
+    contextClears++;return response.end(JSON.stringify({agent:'claude'}));
    }
    const data={
     '/v1/whoami':{role:'owner'},'/v1/grid-boxes':[box],'/v1/logical-boxes':[box],
@@ -94,6 +97,13 @@ test('Details drawer uses grouped rows, subpages and the credentials sheet',asyn
   await normal.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
   await normal.$eval('#chat-info',button=>button.click());
   assert.equal(await normal.$eval('#inspect-prototype',node=>node.hidden),false);
+  normal.once('dialog',dialog=>dialog.dismiss());
+  await normal.click('[data-ip-row="context"]');
+  assert.equal(contextClears,0,'cancelling Clear context keeps the session');
+  normal.once('dialog',dialog=>dialog.accept());
+  await normal.click('[data-ip-row="context"]');
+  await normal.waitForFunction(()=>document.querySelector('#chat-status')?.textContent.includes('Context cleared'));
+  assert.equal(contextClears,1,'confirming Clear context calls the existing endpoint');
   await normal.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });
