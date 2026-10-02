@@ -1473,6 +1473,12 @@
   forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
   reply:[['polyline',{points:'9 17 4 12 9 7'}],['path',{d:'M20 18v-2a4 4 0 0 0-4-4H4'}]],
   pencil:[['path',{d:'M12 20h9'}],['path',{d:'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'}]],
+  timer:[['circle',{cx:'12',cy:'13',r:'8'}],['path',{d:'M12 9v4l3 2M9 2h6M19 5l2-2'}]],
+  'shield-check':[['path',{d:'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z'}],['path',{d:'m9 12 2 2 4-4'}]],
+  paperclip:[['path',{d:'m20 11.5-7.8 7.8a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 1 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8'}]],
+  settings:[['circle',{cx:'12',cy:'12',r:'3'}],['path',{d:'M19.4 15a1.7 1.7 0 0 0 .3 1.8l-1.9 1.9a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21h-2v-1.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-1.9-1.9a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H5v-2h1.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l1.9-1.9a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h2v1.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l1.9 1.9a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21v2h-1.1a1.7 1.7 0 0 0-1.5 1Z'}]],
+  'trash-2':[['path',{d:'M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7'}]],
+  'image-off':[['rect',{x:'3',y:'3',width:'18',height:'18',rx:'2'}],['path',{d:'m3 15 5-5 4 4 3-3 6 6M2 2l20 20'}]],
  };
  function lucide(name){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -2934,6 +2940,7 @@ function pairTileStatus(tile,mode,label){
 
  /* ---------- inspect drawer: ping / activity per box ---------- */
  const inspect=$('#inspect');
+ const inspectPrototypeEnabled=new URLSearchParams(location.search).get('detailsMockup')==='1';
  let inspectOpen=false,inspectTimer,controllerPing=null;
  const heroFrame=$('#inspect-screen .inspect-screen-frame'),heroLive=$('#inspect-screen-live'),heroControls=document.createElement('div');
  let heroBox='',heroEnabled=null,heroChecking=false,heroConnected=false,heroDispose=null,heroRetry=null,heroDelay=1000,heroEpoch=0,heroFailure='';
@@ -3156,6 +3163,114 @@ function pairTileStatus(tile,mode,label){
    finally{form.querySelector('button').disabled=false;updateWarning()}
   };
  }
+ const inspectPrototypeTitles={power:'Hibernation & limits',instructions:'Instructions',credentials:'Credentials',contacts:'Contacts',access:'Access & permissions',attachments:'Attachments',technical:'Technical details',resources:'Adjust resources'};
+ const inspectPrototypePages=new Map();
+ let inspectPrototypeReady=false,inspectPrototypePage='';
+ function inspectPrototypeRow(key,icon,title,value,onClick,danger=false){
+  const row=document.createElement('button');row.type='button';row.className='ip-row'+(danger?' ip-row-danger':'');row.dataset.ipRow=key;
+  const glyph=lucide(icon),name=mk('span',title),detail=mk('span',value),chevron=lucide('chevron-right');
+  glyph.classList.add('ip-row-icon');name.className='ip-row-title';detail.className='ip-row-value';chevron.classList.add('ip-row-chevron');
+  row.append(glyph,name,detail,chevron);row.onclick=onClick;return row;
+ }
+ function initInspectPrototype(){
+  if(!inspectPrototypeEnabled||inspectPrototypeReady)return;
+  inspectPrototypeReady=true;inspect.classList.add('details-prototype');$('#inspect-prototype').hidden=false;$('#inspect-header-text').hidden=false;
+  $('#inspect-prototype-identity').append($('#inspect-screen'),$('#inspect-hero'),$('#inspect-actions'));
+  $('#inspect-prototype-resources').append($('#inspect-resources'));
+  $('#inspect-resources .inspect-resources-heading').append($('#inspect-resources-adjust'));
+  const pageRoot=$('#inspect-prototype-page');
+  const page=(key,intro)=>{
+   const section=mk('section');section.className='ip-page';section.dataset.ipPage=key;section.hidden=true;
+   if(intro)section.append(Object.assign(mk('p',intro),{className:'ip-page-intro'}));
+   pageRoot.append(section);inspectPrototypePages.set(key,section);return section;
+  };
+  const power=page('power','Set how long this box may stay idle or run. These limits are independent.');
+  power.append($('#inspect-idle-policy'),$('#inspect-run-budget-policy'));
+  const resources=page('resources','CPU, RAM and swap limits apply live to this box.');resources.append($('#inspect-memory-settings'));
+  const instructions=page('instructions','Saved instructions are synced into this box.');
+  instructions.append($('#ip-instructions-summary'));
+  const editInstructions=mk('button','Edit instructions');editInstructions.type='button';editInstructions.className='ip-page-action';editInstructions.onclick=()=>{const box=boxes.get(selected);if(box)void openBoxInstructions(box)};instructions.append(editInstructions);
+  const credentials=page('credentials','Login profiles available to this box.');
+  credentials.append($('#ip-credentials-summary'));
+  const editCredentials=mk('button','Manage credentials');editCredentials.type='button';editCredentials.className='ip-page-action';editCredentials.onclick=()=>{const box=boxes.get(selected);if(box)void openBoxCredentials(box)};credentials.append(editCredentials);
+  page('contacts','Choose the boxes this agent can contact.').append($('#inspect-contacts'));
+  $('#inspect-contacts').open=true;
+  const access=page('access','Control agent permissions, protection and created-box limits.');access.append($('#inspect-access'),$('#inspect-create-limit'));
+  $('#inspect-access').open=true;
+  page('attachments','Storage used by this box and its chat uploads.').append($('#inspect-attachment-storage'));
+  const technical=page('technical','Tap a value to copy it in full.');technical.append($('#ip-technical-table'));
+  for(const [key,icon,title] of [
+   ['power','timer','Hibernation & limits'],['instructions','file-text','Instructions'],['credentials','key','Credentials'],
+   ['contacts','users','Contacts'],['access','shield-check','Access & permissions'],['attachments','paperclip','Attachments'],
+   ['technical','settings','Technical details'],
+  ])$('#ip-settings').append(inspectPrototypeRow(key,icon,title,'',()=>showInspectPrototypePage(key)));
+  const dangerous=[
+   ['resync','refresh-cw','Re-sync instructions',()=>[...$('#inspect-config-actions').querySelectorAll('button')].find(button=>button.textContent.includes('Re-sync instructions'))?.click()],
+   ['restart','power','Restart',()=>[...$('#inspect-config-actions').querySelectorAll('button')].find(button=>button.textContent.includes('Restart'))?.click()],
+   ['context','trash-2','Clear context',()=>$('#chat-clear-context').click()],
+   ['clear-attachments','image-off','Clear attachments',()=>$('#inspect-clear-attachments').click()],
+  ];
+  for(const [key,icon,title,action] of dangerous)$('#ip-danger').append(inspectPrototypeRow(key,icon,title,'',action,true));
+  $('#inspect-prototype-back').onclick=()=>showInspectPrototypePage('');
+  $('#inspect-resources-adjust').onclick=()=>showInspectPrototypePage('resources');
+ }
+ function showInspectPrototypePage(key){
+  if(!inspectPrototypeReady)return;
+  inspectPrototypePage=key;
+  const subpage=!!key;$('#inspect-prototype-main').hidden=subpage;$('#inspect-prototype-page').hidden=!subpage;
+  for(const [name,node] of inspectPrototypePages)node.hidden=name!==key;
+  $('#inspect-prototype-back').hidden=!subpage;
+  inspect.classList.toggle('ip-in-subpage',subpage);
+  if(subpage){$('#inspect-prototype-page').scrollTop=0;if(key==='resources'){const box=boxes.get(selected);if(box)mountInspectMemory(box)}}
+  const box=boxes.get(selected);if(box)renderInspectPrototype(box);
+ }
+ function renderInspectPrototype(box){
+  if(!inspectPrototypeReady)return;
+  $('#inspect-title').textContent=inspectPrototypeTitles[inspectPrototypePage]||'Details';
+  const profiles=inspectProfileCache?.profiles||[],primary=profiles[0]||{};
+  const model=primary.model||'Auto model',reasoning=primary.reasoningEffort||'Auto';
+  const budget=$('#inspect-run-budget-policy'),remaining=budget.querySelector('.run-budget-remaining');
+  const currentRun=remaining&&!remaining.hidden?remaining.textContent.replace('Stops in ',''):'No countdown';
+  const worker=inspectWorker?.name||box.providerCredential||'Assigned worker';
+  const overview=[
+   ['Model + reasoning',model+' · '+reasoning],
+   ['Status + current run',(box.streaming||box.processing?'Working':box.state==='running'?'Running':box.state)+' · '+currentRun],
+   ['Pool / worker',[box.provider||'Pool',worker].join(' · ')],
+   ['Profiles',profiles.length?profiles.map(ref=>ref.name||ref.application).join(', '):'None assigned'],
+  ];
+  const grid=$('#ip-overview');if(grid.children.length!==4){grid.replaceChildren();for(let i=0;i<4;i++){const cell=mk('div');cell.className='ip-overview-cell';cell.append(Object.assign(mk('span'),{className:'ip-cell-label'}),Object.assign(mk('strong'),{className:'ip-cell-value'}));grid.append(cell)}}
+  overview.forEach(([label,value],i)=>{const cell=grid.children[i];cell.querySelector('.ip-cell-label').textContent=label;cell.querySelector('.ip-cell-value').textContent=value;cell.querySelector('.ip-cell-value').title=value});
+  const setValue=(key,value)=>{const node=$('[data-ip-row="'+key+'"] .ip-row-value');if(node){node.textContent=value;node.title=value}};
+  const idle=$('#inspect-idle-policy'),idleOn=idle.querySelector('.idle-policy-badge')?.textContent==='On';
+  const runOn=budget.querySelector('.idle-policy-badge')?.textContent==='On';
+  setValue('power',(idleOn?(idle.querySelector('input[type=number]')?.value||'—')+'h idle':'Idle off')+' · '+(runOn?(budget.querySelector('input[type=number]')?.value||'—')+'h run':'No run limit'));
+  setValue('instructions',instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null));
+  setValue('credentials',profiles.length+' '+(profiles.length===1?'profile':'profiles'));
+  const contacts=(Array.isArray(inspectContactCache)?inspectContactCache:[]).filter(contact=>contact.override==='allow').length;setValue('contacts',contacts+' direct');
+  setValue('access',inspectProtected?'Protected':'Permissions');
+  const count=inspectAttachmentCache?.boxCount;setValue('attachments',Number.isFinite(count)?count+' files':'Storage');
+  setValue('technical','IDs & activity');
+  for(const key of ['power','credentials','contacts','access','attachments'])$('[data-ip-row="'+key+'"]').hidden=!owner;
+  $('#ip-instructions-summary').textContent='Last synced · '+instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null);
+  $('#ip-credentials-summary').textContent=profiles.length?profiles.map(importedProfileLabel).join(' · '):'No imported profiles';
+  $('#ip-danger').closest('.ip-group').hidden=!owner;
+  $('[data-ip-row="resync"]').hidden=box.state!=='running';$('[data-ip-row="restart"]').hidden=box.state!=='running';
+  $('[data-ip-row="clear-attachments"]').disabled=$('#inspect-clear-attachments').disabled;
+  if(inspectPrototypePage==='technical')renderInspectPrototypeTechnical();
+ }
+ function renderInspectPrototypeTechnical(){
+  const table=$('#ip-technical-table');table.replaceChildren();
+  const skipped=new Set(['State','Agent','Profiles','Provider','Worker','Waiting for agent']);
+  for(const source of [$('#inspect-runtime-rows'),$('#inspect-activity-rows')])for(const original of source.children){
+   const label=original.querySelector('dt')?.textContent,valueNode=original.querySelector('dd');if(!label||!valueNode||skipped.has(label))continue;
+   const value=valueNode.textContent.trim();
+   if(!value||value==='—'||value==='never'||value==='Open Desktop to measure')continue;
+   const row=mk('button');row.type='button';row.className='ip-technical-row';row.title='Copy '+label.toLowerCase();
+   row.append(mk('span',label),mk('span',value),lucide('copy'));
+   row.onclick=async()=>{try{await navigator.clipboard.writeText(value);toast('Copied '+label.toLowerCase())}catch{toast('Copy is unavailable here.')}};
+   table.append(row);
+  }
+ }
  function renderInspect(){
   if(!inspectOpen||!selected)return;
   const box=boxes.get(selected);if(!box)return;
@@ -3246,6 +3361,7 @@ function pairTileStatus(tile,mode,label){
   maybeLoadInspectProfiles(box);
   if(inspectInstructionsFor!==box.id)void loadInspectInstructions(box);
   maybeLoadInspectContacts(box);
+  renderInspectPrototype(box);
  }
  function maybeLoadInspectProfiles(box){
   if(!owner||inspectProfilesFor===box.id)return;
@@ -3269,11 +3385,12 @@ function pairTileStatus(tile,mode,label){
  $('#chat-info').onclick=()=>{
   if(inspectOpen){closeInspect();return}
   inspectOpen=true;inspect.hidden=false;$('#inspect-backdrop').hidden=false;scheduleResources(0);
+  initInspectPrototype();
   inspect.classList.toggle('with-contacts',owner);
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   controllerPing=null;renderInspect();void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;clearTimeout(resourceTimer);resourceRequest++;clearInspectMemory();stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
+ function closeInspect(){if(inspectPrototypeReady)showInspectPrototypePage('');inspectOpen=false;inspect.hidden=true;clearTimeout(resourceTimer);resourceRequest++;clearInspectMemory();stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#chat-header-open')?.addEventListener('click',()=>$('#chat-info').click());
  $('#chat-terminal')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('tmux',b.id)});
  $('#inspect-screen')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('desktop',b.id)});
@@ -4092,6 +4209,7 @@ function pairTileStatus(tile,mode,label){
    if(kind==='disk'&&data?.diskEnforced===false)row.append(Object.assign(mk('small','Limit not enforced on this shared worker'),{className:'inspect-resource-note'}));
    rows.append(row);
   }
+  if(inspectPrototypeReady)$('#inspect-resources .inspect-resources-heading').append(adjust);
   const context=$('#inspect-resources-context');const host=Number.isFinite(data?.hostDiskUsedBytes)&&Number.isFinite(data?.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0?'Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'%':'';
   context.textContent=[host,data?.diskPartial?'Disk scan partial':null,data?.diskUnavailableReason||null].filter(Boolean).join(' · ');context.hidden=!context.textContent;
   const observed=[data?.observedAt,data?.diskObservedAt].filter(value=>value&&Number.isFinite(Date.parse(value))).sort().at(-1);

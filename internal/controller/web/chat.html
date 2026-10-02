@@ -85,10 +85,25 @@
    <aside id="inspect" role="region" aria-label="Box details" hidden>
     <header id="inspect-header">
      <span class="inspect-grab" aria-hidden="true"></span>
+     <button id="inspect-prototype-back" type="button" aria-label="Back to details" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
      <div id="inspect-header-text" hidden><strong id="inspect-title">Box details</strong><span id="inspect-header-state">—</span></div>
      <span class="spacer"></span>
      <button id="inspect-close" type="button" aria-label="Close details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button>
     </header>
+    <div id="inspect-prototype" hidden>
+     <div id="inspect-prototype-main">
+      <div id="inspect-prototype-identity"></div>
+      <section class="ip-group" aria-labelledby="ip-overview-title"><h3 id="ip-overview-title" class="ip-heading">Overview</h3><div id="ip-overview" class="ip-card ip-overview"></div></section>
+      <div id="inspect-prototype-resources"></div>
+      <section class="ip-group" aria-labelledby="ip-settings-title"><h3 id="ip-settings-title" class="ip-heading">Settings</h3><div id="ip-settings" class="ip-card ip-list"></div></section>
+      <section class="ip-group ip-danger-group" aria-labelledby="ip-danger-title"><h3 id="ip-danger-title" class="ip-heading">Danger zone</h3><div id="ip-danger" class="ip-card ip-list"></div></section>
+     </div>
+     <div id="inspect-prototype-page" hidden>
+      <div id="ip-instructions-summary" class="ip-card ip-page-card"></div>
+      <div id="ip-credentials-summary" class="ip-card ip-page-card"></div>
+      <div id="ip-technical-table" class="ip-card ip-technical-table"></div>
+     </div>
+    </div>
     <div id="inspect-body">
      <div id="inspect-screen" class="inspect-screen" aria-label="Desktop preview">
       <div class="inspect-screen-frame"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><span id="inspect-screen-off">Desktop off</span><img id="inspect-screen-image" alt="" hidden><div id="inspect-screen-live" aria-hidden="true"></div><div id="inspect-screen-live-chip" hidden>Live</div><div id="inspect-screen-hint" hidden></div><div id="inspect-avatar" aria-hidden="true"></div></div>
