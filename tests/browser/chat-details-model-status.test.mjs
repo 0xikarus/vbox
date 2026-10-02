@@ -6,10 +6,10 @@ import puppeteer from 'puppeteer-core';
 
 const names=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js'];
 const assets=Object.fromEntries(await Promise.all(names.map(async name=>['/'+name,await readFile('internal/controller/web/'+name)])));
-const boxes=[{id:'fresh',name:'Fresh',state:'running',defaultAgent:'codex'},{id:'stale',name:'Stale',state:'running',defaultAgent:'claude'},{id:'never',name:'Never',state:'running',defaultAgent:'codex'}];
+const boxes=[{id:'fresh',name:'Fresh',state:'running',defaultAgent:'codex'},{id:'specific',name:'Specific',state:'running',defaultAgent:'codex'},{id:'quiet',name:'Quiet',state:'running',defaultAgent:'codex'},{id:'stale',name:'Stale',state:'running',defaultAgent:'claude'},{id:'never',name:'Never',state:'running',defaultAgent:'codex'}];
 const ago=seconds=>new Date(Date.now()-seconds*1000).toISOString();
 
-test('Details shows model updates, an empty run, stale state, and never state',async()=>{
+test('Details shows a specific phrase, busy fallback, quiet state, stale state, and never state',async()=>{
  const server=http.createServer((req,res)=>{
   const path=req.url.split('?')[0];
   if(path==='/chat'){res.setHeader('Content-Type','text/html');return res.end(assets['/chat.html'])}
@@ -19,8 +19,10 @@ test('Details shows model updates, an empty run, stale state, and never state',a
   if(path==='/v1/whoami')return res.end('{"role":"owner"}');
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes));
   if(path==='/v1/box-activity')return res.end(JSON.stringify([
-   {boxId:'fresh',busy:true,lastObservedAt:ago(12),lastMood:'idle',lastActivity:'working',lastPhrase:'Fixing mascot eyes',lastPhraseAt:ago(180)},
-   {boxId:'stale',busy:true,lastObservedAt:ago(70),lastMood:'angry',lastActivity:'idle',lastPhrase:'Reviewing screenshots',lastPhraseAt:ago(1200)},
+   {boxId:'fresh',busy:true,observedAt:ago(12),lastObservedAt:ago(12),lastMood:'idle',lastActivity:'working',lastPhrase:'Fixing mascot eyes',lastPhraseAt:ago(180),status:'Working',statusSource:'fallback',statusAt:ago(12),phrase:'Working'},
+   {boxId:'specific',busy:true,observedAt:ago(12),lastObservedAt:ago(12),lastMood:'idle',lastActivity:'working',lastPhrase:'Editing chat.js',lastPhraseAt:ago(12),status:'Editing chat.js',statusSource:'specific',statusAt:ago(12),phrase:'Editing chat.js'},
+   {boxId:'quiet',busy:true,observedAt:ago(12),lastObservedAt:ago(12),lastMood:'idle',lastActivity:'idle',lastPhrase:'Old task',lastPhraseAt:ago(180),status:'Idle',statusSource:'quiet',statusAt:ago(12),phrase:'Idle'},
+   {boxId:'stale',busy:true,lastObservedAt:ago(70),lastMood:'angry',lastActivity:'idle',lastPhrase:'Reviewing screenshots',lastPhraseAt:ago(1200),status:'Unknown',statusSource:'stale',statusAt:ago(70)},
    {boxId:'never',busy:null},
   ]));
   if(path.endsWith('/messages')||path==='/v1/tool-presets'||path==='/v1/box-conversations')return res.end('[]');
@@ -42,27 +44,48 @@ test('Details shows model updates, an empty run, stale state, and never state',a
    return page;
   }
   const fresh=await open('fresh');
-  await fresh.waitForFunction(()=>document.querySelector('#inspect-activity-rows')?.textContent.includes('Fixing mascot eyes'));
+  await fresh.waitForFunction(()=>document.querySelector('#inspect-activity-rows')?.textContent.includes('No reliable specific phrase'));
   const rows=await fresh.$$eval('#inspect-activity-rows > div',elements=>elements.map(row=>({label:row.querySelector('dt').textContent,value:row.querySelector('dd').textContent,note:row.querySelector('small')?.textContent||'',title:row.querySelector('dd').title,noteTitle:row.querySelector('small')?.title||''})));
-  assert.deepEqual(rows.map(row=>row.label).slice(2,6),['Last agent activity','Mood classifier','Activity model','Last heartbeat']);
+  assert.deepEqual(rows.map(row=>row.label).slice(2,6),['Last agent activity','Mood classifier','Activity','Last heartbeat']);
   assert.match(rows[3].value,/^Working · 1[0-9] s ago$/);
   assert.match(rows[3].title,/mood idle · activity working/);
-  assert.match(rows[4].value,/^«Fixing mascot eyes» · 3 min ago$/);
-  assert.match(rows[4].note,/^last run 1[0-9] s ago: no confident phrase$/);
-  assert.ok(rows[4].title&&rows[4].noteTitle,'phrase and last run have absolute-time tooltips');
+  assert.match(rows[4].value,/^Working · 1[0-9] s ago$/);
+  assert.equal(rows[4].note,'No reliable specific phrase');
+  assert.ok(rows[4].title&&rows[4].noteTitle,'status and observation have absolute-time tooltips');
   assert.match(rows[5].value,/^1[0-9] s ago$/);
   assert.ok(rows[5].title,'heartbeat has an absolute-time tooltip');
   const first=rows[5].value;
   await fresh.waitForFunction(previous=>document.querySelectorAll('#inspect-activity-rows > div')[5]?.querySelector('dd')?.textContent!==previous,{timeout:11000},first);
+  const layout=await fresh.evaluate(()=>{
+   const row=document.querySelector('#inspect-runtime-rows > div');
+   const button=document.querySelector('#inspect-clear-attachments');
+   const parent=button.parentElement;
+   const style=getComputedStyle(parent);
+   return {columns:getComputedStyle(row).gridTemplateColumns,align:getComputedStyle(row.querySelector('dd')).textAlign,buttonWidth:button.getBoundingClientRect().width,parentWidth:parent.getBoundingClientRect().width,paddingLeft:parseFloat(style.paddingLeft),paddingRight:parseFloat(style.paddingRight)};
+  });
+  assert.equal(layout.align,'left');
+  assert.equal(layout.columns.trim().split(' ').length,1,'narrow details use a single readable column');
+  assert.ok(layout.buttonWidth>=layout.parentWidth-layout.paddingLeft-layout.paddingRight-1,'attachment action fills the available width: '+JSON.stringify(layout));
   await fresh.close();
 
+  const specific=await open('specific');
+  await specific.waitForFunction(()=>document.querySelector('#inspect-activity-rows')?.textContent.includes('Editing chat.js'));
+  assert.match(await specific.$eval('#inspect-activity-rows > div:nth-child(5) dd',element=>element.textContent),/^«Editing chat.js» · 1[0-9] s ago$/);
+  await specific.close();
+
+  const quiet=await open('quiet');
+  await quiet.waitForFunction(()=>document.querySelector('#inspect-activity-rows')?.textContent.includes('No new transcript activity'));
+  assert.equal(await quiet.$eval('#inspect-activity-rows > div:nth-child(5) dd',element=>element.textContent.startsWith('Idle ·')),true);
+  assert.equal(await quiet.$eval('#inspect-subtitle',element=>element.textContent),'codex · idle');
+  await quiet.close();
+
   const stale=await open('stale');
-  await stale.waitForFunction(()=>document.querySelector('#inspect-activity-rows')?.textContent.includes('Reviewing screenshots'));
+  await stale.waitForFunction(()=>document.querySelector('#inspect-activity-rows')?.textContent.includes('Heartbeat stale'));
   const staleRows=await stale.$$eval('#inspect-activity-rows > div',elements=>elements.slice(3,6).map(row=>({value:row.querySelector('dd').textContent,note:row.querySelector('small')?.textContent||'',muted:row.querySelector('dd').classList.contains('observation-stale')})));
   assert.match(staleRows[0].value,/^Angry · 1 min ago$/);
   assert.equal(staleRows[0].note,'stale');assert.equal(staleRows[0].muted,true);
-  assert.match(staleRows[1].value,/^«Reviewing screenshots» · 20 min ago$/);
-  assert.match(staleRows[1].note,/no confident phrase$/);
+  assert.match(staleRows[1].value,/^Unknown · 1 min ago$/);
+  assert.equal(staleRows[1].note,'Heartbeat stale; activity unknown');
   assert.equal(staleRows[2].muted,true);
   await stale.close();
 

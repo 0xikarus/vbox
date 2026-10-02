@@ -1077,7 +1077,9 @@
   const inferredBusy=last&&last.direction==='user'&&last.state==='delivered'&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000;
   // A controller value from the previous poll must not suppress a send that is
   // currently in flight in this page. Persisted state takes over after it lands.
-  box.processing=box.state==='running'&&agent!=='shell'&&!box.streaming&&(pendingBusy||(box.agentBusy===undefined?inferredBusy:box.agentBusy));
+  const observed=Date.parse(box.mascotObservedAt||'');
+  const quiet=box.activityStatusSource==='quiet'&&Number.isFinite(observed)&&Date.now()-observed<=40000;
+  box.processing=box.state==='running'&&agent!=='shell'&&!box.streaming&&(pendingBusy||(box.agentBusy===undefined?inferredBusy:box.agentBusy))&&(!quiet||pendingBusy);
   const marker=seen[id]?new Date(seen[id]).getTime():0;
   box.unread=unreadSince(ms,marker);
  }
@@ -1870,6 +1872,7 @@
     else{box.agentBusy=!!value.busy;box.agentBusySince=value.busySince||''}
     box.mascotMood=value.mood||'';box.mascotActivity=value.activity||'';box.mascotObservedAt=value.observedAt||'';
     box.activityPhrase=typeof value.phrase==='string'?value.phrase:'';
+    box.activityStatus=value.status||'';box.activityStatusSource=value.statusSource||'';box.activityStatusAt=value.statusAt||'';
     box.lastMascotObservedAt=value.lastObservedAt||'';box.lastMascotMood=value.lastMood||'';box.lastMascotActivity=value.lastActivity||'';
     box.lastActivityPhrase=value.lastPhrase||'';box.lastActivityPhraseAt=value.lastPhraseAt||'';
     box.activityBatchAt=receivedAt;summarize(box.id);
@@ -1897,6 +1900,7 @@
  function boxActivitySubtitle(box){
   const agent=box.defaultAgent||'agent';
   if(box.state!=='running')return agent+' · '+(box.state==='hibernated'?'hibernated':'stopped');
+  if(box.activityStatusSource==='quiet'&&box.mascotObservedAt&&Date.now()-Date.parse(box.mascotObservedAt)<=40000)return agent+' · idle';
   const active=box.streaming||box.processing||box.agentBusy;
   return agent+' · '+(active?(box.activityPhrase||'working'):'idle');
  }
@@ -2774,14 +2778,16 @@ function pairTileStatus(tile,mode,label){
   return state?state.charAt(0).toUpperCase()+state.slice(1):'Unknown';
  }
  function inspectObservationRows(box){
-  const observed=observationTime(box.lastMascotObservedAt),phraseAt=observationTime(box.lastActivityPhraseAt);
+  const observed=observationTime(box.lastMascotObservedAt);
   const stale=observed!==null&&Date.now()-observed>40000;
-  const lastRunEmpty=observed!==null&&(phraseAt===null||phraseAt<observed);
   const observedTitle=observationFull(box.lastMascotObservedAt);
   const moodTitle=observedTitle?'Observed '+observedTitle+' · mood '+(box.lastMascotMood||'unknown')+' · activity '+(box.lastMascotActivity||'unknown'):'';
+  const status=box.activityStatus||'',source=box.activityStatusSource||'',statusAt=observationTime(box.activityStatusAt);
+  const activityText=status?(source==='specific'?'«'+status+'»':status)+(statusAt!==null?' · '+observationAgo(box.activityStatusAt):''):'never';
+  const activityNote={fallback:'No reliable specific phrase',quiet:'No new transcript activity for at least 90 s',busy:'Awaiting first observation',stale:'Heartbeat stale; activity unknown'}[source]||'';
   return [
    ['Mood classifier',observationMood(box)+(observed!==null?' · '+observationAgo(box.lastMascotObservedAt):''),stale?'observation-stale':'',null,{title:moodTitle,note:stale?'stale':''}],
-   ['Activity model',box.lastActivityPhrase?'«'+box.lastActivityPhrase+'» · '+(phraseAt===null?'time unknown':observationAgo(box.lastActivityPhraseAt)):observed!==null?'No phrase yet':'never',box.lastActivityPhrase?'':'observation-stale',null,{title:observationFull(box.lastActivityPhraseAt),note:lastRunEmpty?'last run '+observationAgo(box.lastMascotObservedAt)+': no confident phrase':'',noteTitle:observedTitle}],
+   ['Activity',activityText,source==='stale'?'observation-stale':'',null,{title:observationFull(box.activityStatusAt),note:activityNote,noteTitle:observedTitle}],
    ['Last heartbeat',observationAgo(box.lastMascotObservedAt),stale?'observation-stale':'',null,{title:observedTitle}],
   ];
  }

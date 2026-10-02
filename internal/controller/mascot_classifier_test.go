@@ -76,21 +76,22 @@ func TestMascotModelHeldoutExamples(t *testing.T) {
 
 func TestMascotObservationScopesSessionAndStoresOnlyState(t *testing.T) {
 	store, mock := testStore(t)
-	update := `(?s)UPDATE box_tasks SET mascot_mood=.*mascot_observed_at=now\(\),\s*mascot_phrase=COALESCE\(NULLIF\(\$6,''\),mascot_phrase\),mascot_phrase_at=CASE WHEN \$6<>'' THEN now\(\) ELSE mascot_phrase_at END`
-	mock.ExpectExec(update).
-		WithArgs("account-a", "box-a", "codex-chat", sqlmock.AnyArg(), sqlmock.AnyArg(), "Editing chat.js").
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	update := `UPDATE box_tasks SET`
+	now := time.Now().UTC()
+	mock.ExpectQuery(update).
+		WithArgs("account-a", "box-a", "codex-chat", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), 90).
+		WillReturnRows(sqlmock.NewRows([]string{"mascot_mood", "mascot_activity", "mascot_observed_at"}).AddRow("idle", "working", now))
 	server := chatTestServer(store)
 	request := httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/mascot-observation", bytes.NewBufferString(`{"session":"codex-chat","text":"tool: Editing chat.js"}`))
 	request.SetPathValue("id", "box-a")
 	response := httptest.NewRecorder()
 	server.mascotObservationHandler(response, request, Principal{AccountID: "account-a", Role: "desktop-agent", Subject: "desktop-box:box-a"})
 	if response.Code != http.StatusOK {
-		t.Fatalf("phrase response %d: %s", response.Code, response.Body.String())
+		t.Fatalf("phrase response %d: %s; expectations: %v", response.Code, response.Body.String(), mock.ExpectationsWereMet())
 	}
-	mock.ExpectExec(update).
-		WithArgs("account-a", "box-a", "codex-chat", "angry", "idle", "").
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(update).
+		WithArgs("account-a", "box-a", "codex-chat", sqlmock.AnyArg(), "angry", "idle", "", 90).
+		WillReturnRows(sqlmock.NewRows([]string{"mascot_mood", "mascot_activity", "mascot_observed_at"}).AddRow("angry", "idle", now))
 	// The controller classifies the supplied text itself, including a caller's
 	// source-specific prefix. This second, unsure run keeps the earlier phrase.
 	request = httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/mascot-observation", bytes.NewBufferString(`{"session":"codex-chat","text":"user: error: build failed"}`))

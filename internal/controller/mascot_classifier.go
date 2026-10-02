@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	_ "embed"
 	"errors"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/0xikarus/vmbox-service/internal/mascotclass"
 )
+
+const mascotQuietWindow = 90 * time.Second
 
 // MascotState contains the derived state and its observation time. The
 // controller treats sampled transcript text as untrusted input and does not persist it.
@@ -61,22 +64,41 @@ func (s *Server) mascotObservationHandler(w http.ResponseWriter, r *http.Request
 			return -1
 		}
 		return r
-	}, activityPhrase(request.Text)))
+	}, observationActivityPhrase(request.Text)))
 	if runes := []rune(phrase); len(runes) > 48 {
 		phrase = string(runes[:48])
 	}
-	result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE box_tasks SET mascot_mood=$4,mascot_activity=$5,mascot_observed_at=now(),
-		mascot_phrase=COALESCE(NULLIF($6,''),mascot_phrase),mascot_phrase_at=CASE WHEN $6<>'' THEN now() ELSE mascot_phrase_at END
-		WHERE account_id=$1 AND logical_box_id=$2 AND session_name=$3 AND state='active' AND agent<>'shell'`, p.AccountID, r.PathValue("id"), request.Session, state.Mood, state.Activity, phrase)
+	// Keep only a digest of the bounded evidence. A repeated keepalive confirms
+	// connectivity, but must not turn an old activity into fresh work.
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(request.Text)))
+	var stored MascotState
+	var observed time.Time
+	err := s.Store.DB.QueryRowContext(r.Context(), `UPDATE box_tasks SET
+		mascot_mood=CASE WHEN mascot_evidence_hash=$4 AND
+			GREATEST(COALESCE(mascot_evidence_changed_at,now()),COALESCE(agent_busy_updated_at,'-infinity'::timestamptz))<=now()-($8::int * interval '1 second')
+			THEN 'idle' ELSE $5 END,
+		mascot_activity=CASE WHEN mascot_evidence_hash=$4 AND
+			GREATEST(COALESCE(mascot_evidence_changed_at,now()),COALESCE(agent_busy_updated_at,'-infinity'::timestamptz))<=now()-($8::int * interval '1 second')
+			THEN 'idle' ELSE $6 END,
+		mascot_observed_at=now(),
+		mascot_phrase=CASE WHEN mascot_evidence_hash IS DISTINCT FROM $4 AND $7<>'' THEN $7 ELSE mascot_phrase END,
+		mascot_phrase_at=CASE WHEN mascot_evidence_hash IS DISTINCT FROM $4 AND $7<>'' THEN now() ELSE mascot_phrase_at END,
+		mascot_evidence_changed_at=CASE WHEN mascot_evidence_hash IS DISTINCT FROM $4 THEN now() ELSE mascot_evidence_changed_at END,
+		mascot_evidence_hash=$4
+		WHERE account_id=$1 AND logical_box_id=$2 AND session_name=$3 AND state='active' AND agent<>'shell'
+		RETURNING mascot_mood,mascot_activity,mascot_observed_at`, p.AccountID, r.PathValue("id"), request.Session, digest, state.Mood, state.Activity, phrase, int(mascotQuietWindow/time.Second)).
+		Scan(&stored.Mood, &stored.Activity, &observed)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusConflict, fmt.Errorf("active agent chat session not found"))
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("mascot state unavailable"))
 		return
 	}
-	if changed, _ := result.RowsAffected(); changed != 1 {
-		writeError(w, http.StatusConflict, fmt.Errorf("active agent chat session not found"))
-		return
-	}
-	writeJSON(w, http.StatusOK, state)
+	stamp := observed.UTC()
+	stored.ObservedAt = &stamp
+	writeJSON(w, http.StatusOK, stored)
 }
 
 func (s *Store) boxMascotState(ctx context.Context, accountID, boxID string) (MascotState, bool, error) {

@@ -17,3 +17,19 @@ func TestExplicitProseActivity(t *testing.T) {
 		}
 	}
 }
+
+func TestExplicitIntentActivity(t *testing.T) {
+	cases := map[string]string{
+		"assistant: I'll inspect sidebar spacing next.":       "Preparing to inspect sidebar",
+		"assistant: Let's check the worker logs now.":         "Preparing to check worker logs",
+		"assistant: We will review CSS, then send an update.": "Preparing to review CSS",
+		"assistant: Builder will inspect the sidebar.":        "",
+		"assistant: I fixed the layout yesterday.":            "",
+		"assistant: I'll inspect CSS.\ntool: Using a tool":    "",
+	}
+	for input, want := range cases {
+		if got := ExplicitIntentActivity(input); got != want {
+			t.Errorf("%q: got %q, want %q", input, got, want)
+		}
+	}
+}

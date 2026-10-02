@@ -43,6 +43,16 @@ var activityTrivialCommands = map[string]bool{"cd": true, "ls": true, "echo": tr
 // from bounded evidence. Low-confidence or invalid generations leave the UI's
 // working fallback.
 func activityPhrase(text string) string {
+	return activityPhraseFromEvidence(text, false)
+}
+
+// Observation phrases can also describe an explicit next action in the newest
+// agent line. The ordinary generator keeps its calibrated confidence gate.
+func observationActivityPhrase(text string) string {
+	return activityPhraseFromEvidence(text, true)
+}
+
+func activityPhraseFromEvidence(text string, allowIntent bool) string {
 	text = activityphrase.NormalizeEvidence(text)
 	if text == "" {
 		return ""
@@ -66,6 +76,11 @@ func activityPhrase(text string) string {
 	if proseTail {
 		if fallback := activityphrase.ExplicitProseActivity(text); validActivityPhrase(fallback) {
 			return fallback
+		}
+		if allowIntent {
+			if fallback := activityphrase.ExplicitIntentActivity(text); validActivityPhrase(fallback) {
+				return fallback
+			}
 		}
 	}
 	return ""

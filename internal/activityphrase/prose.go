@@ -7,6 +7,7 @@ import (
 
 var ongoingAgentAction = regexp.MustCompile(`(?i)\b(?:i['’]m|i am|we['’]re|we are)\s+([a-z]{3,}ing)\b([^.!?;:]*)`)
 var nowAgentAction = regexp.MustCompile(`(?i)(?:^|[.!?]\s+)now\s+([a-z]{3,}ing)\b([^.!?;:]*)`)
+var intendedAgentAction = regexp.MustCompile(`(?i)(?:^|[.!?]\s+)(?:i['’]ll|i will|we['’]ll|we will|let['’]s)\s+(?:now\s+)?([a-z]{3,})\b([^.!?;:]*)`)
 var activityActionTail = regexp.MustCompile(`(?i)\s+(?:and|but|while|so|then)\b`)
 
 var activityFillerAfterVerb = map[string]bool{
@@ -64,6 +65,46 @@ func ExplicitProseActivity(text string) string {
 		return phrase
 	}
 	return ""
+}
+
+// ExplicitIntentActivity describes a next action stated by the agent itself.
+// "Preparing to" avoids reporting a plan as already completed or underway.
+// The verb and object come from the current transcript, not a fixed label list.
+func ExplicitIntentActivity(text string) string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	line := strings.TrimSpace(lines[len(lines)-1])
+	if line == "" || strings.HasPrefix(line, "tool: ") || strings.HasPrefix(line, "user: ") {
+		return ""
+	}
+	line = strings.TrimPrefix(line, "assistant: ")
+	match := lastActionMatch(intendedAgentAction, line)
+	if match == nil {
+		return ""
+	}
+	verb, rest := strings.ToLower(match[1]), match[2]
+	if verb == "have" || verb == "be" || verb == "get" || verb == "let" || verb == "say" {
+		return ""
+	}
+	if index := activityActionTail.FindStringIndex(rest); index != nil {
+		rest = rest[:index[0]]
+	}
+	words := activityWords.FindAllString(rest, -1)
+	for len(words) > 0 && activityFillerAfterVerb[strings.ToLower(words[0])] {
+		words = words[1:]
+	}
+	if len(words) > 2 {
+		words = words[:2]
+	}
+	for len(words) > 0 && activityTailPreposition[strings.ToLower(words[len(words)-1])] {
+		words = words[:len(words)-1]
+	}
+	if len(words) == 0 {
+		return ""
+	}
+	return normalizeActivity("Preparing to " + verb + " " + strings.Join(words, " "))
 }
 
 func lastActionMatch(pattern *regexp.Regexp, line string) []string {

@@ -275,9 +275,15 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   seconds. It reads the active native Codex, Claude, or OpenCode transcript,
   caps the recent text sample at 8 KiB, and posts it when the text changes
   through the assignment-scoped DesktopAgent route. The controller applies a
-  compact trained classifier and stores only mood, activity, and observation time
-  on the active task. Chat history returns fresh state in response headers; after 40 seconds
-  without a heartbeat, the UI falls back to chat activity and lifecycle state.
+  compact trained mood classifier and a local phrase generator. It stores
+  derived state, a digest of the sampled text, and observation/change times on
+  the active task, never the transcript sample. The phrase generator keeps its
+  calibrated confidence gate; an explicit next action in the newest agent line
+  can supply a short transcript-derived phrase. A busy box
+  without a reliable phrase shows Working; repeated unchanged samples for 90
+  seconds show Idle. The keepalive updates the heartbeat time, while a missing
+  heartbeat for 40 seconds makes activity Unknown. A new busy transition resets
+  the quiet window. Chat history returns fresh state in response headers.
   The MCP sender reads native conversation text and does not capture tmux output.
   Entry points:
   `internal/boxruntime/mascot_observation.go`, `mascot_transcript.go`,
