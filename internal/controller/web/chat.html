@@ -170,7 +170,7 @@
    <div id="chat-loading" hidden aria-hidden="true"><img src="/loading-doodle.svg" alt=""><p id="chat-loading-text">Loading…</p></div>
    <div id="chat-messages" aria-live="polite"></div>
    <button id="chat-new-messages" type="button" hidden>↓ New messages</button>
-   <div id="chat-image-drafts" hidden></div>
+   <div id="chat-image-drafts" class="image-drafts" hidden></div>
    <div id="reply-preview" hidden><div><strong>Replying to</strong><span id="reply-preview-text"></span></div><button id="reply-cancel" type="button" aria-label="Cancel reply">×</button></div>
    <div id="composer-picker" role="listbox" aria-label="Composer suggestions" hidden></div>
    <form id="chat-composer" autocomplete="off">
@@ -188,7 +188,9 @@
  <div id="thread-resizer" role="separator" aria-label="Resize thread sidebar" aria-controls="thread-panel" aria-orientation="vertical" tabindex="0"></div>
  <header><button id="thread-close" type="button" aria-label="Close thread">←</button><div><strong>Thread</strong><span id="thread-origin"></span><span id="thread-count"></span></div></header>
  <div id="thread-messages"></div>
- <form id="thread-composer"><textarea name="text" rows="1" maxlength="100000" placeholder="Reply" aria-label="Reply" required></textarea><button type="submit">Send</button></form>
+ <div id="thread-image-drafts" class="image-drafts" hidden></div>
+ <p id="thread-status" role="status"></p>
+ <form id="thread-composer"><button id="thread-attach" type="button" aria-label="Attach files to thread" title="Attach files">+</button><input id="thread-attachments" type="file" accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" multiple hidden><textarea name="text" rows="1" maxlength="100000" placeholder="Reply" aria-label="Reply"></textarea><button id="thread-send" type="submit">Send</button></form>
  </aside>
 </div>
 
@@ -453,15 +455,18 @@
 <dialog id="image-annotation" aria-labelledby="image-annotation-title">
  <div class="image-annotation-head"><h2 id="image-annotation-title">Annotate image</h2><button id="image-annotation-close" type="button" aria-label="Close annotation editor">×</button></div>
  <div class="image-annotation-tools" role="toolbar" aria-label="Drawing tools">
+  <div class="image-annotation-tool-picks" role="group" aria-label="Drawing shape">
+   <button type="button" data-annotation-tool="pen" aria-pressed="true">Pen</button><button type="button" data-annotation-tool="rectangle" aria-pressed="false">Rectangle</button><button type="button" data-annotation-tool="ellipse" aria-pressed="false">Ellipse</button><button type="button" data-annotation-tool="line" aria-pressed="false">Line</button><button type="button" data-annotation-tool="arrow" aria-pressed="false">Arrow</button>
+  </div>
   <button type="button" data-annotation-color="red" aria-label="Red pen" aria-pressed="true" title="Red pen"><span></span></button>
   <button type="button" data-annotation-color="yellow" aria-label="Yellow pen" aria-pressed="false" title="Yellow pen"><span></span></button>
   <button type="button" data-annotation-color="blue" aria-label="Blue pen" aria-pressed="false" title="Blue pen"><span></span></button>
   <label>Pen size <select id="image-annotation-size"><option value="1">Fine</option><option value="2" selected>Medium</option><option value="4">Thick</option></select></label>
-  <button id="image-annotation-undo" type="button" disabled>Undo</button><button id="image-annotation-clear" type="button" disabled>Clear marks</button>
+  <button id="image-annotation-undo" type="button" disabled>Undo</button><button id="image-annotation-redo" type="button" disabled>Redo</button><button id="image-annotation-clear" type="button" disabled>Clear</button>
  </div>
  <div class="image-annotation-stage"><canvas id="image-annotation-canvas" aria-label="Image annotation canvas; draw with a mouse, pen, or finger"></canvas></div>
- <label class="image-annotation-note">What should change? <textarea id="image-annotation-text" rows="2" placeholder="Describe what the marks refer to…"></textarea></label>
- <div class="image-annotation-footer"><span id="image-annotation-status" role="status"></span><button id="image-annotation-add" type="button" class="primary">Add to reply</button></div>
+ <label class="image-annotation-note" id="image-annotation-note">What should change? <textarea id="image-annotation-text" rows="2" placeholder="Describe what the marks refer to…"></textarea></label>
+ <div class="image-annotation-footer"><span id="image-annotation-status" role="status"></span><button id="image-annotation-cancel" type="button">Cancel</button><button id="image-annotation-add" type="button" class="primary">Add to reply</button></div>
 </dialog>
 
 </div>
