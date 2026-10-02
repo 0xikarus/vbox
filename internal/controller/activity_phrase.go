@@ -60,7 +60,11 @@ func activityPhraseFromEvidence(text string, allowIntent bool) string {
 	if label := activityphrase.LatestToolLabel(text); label != "" {
 		return label
 	}
+	if activityphrase.CompletedAndWaitingForWork(text) {
+		return "Idle"
+	}
 	phrase, confidence := activityGenerator.GenerateScored(text)
+	phrase = activityphrase.Normalize(phrase)
 	lastLine := text[strings.LastIndexByte(text, '\n')+1:]
 	proseTail := !strings.HasPrefix(lastLine, "tool: ")
 	if validActivityPhrase(phrase) {
@@ -99,6 +103,9 @@ func recentOwnFix(text string) bool {
 func validActivityPhrase(phrase string) bool {
 	words := strings.Fields(phrase)
 	if len(words) < 1 || len(words) > 5 || len([]rune(phrase)) > 32 {
+		return false
+	}
+	if !activityphrase.CompleteEnding(phrase) {
 		return false
 	}
 	runes := []rune(phrase)

@@ -78,3 +78,22 @@ func TestLatestToolLabelLeavesGenericToolsToModel(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeActivityAcronymCasing(t *testing.T) {
+	cases := []struct{ input, want string }{
+		{"waiting for ci", "Waiting for CI"},
+		{"waiting on pr", "Waiting on PR"},
+		{"waiting for qa", "Waiting for QA"},
+		{"checking api and ui", "Checking API and UI"},
+		{"updating css and sso", "Updating CSS and SSO"},
+		{"checking db url", "Checking DB URL"},
+		{"reviewing prs", "Reviewing PRs"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			if got := Normalize(tc.input); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

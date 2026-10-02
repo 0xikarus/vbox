@@ -16,6 +16,10 @@ type Candidate struct {
 
 var activityWords = regexp.MustCompile(`[\pL][\pL\pN'’-]*`)
 var activityImageTool = regexp.MustCompile(`(?i)^tool: Reading [^\s]+\.(?:png|jpe?g|gif|webp)$`)
+var activityAcronyms = map[string]string{
+	"ci": "CI", "pr": "PR", "prs": "PRs", "qa": "QA", "api": "API",
+	"ui": "UI", "css": "CSS", "sso": "SSO", "db": "DB", "url": "URL",
+}
 
 // LatestToolLabel preserves a specific harness label verbatim when it is the
 // newest evidence line. Generic "Using" labels leave the decision to the model.
@@ -180,6 +184,9 @@ func normalizeActivity(value string) string {
 	}
 	var kept []string
 	for _, word := range words {
+		if acronym, ok := activityAcronyms[strings.ToLower(word)]; ok {
+			word = acronym
+		}
 		if len([]rune(strings.Join(append(kept, word), " "))) > 32 {
 			break
 		}
