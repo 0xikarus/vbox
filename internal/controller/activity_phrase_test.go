@@ -103,7 +103,7 @@ func TestActivityPhraseMatchesPythonFinalOutput(t *testing.T) {
 	}
 }
 
-func BenchmarkActivityPhrase20Real(b *testing.B) {
+func BenchmarkActivityPhrase20Synthetic(b *testing.B) {
 	file, err := os.Open("../activityphrase/testdata/activity_benchmark.jsonl")
 	if err != nil {
 		b.Fatal(err)
@@ -125,7 +125,7 @@ func BenchmarkActivityPhrase20Real(b *testing.B) {
 		b.Fatal(err)
 	}
 	if len(texts) < 20 {
-		b.Fatal("need 20 real inputs")
+		b.Fatal("need 20 synthetic inputs")
 	}
 	durations := make([]time.Duration, 0, b.N*20)
 	b.ResetTimer()
