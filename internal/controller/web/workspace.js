@@ -4,7 +4,7 @@ let epoch=0,busy=false,allocation=null,allocationKey=crypto.randomUUID();
 let closeTerminal=()=>{},terminalAttached=false,terminalBusy=null;
 let closeDesktop=()=>{},desktopBusy=false,desktopAttached=false;
 let refreshDesktopPreview=()=>{};
-let selectedWorkspaceView='',workspaceRole='',managedSession='';
+let selectedWorkspaceView='',workspaceRole='';
 const workspaceUsage=window.VMBoxWorkspaceNav?.init({usageId:'workspace-usage',providersId:'workspace-providers'});
 const workspaceMascot=window.VBoxMascot?.Mascot?new window.VBoxMascot.Mascot($('.workspace-avatar-mascot'),boxID):null;
 function showLogin(message=''){workspaceUsage?.setOwner(false);$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
@@ -60,7 +60,6 @@ async function ensureTerminal(version=epoch){
  const pending=(async()=>{
   try{
    const session=await api(bp+'/sessions/interactive','POST',{agent,reuseExisting:true});if(!workspaceCurrent(version))return false;
-   managedSession=session.session;
    $('#session').textContent='';
    closeTerminal();terminalAttached=true;recordViewer('terminal',{state:'connecting'});
    const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message},{autoFocus:false,onMetrics:value=>{if(!$('#workspace').hidden)recordViewer('terminal',value)}});
@@ -147,6 +146,47 @@ async function api(path,method='GET',body,headers={},timeout=60000){
 }
 let resourceSnapshot=null,connectionEndpoint='';
 function resetBoxSettings(){resourceSnapshot=null;connectionEndpoint='';$('#resource-form').hidden=true;$('#connection-details').hidden=true;$('#resource-status').textContent='';$('#connection-status').textContent=''}
+const workspaceResources=$('.workspace-resources');
+let resourceUsage=null,resourceUsageLoaded=false,resourcesInView=false,resourceUsageTimer,resourceUsageGeneration=0;
+const resourceGiB=bytes=>{const value=bytes/(1024**3);return Number.isInteger(value)?String(value):value.toFixed(1)};
+function renderWorkspaceResources(){
+ const rows=$('#workspace-resource-rows');rows.replaceChildren();
+ const data=resourceUsage,resources=data?.resources||{};
+ for(const kind of ['ram','swap','disk']){
+  const total=kind==='ram'?Number(resources.memoryMiB||0)*1024**2:kind==='swap'?Number(resources.swapMiB||0)*1024**2:Number.isFinite(data?.diskTotalBytes)?data.diskTotalBytes:Number(resources.diskGiB||0)*1024**3;
+  const used=kind==='ram'?data?.memoryUsedBytes:kind==='swap'?data?.swapUsedBytes:data?.diskUsedBytes;
+  const measured=Number.isFinite(used)&&used>=0,ratio=measured&&total>0?used/total:null;
+  const row=document.createElement('div'),label=document.createElement('span'),value=document.createElement('strong'),track=document.createElement('div'),fill=document.createElement('span');
+  row.className='inspect-resource-row';row.dataset.kind=kind;
+  label.textContent=kind==='ram'?'RAM':kind==='swap'?'Swap':'Disk';
+  value.textContent=(measured?resourceGiB(used):'–')+' / '+(total?resourceGiB(total):'–')+' GB';
+  track.className='inspect-resource-track';fill.style.width=(ratio===null?0:Math.max(0,Math.min(100,ratio*100)))+'%';track.append(fill);
+  row.classList.toggle('resource-warning',ratio!==null&&ratio>=.85&&(kind==='disk'&&data?.diskEnforced===false||ratio<.95));
+  row.classList.toggle('resource-danger',ratio!==null&&ratio>=.95&&!(kind==='disk'&&data?.diskEnforced===false));
+  row.append(label,value,track);
+  if(kind==='disk'&&data?.diskEnforced===false){const note=document.createElement('small');note.className='inspect-resource-note';note.textContent='Limit not enforced on this shared worker';row.append(note)}
+  rows.append(row);
+ }
+ const context=$('#workspace-resources-context'),host=Number.isFinite(data?.hostDiskUsedBytes)&&Number.isFinite(data?.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0?'Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'%':'';
+ context.textContent=[host,data?.diskPartial?'Disk scan partial':null,data?.diskUnavailableReason||null].filter(Boolean).join(' · ');context.hidden=!context.textContent;
+ const observed=[data?.observedAt,data?.diskObservedAt].filter(value=>value&&Number.isFinite(Date.parse(value))).sort().at(-1);
+ $('#workspace-resources-updated').textContent=observed?'Updated '+new Date(observed).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):resourceUsageLoaded?'No live data (worker update needed)':'Live metrics load when this card is visible';
+ $('#workspace-resources-adjust').hidden=workspaceRole!=='owner'||boxSummary?.provider!=='shared-worker'||boxSummary?.state!=='running';
+}
+function resourcesVisible(){return resourcesInView&&!document.hidden&&!$('#workspace').hidden&&boxSummary?.state==='running'}
+function stopResourceUsage(){resourceUsageGeneration++;clearTimeout(resourceUsageTimer)}
+function scheduleResourceUsage(delay=0){clearTimeout(resourceUsageTimer);if(resourcesVisible())resourceUsageTimer=setTimeout(refreshResourceUsage,delay)}
+async function refreshResourceUsage(){
+ if(!resourcesVisible())return;
+ const generation=++resourceUsageGeneration;
+ try{const data=await api(bp+'/resources');if(generation===resourceUsageGeneration&&resourcesVisible()){resourceUsage=data;resourceUsageLoaded=true;renderWorkspaceResources()}}
+ catch{if(generation===resourceUsageGeneration&&resourcesVisible()){resourceUsage=null;resourceUsageLoaded=true;renderWorkspaceResources()}}
+ finally{if(generation===resourceUsageGeneration)scheduleResourceUsage(30000)}
+}
+new IntersectionObserver(entries=>{resourcesInView=entries[0]?.isIntersecting||false;if(resourcesInView)scheduleResourceUsage(0);else stopResourceUsage()}).observe(workspaceResources);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopResourceUsage();else scheduleResourceUsage(0)});
+window.addEventListener('pagehide',stopResourceUsage);
+$('#workspace-resources-adjust').onclick=()=>{const settings=$('#box-settings');settings.open=true;$('#load-resources').click();settings.scrollIntoView({block:'nearest'});settings.querySelector('summary').focus({preventScroll:true})};
 function renderForward(){
  const port=Number($('#forward-port').value);
  const valid=Number.isInteger(port)&&port>0&&port<=65535&&/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*@[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(connectionEndpoint);
@@ -195,6 +235,8 @@ let deletePending=false;
 function statusLine(b){const phase=boxPhase(b.state);const hint=phase==='creating'?'being created; connect becomes available when it is running':phase==='transitioning'?'transitioning; this page updates automatically':phase==='deleting'?'being deleted':'';return [b.state,b.restorationState,b.failureReason,hint].filter(Boolean).join(' · ')}
 function applyBoxState(b){
  boxSummary=b;renderStats();
+ if(b.state!=='running'){stopResourceUsage();resourceUsage=null;resourceUsageLoaded=false}renderWorkspaceResources();scheduleResourceUsage(0);
+ $('.workspace-top-chat').href='/chat#box='+encodeURIComponent(b.id);
  if(workspaceMascot){const mood=b.state==='hibernated'?'sleeping':b.state==='failed'?'angry':['reserved','attaching'].includes(b.state)?'waking':'idle';workspaceMascot.jump(mood)}
  $('#name').textContent=b.name;document.title='vbox / workspace / '+b.name;
  const phase=boxPhase(b.state),owner=workspaceRole==='owner',connectable=phase==='running'||phase==='stopped'||phase==='failed';
@@ -268,7 +310,7 @@ async function connect(resume=false){
 }
 $('#connect').onclick=()=>void connect(true);
 $('#login').onsubmit=async e=>{e.preventDefault();$('#login-error').textContent='';try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();workspaceRole=(await api('/v1/whoami')).role;workspaceUsage?.setOwner(workspaceRole==='owner');$('#login').hidden=true;$('#error').textContent='';await connect(false)}catch(e){showLogin(e.message)}};
-$('#logout').onclick=async()=>{epoch++;stopStats();closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');workspaceUsage?.setOwner(false);$('#workspace').hidden=true;$('#status').textContent='Logged out. The box was not stopped.';showLogin()}catch(e){$('#error').textContent=e.message}};
+$('#logout').onclick=async()=>{epoch++;stopStats();stopResourceUsage();closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');workspaceUsage?.setOwner(false);$('#workspace').hidden=true;$('#status').textContent='Logged out. The box was not stopped.';showLogin()}catch(e){$('#error').textContent=e.message}};
 $('#hibernate').onclick=async()=>{
  if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;
  const version=++epoch;stopStats();closeTerminal();closeDesktop();allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';$('#terminal-screen').replaceChildren();busy=true;
@@ -396,46 +438,6 @@ if(importForm){
  };
 }
 
-const messageForm=document.querySelector('#agent-message-form');
-if(messageForm){
- let timer,pendingKey='',pendingText='',draftImages=[],messageURLs=[];const status=document.querySelector('#agent-message-status'),imageInput=messageForm.elements.images,imageDraft=document.querySelector('#agent-image-draft');
- const clearMessageURLs=()=>{for(const value of messageURLs)URL.revokeObjectURL(value);messageURLs=[]};
- const renderDraft=()=>{imageDraft.replaceChildren();for(const entry of draftImages){const row=document.createElement('p'),image=document.createElement('img'),remove=document.createElement('button');image.src=entry.url;image.alt='Image '+entry.number;remove.type='button';remove.textContent='Remove';remove.onclick=()=>{draftImages=draftImages.filter(value=>value!==entry);URL.revokeObjectURL(entry.url);draftImages.forEach((value,index)=>value.number=index+1);renderDraft()};row.append(image,remove);imageDraft.append(row)}};
- const uploadImages=async files=>{if(!files.length)return;const button=messageForm.querySelector('button');button.disabled=true;try{for(const file of files){if(draftImages.length>=8)throw Error('Attach at most 8 images.');if(!['image/png','image/jpeg','image/gif'].includes(file.type))throw Error('Choose PNG, JPEG, or GIF images.');if(file.size>25*1024*1024)throw Error('Each image must be at most 25 MiB.');const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(60000)});let result;try{result=await response.json()}catch{}if(!response.ok)throw Error(result?.error||'Image upload failed.');draftImages.push({id:result.id,number:draftImages.length+1,url:URL.createObjectURL(file)});renderDraft()}}catch(e){status.textContent=e.message}finally{button.disabled=false;imageInput.value=''}};
- imageInput.onchange=()=>void uploadImages([...imageInput.files]);
- messageForm.addEventListener('paste',event=>{const files=[...(event.clipboardData?.items||[])].filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);if(files.length){event.preventDefault();void uploadImages(files)}});
- messageForm.addEventListener('dragover',event=>{if([...(event.dataTransfer?.types||[])].includes('Files'))event.preventDefault()});
- messageForm.addEventListener('drop',event=>{const files=[...(event.dataTransfer?.files||[])];if(files.length){event.preventDefault();void uploadImages(files)}});
- const answeredQuestions=new Set();
- const appendQuestion=(row,message)=>{if(!message.question)return;const form=document.createElement('form'),group='question-'+message.id;message.question.choices.forEach((choice,index)=>{const label=document.createElement('label'),input=document.createElement('input');input.type=message.question.multiple?'checkbox':'radio';input.name=group;input.value=choice;if(!message.question.multiple&&index===0)input.required=true;label.append(input,document.createTextNode(' '+choice));form.append(label,document.createElement('br'))});const send=document.createElement('button');send.textContent='Send selection';send.disabled=answeredQuestions.has(message.id);form.append(send);form.onsubmit=async event=>{event.preventDefault();const selected=[...form.querySelectorAll('input:checked')].map(input=>input.value);if(!selected.length){status.textContent='Choose at least one option.';return}send.disabled=true;try{await api(bp+'/messages','POST',{text:'Answer to "'+message.question.text+'": '+selected.join(', ')},{'Idempotency-Key':crypto.randomUUID()});answeredQuestions.add(message.id);status.textContent='Selection sent.';await refresh()}catch(e){status.textContent=e.message;send.disabled=false}};row.append(form)};
- const refresh=async()=>{
-  clearTimeout(timer);
-  document.querySelector('#agent-chat').hidden=false;
-  if(document.querySelector('#workspace').hidden||document.hidden){timer=setTimeout(refresh,3000);return}
-  try{
-   const messages=await api(bp+'/messages');
-   if(document.querySelector('#workspace').hidden)return;
-   const list=document.querySelector('#agent-messages');list.replaceChildren();clearMessageURLs();
-   const recent=messages.slice(-5),note=document.querySelector('#agent-chat-note-text');
-   if(note)note.textContent=messages.length>recent.length?('Showing the last '+recent.length+' of '+messages.length+' messages.'):'Showing all '+recent.length+' messages.';
-   const chatLink=document.querySelector('#agent-chat-link');if(chatLink)chatLink.href='/chat#box='+encodeURIComponent(boxID);
-   for(const message of recent){const row=document.createElement('li');row.className=message.direction==='user'?'bubble user':'bubble agent';const label=document.createElement('strong');label.textContent=message.direction+(message.state==='silent'?' · silent':'')+': ';const text=document.createElement('span');text.textContent=message.text;row.append(label,text);for(const attachment of message.images||[]){const response=await fetch('/v1/messages/'+encodeURIComponent(message.id)+'/images/'+encodeURIComponent(attachment.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)});if(response.ok){const imageURL=URL.createObjectURL(await response.blob()),image=document.createElement('img');messageURLs.push(imageURL);image.src=imageURL;image.alt='Image '+attachment.number+' from '+message.direction;row.append(image)}}appendQuestion(row,message);list.append(row)}
-  }catch(e){status.textContent=e.message}
-  timer=setTimeout(refresh,3000);
- };
- messageForm.onsubmit=async event=>{
-  event.preventDefault();const text=messageForm.elements.text.value,images=draftImages.map(({id,number})=>({id,number})),fingerprint=text+'\n'+images.map(image=>image.id).join(',');
-  if(fingerprint!==pendingText||!pendingKey){pendingKey=crypto.randomUUID();pendingText=fingerprint}
-  const button=messageForm.querySelector('button');button.disabled=true;
-  try{const result=await api(bp+'/messages','POST',{text,images},{'Idempotency-Key':pendingKey});messageForm.elements.text.value='';for(const entry of draftImages)URL.revokeObjectURL(entry.url);draftImages=[];renderDraft();pendingKey='';pendingText='';status.textContent=result.message?.state==='silent'?'Note saved without waking the agent.':'Message sent.';await refresh()}
-  catch(e){status.textContent=e.message}finally{button.disabled=false}
- };
- window.addEventListener('pagehide',()=>{clearTimeout(timer);clearMessageURLs();for(const entry of draftImages)URL.revokeObjectURL(entry.url)});
- document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh()});
- document.querySelector('#logout').addEventListener('click',()=>{clearTimeout(timer);clearMessageURLs();for(const entry of draftImages)URL.revokeObjectURL(entry.url);draftImages=[];imageDraft.replaceChildren();document.querySelector('#agent-messages').replaceChildren();messageForm.reset();pendingKey='';pendingText=''});
- void refresh();
-}
-
 const privateRequests=document.querySelector('#private-secret-requests');
 if(privateRequests){
  let timer,signature='';
@@ -466,15 +468,6 @@ if(privateRequests){
  document.querySelector('#logout').addEventListener('click',()=>{clearTimeout(timer);signature='';privateRequests.replaceChildren()});
  void refresh();
 }
-
-const interruptAgent=document.querySelector('#interrupt-agent');
-if(interruptAgent)interruptAgent.onclick=async()=>{
- const status=document.querySelector('#agent-message-status');
- if(!managedSession||boxSummary?.state!=='running'){status.textContent='Connect to the running agent first.';return}
- interruptAgent.disabled=true;
- try{await api(bp+'/terminal/input?session='+encodeURIComponent(managedSession),'POST',{keys:[boxSummary.defaultAgent==='shell'?'C-c':'Escape']},{'Idempotency-Key':crypto.randomUUID()});status.textContent='Interrupt sent to the managed session.'}
- catch(e){status.textContent=e.message}finally{interruptAgent.disabled=false}
-};
 
 const importedCredentials=document.querySelector('#imported-credentials');
 if(importedCredentials){
