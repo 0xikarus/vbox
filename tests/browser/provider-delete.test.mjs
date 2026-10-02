@@ -43,9 +43,10 @@ async function openManage(page){
  await page.waitForFunction(()=>document.querySelectorAll('#provider-list .providers-table tbody tr').length===2);
 }
 async function openDelete(page,index){
- const row=`#provider-list .providers-table tbody tr:nth-child(${index})`;
- await page.$eval(row+' .provider-actions-more>summary',node=>node.click());
- await page.$eval(row+' .provider-menu-delete',node=>node.click());
+ // Delete lives in the pool's inline panel; open that row's panel unless it already is.
+ await page.evaluate(index=>{const row=document.querySelectorAll('#provider-list tr.provider-row')[index-1];const manage=row.querySelector('.provider-actions>button');if(manage.getAttribute('aria-expanded')!=='true')manage.click()},index);
+ await page.waitForFunction(index=>document.querySelectorAll('#provider-list tr.provider-row')[index-1]?.nextElementSibling?.classList.contains('provider-detail-row'),{},index);
+ await page.evaluate(index=>document.querySelectorAll('#provider-list tr.provider-row')[index-1].nextElementSibling.querySelector('.provider-menu-delete').click(),index);
  await page.waitForSelector('.provider-delete-dialog[open]');
 }
 async function closeDelete(page){

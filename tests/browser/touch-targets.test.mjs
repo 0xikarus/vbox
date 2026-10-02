@@ -15,7 +15,7 @@ const targets={
  composer:['#attach','#chat-composer .ai-wand'],
  viewer:['#media-viewer-close','#media-viewer-zoom-out','#media-viewer-zoom-in','#media-viewer-zoom-reset'],
  boxes:['#manage-menu','#manage-usage','#manage-providers','#refresh','#box-list .box-details-action','#box-list .row-overflow-trigger'],
- providers:['#provider-list .provider-actions>button','#provider-list .provider-actions-more>summary']
+ providers:['#provider-list .provider-actions>button']
 };
 // Control rectangles measured on origin/main e70be06 at 1440px.
 const desktopBounds={
@@ -105,9 +105,9 @@ test('phone controls have 40px hit areas while desktop bounds stay unchanged',as
     await manage.click('#manage-menu');await manage.click('#manage-menu-panel a[href="#providers"]');assert.equal(await manage.$eval('#manage-menu-panel',node=>node.hidden),true);
    }
    await manage.goto(base+'/#providers');await manage.waitForSelector('#provider-list .provider-actions>button');
-   found=await dimensions(manage,targets.providers);if(process.env.VMBOX_TOUCH_REPORT)console.log('providers',suffix,JSON.stringify(found));assert.equal(found.length,6,JSON.stringify(found));if(verify&&mobile){assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));assertNeighbourCentres('providers',found)}
+   found=await dimensions(manage,targets.providers);if(process.env.VMBOX_TOUCH_REPORT)console.log('providers',suffix,JSON.stringify(found));assert.equal(found.length,2,JSON.stringify(found));if(verify&&mobile){assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));assertNeighbourCentres('providers',found)}
    if(captureDir&&mobile)await manage.screenshot({path:`${captureDir}/providers-${suffix}.png`});
-   await manage.$eval('#provider-list .provider-actions-more>summary',node=>node.click());assert.equal(await manage.$eval('#provider-list .provider-actions-more',node=>node.open),true);await manage.close();
+   await manage.$eval('#provider-list .provider-actions>button',node=>node.click());await manage.waitForSelector('#provider-list .provider-panel');await manage.close();
   }
  }finally{await browser.close();await new Promise(done=>server.close(done))}
 });

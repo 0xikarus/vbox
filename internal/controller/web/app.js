@@ -246,8 +246,6 @@ function renderNotifications(values){const root=$('#destinations');root.replaceC
  }
  root.append(list,rawDetails(values))}
 let providerTypes=[];
-const workerViews=new Map();
-const gibText=bytes=>{const value=bytes/(1024**3);return (value>=10?Math.round(value):value.toFixed(1))+' GiB'};
 function renderProviderTypes(schema){
  providerTypes=schema?.types||[];
  const form=$('#provider'),select=form.elements.provider,previous=select.value;
@@ -276,46 +274,121 @@ function renderProviderFields(existing){
   root.append(label);
  }
 }
+let openProviderKey='';
 function editProvider(provider){
  const form=$('#provider'),f=form.elements;
  f.provider.value=provider.provider;f.alias.value=provider.name;f.revision.value=provider.updatedAt;f.provider.disabled=true;f.alias.readOnly=true;
- renderProviderFields(provider);$('#provider-editor-title').textContent='Edit '+provider.name;$('#provider-form-status').textContent='';
- const editor=$('#provider-editor');editor.open=true;editor.scrollIntoView({block:'start'});
+ renderProviderFields(provider);$('#provider-editor-title').textContent='Connection';$('#provider-form-status').textContent='';
 }
 function resetProviderForm(){
  const form=$('#provider'),f=form.elements;form.reset();f.revision.value='';f.provider.disabled=false;f.alias.readOnly=false;
  if(providerTypes.length&&!f.provider.value)f.provider.value=providerTypes[0].name;
  $('#provider-editor-title').textContent='Add provider';$('#provider-form-status').textContent='';renderProviderFields();
 }
+// The add/edit form is one element: it lives under the list for adding and
+// moves into the open provider's panel for editing that provider's connection.
+function homeProviderEditor(){const editor=$('#provider-editor');$('#provider-editor-home').append(editor);editor.classList.remove('in-panel');return editor}
+function closeProviderPanel(){openProviderKey='';resetProviderForm();homeProviderEditor().open=false}
 $('#provider').elements.provider.addEventListener('change',()=>renderProviderFields());
-$('#provider-cancel').addEventListener('click',()=>{resetProviderForm();$('#provider-editor').open=false});
-function workerPoolTarget(provider){return {provider:provider.provider,providerCredential:provider.name||''}}
-function openWorkerSettings(provider){
- const dialog=node('dialog');dialog.className='vb-sheet-dialog provider-config-dialog worker-settings';dialog.setAttribute('aria-label','Worker settings for '+provider.name);
- const header=node('header');header.className='vb-sheet-header';header.append(node('h2','Worker settings · '+provider.name),button('Close',()=>dialog.close()));
- const body=node('div');body.className='sheet-scroll-body';dialog.append(header,body);
- const key=poolKey(provider.provider,provider.name);
- const load=async()=>{
-  body.replaceChildren(node('p','Loading worker settings…'));
-  try{const view=await api('/v1/fleet/worker?'+new URLSearchParams(workerPoolTarget(provider)));workerViews.set(key,view)}
-  catch(err){workerViews.set(key,{error:err.message})}
-  if(dialog.isConnected)renderWorkerSettings(body,provider,workerViews.get(key),load);
- };
- document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();void load();
+$('#provider-cancel').addEventListener('click',()=>{if(openProviderKey){const provider=listedProviders.find(item=>poolKey(item.provider,item.name)===openProviderKey);if(provider)editProvider(provider);return}resetProviderForm();$('#provider-editor').open=false});
+$('#provider-add').addEventListener('click',()=>{closeProviderPanel();renderProviders(listedProviders);const editor=$('#provider-editor');editor.open=true;editor.scrollIntoView({block:'nearest'});$('#provider').elements.alias.focus()});
+let listedProviders=[];
+const gibText=bytes=>{const value=bytes/(1024**3);return (value>=10?Math.round(value):value.toFixed(1))+' GiB'};
+function renderProviders(providers){
+ listedProviders=providers;
+ const editor=homeProviderEditor(),root=$('#provider-list');root.replaceChildren();
+ if(!providers.length){root.append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));return}
+ if(openProviderKey&&!providers.some(provider=>poolKey(provider.provider,provider.name)===openProviderKey))closeProviderPanel();
+ const {table,rows}=workspaceNav.providerTable(true);root.append(table);
+ const columns=table.querySelectorAll('thead th').length;
+ for(const provider of providers){
+  const key=poolKey(provider.provider,provider.name),open=key===openProviderKey;
+  const fleet=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));
+  const isDefault=defaults?.provider===provider.provider&&defaults?.providerCredential===provider.name;
+  const row=node('tr');row.className='provider-row'+(open?' is-open':'');rows.append(row);
+  const snapshot=fleet?fleet.providerSnapshot:{fleet:null,config:null,host:null,hostError:'',errors:[]};
+  workspaceNav.renderProviderRow(row,provider,isDefault,snapshot,cell=>{
+   const actions=node('div');actions.className='provider-actions';
+   const manage=node('button',open?'Close':'Manage');manage.type='button';manage.className=open?'':'primary';manage.setAttribute('aria-expanded',String(open));manage.setAttribute('aria-controls','provider-panel-'+provider.provider+'-'+provider.name);
+   manage.addEventListener('click',()=>{if(open)closeProviderPanel();else{openProviderKey=key;editProvider(provider)}renderProviders(listedProviders);if(!open)document.getElementById('provider-panel-'+provider.provider+'-'+provider.name)?.scrollIntoView({block:'nearest'})});
+   actions.append(manage);cell.append(actions);
+  });
+  if(!open)continue;
+  const detail=node('tr');detail.className='provider-detail-row';const cell=node('td');cell.colSpan=columns;detail.append(cell);rows.append(detail);
+  cell.append(providerPanel(provider,fleet,isDefault,editor));
+ }
 }
+function providerPanel(provider,fleet,isDefault,editor){
+ const panel=node('div');panel.className='provider-panel';panel.id='provider-panel-'+provider.provider+'-'+provider.name;
+ const section=(title,hint)=>{const group=node('section');group.className='provider-panel-section';const heading=node('h3',title);group.append(heading);if(hint){const small=node('p',hint);small.className='hint';group.append(small)}return group};
+ // Capacity: one slot number, bounded by the worker's machine when it reports one.
+ const capacity=section('Slots and box size');
+ const settings=node('div');settings.className='provider-capacity-settings';capacity.append(settings);
+ if(provider.provider==='shared-worker'){
+  settings.append(node('p','Loading worker settings…'));
+  const load=async()=>{
+   let view;try{view=await api('/v1/fleet/worker?'+new URLSearchParams(workerPoolTarget(provider)))}catch(err){view={error:err.message}}
+   if(!settings.isConnected)return;
+   if(view.supported&&view.worker)renderWorkerSettings(settings,provider,view,load);
+   else{settings.replaceChildren();if(view.error||view.reason){const note=node('p',view.error?'Worker settings unavailable: '+view.error:'This worker reports no machine limits ('+view.reason+'). Set desired slots below.');note.className='worker-settings-note';settings.append(note)}if(!view.error)settings.append(desiredSlotsForm(provider,fleet))}
+  };
+  void load();
+ }else settings.append(desiredSlotsForm(provider,fleet));
+ capacity.append(slotGrid(fleet));
+ // Connection: the shared add/edit form, prefilled for this provider.
+ const connection=section('Connection','Saved secrets are never shown; leave a secret blank to keep it.');
+ editor.classList.add('in-panel');editor.open=true;connection.append(editor);
+ const known=new Set((providerTypes.find(type=>type.name===provider.provider)?.fields||[]).map(field=>field.name));
+ const other=Object.entries(provider.config||{}).filter(([key])=>!known.has(key));
+ if(other.length){const extra=node('details');extra.className='provider-other-settings';extra.append(node('summary','Other saved settings'),dataTable(['Setting','Value'],other.map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));connection.append(extra)}
+ // Pool actions.
+ const pool=section('Pool');
+ const status=node('p');status.className='provider-panel-status';status.setAttribute('role','status');
+ const actions=node('div');actions.className='provider-panel-actions';
+ actions.append(button('Validate',async()=>{status.textContent='Validating…';const result=await api(pp(provider.provider,provider.name)+'/validate','POST',{});status.textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}));
+ if(isDefault){const badge=node('span','Default pool for new boxes');badge.className='provider-default-note';actions.append(badge)}
+ else actions.append(button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:provider.provider,providerCredential:provider.name});await refresh()}));
+ actions.append(button('Refresh usage',async()=>{const fresh=await workspaceNav.providerSnapshot(provider);const target=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));if(target){Object.assign(target,fresh.fleet||{},{providerSnapshot:fresh,hostResources:fresh.host,hostError:fresh.hostError});renderProviders(listedProviders)}}));
+ const remove=button('Delete…',()=>workspaceNav.openProviderDelete(provider,refresh));remove.classList.add('provider-menu-delete');actions.append(remove);
+ pool.append(actions,status);
+ panel.append(capacity,connection,pool);
+ return panel;
+}
+function desiredSlotsForm(provider,fleet){
+ const form=node('form');form.className='worker-settings-form provider-desired-slots';
+ const field=node('label');field.className='field';const input=node('input');input.type='number';input.name='count';input.min='0';input.required=true;input.value=String(fleet?.desiredSlots??'');
+ field.append(document.createTextNode('Desired slots'),input);const hint=node('small','Raising may incur provider charges. Lowering drains free slots; occupied slots are not stopped.');hint.className='hint';field.append(hint);
+ const save=node('button','Save slots');save.className='primary';const formActions=node('div');formActions.className='form-actions';formActions.append(save);
+ form.append(field,formActions);
+ form.addEventListener('submit',action(async()=>{save.disabled=true;try{await api('/v1/fleet/slots','PUT',{...workerPoolTarget(provider),compute_box_slots:Number(input.value)});notice('Desired slots for '+provider.name+' saved.');await refresh()}finally{save.disabled=false}}));
+ return form;
+}
+function slotGrid(fleet){
+ const grid=node('div');grid.className='slot-grid';
+ if(fleet?.error){grid.append(node('p','Capacity unavailable: '+fleet.error));return grid}
+ for(const slot of fleet?.slots||[]){
+  const card=node('article');card.className='slot-card';card.dataset.state=slot.state;
+  const dot=node('span');dot.className='slot-dot';dot.setAttribute('aria-hidden','true');
+  const occupant=node('span',slot.logicalBoxName||(slot.state==='free'?'Available':'—'));occupant.className='slot-box';
+  card.append(dot,node('strong','Slot '+slot.ordinal),occupant,node('em',[slot.state,slot.health,slot.region].filter(Boolean).join(' · ')));grid.append(card);
+ }
+ if(!(fleet?.slots||[]).length)grid.append(node('p','No slots reported for this pool.'));
+ return grid;
+}
+function workerPoolTarget(provider){return {provider:provider.provider,providerCredential:provider.name||''}}
 function renderWorkerSettings(body,provider,view,reload){
  body.replaceChildren();
- if(view?.error){const error=node('p','Worker settings unavailable: '+view.error);error.className='worker-settings-note';body.append(error,button('Retry',reload));return}
- if(!view?.supported||!view.worker){const note=node('p',view?.reason?'Remote settings unavailable: '+view.reason:'Remote settings are unavailable for this worker.');note.className='worker-settings-note';body.append(note);return}
  const {settings,specs,limits}=view.worker;
  const facts=[(specs.cpus%1?specs.cpus.toFixed(1):specs.cpus)+' CPU'+(specs.cpus===1?'':'s'),gibText(specs.memoryBytes)+' RAM',specs.swapBytes?gibText(specs.swapBytes)+' swap':'no swap'];
  if(specs.diskTotalBytes)facts.push(gibText(specs.diskFreeBytes)+' free of '+gibText(specs.diskTotalBytes)+' disk');
  if(specs.isolationTier)facts.push(specs.isolationTier+' isolation');
- const machine=node('p',facts.join(' · '));machine.className='worker-specs';machine.title='Machine specs reported by the worker';
+ const machine=node('p','Machine: '+facts.join(' · '));machine.className='worker-specs';machine.title='Machine specs reported by the worker';
  const form=node('form');form.className='worker-settings-form';
  const numberField=(label,name,value,min,max,step,hint)=>{const field=node('label');field.className='field';const input=node('input');input.type='number';input.name=name;input.min=String(min);input.max=String(max);input.step=String(step);input.value=String(value);input.required=true;field.append(document.createTextNode(label),input);if(hint){const small=node('small',hint);small.className='hint';field.append(small)}return field};
  const used=view.worker.occupiedSlots===1?'1 holds a box':view.worker.occupiedSlots+' hold boxes';
- form.append(numberField('Slots','slots',settings.slots,Math.max(1,view.worker.occupiedSlots),limits.maxSlots,1,'Up to '+limits.maxSlots+' on this machine · '+used+'.'));
+ const slotsRow=node('div');slotsRow.className='worker-slots-row';
+ slotsRow.append(numberField('Slots','slots',settings.slots,Math.max(1,view.worker.occupiedSlots),limits.maxSlots,1,'Up to '+limits.maxSlots+' on this machine · '+used+'.'));
+ form.append(slotsRow);
  if(limits.perBoxLimits){
   const sizes=node('fieldset');sizes.className='worker-box-size';sizes.append(node('legend','New box size'));
   sizes.append(numberField('CPU','cpu',settings.boxDefaults.cpu,limits.boxMin.cpu,limits.boxMax.cpu,limits.cpuStep,'Max '+limits.boxMax.cpu),
@@ -325,7 +398,7 @@ function renderWorkerSettings(body,provider,view,reload){
  }
  const overcommit=node('p');overcommit.className='worker-overcommit';overcommit.setAttribute('role','note');
  const status=node('p');status.setAttribute('role','status');
- const save=node('button','Save worker settings');save.className='primary';
+ const save=node('button','Save slots and box size');save.className='primary';
  const actions=node('div');actions.className='form-actions';actions.append(save);
  form.append(overcommit,actions,status);
  const syncOvercommit=()=>{
@@ -338,32 +411,10 @@ function renderWorkerSettings(body,provider,view,reload){
   const f=event.target.elements,request={...workerPoolTarget(provider),revision:settings.revision,slots:Number(f.slots.value)};
   if(limits.perBoxLimits)request.boxDefaults={cpu:Number(f.cpu.value),memoryMiB:Number(f.memory.value)*1024,swapMiB:Number(f.swap.value)*1024};
   save.disabled=true;status.textContent='Saving…';
-  try{const updated=await api('/v1/fleet/worker','PUT',request);workerViews.set(poolKey(provider.provider,provider.name),updated);renderWorkerSettings(body,provider,updated,reload);notice('Worker settings for '+provider.name+' saved. The worker applied them without a restart.');void refresh()}
+  try{await api('/v1/fleet/worker','PUT',request);notice('Slots and box size for '+provider.name+' saved. The worker applied them without a restart.');await refresh()}
   catch(err){status.textContent=err.message;save.disabled=false;if(/reload/i.test(err.message))void reload()}
  }));
  body.append(machine,form);
-}
-function renderProviders(providers){
- const root=$('#provider-list');root.replaceChildren();
- if(!providers.length){root.append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));return}
- const {table,rows}=workspaceNav.providerTable(true);root.append(table);
- for(const provider of providers){
-  const fleet=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));
-  const isDefault=defaults?.provider===provider.provider&&defaults?.providerCredential===provider.name;
-  const row=node('tr');rows.append(row);
-  const snapshot=fleet?fleet.providerSnapshot:{fleet:null,config:null,host:null,hostError:'',errors:[]};
-  workspaceNav.renderProviderRow(row,provider,isDefault,snapshot,cell=>{
-   const actions=node('div');actions.className='provider-actions';
-   actions.append(button('Edit',()=>editProvider(provider)),button('Validate',async()=>{const result=await api(pp(provider.provider,provider.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}));
-   const more=node('details');more.className='provider-actions-more';const menu=node('div');menu.className='provider-actions-extra';
-   if(provider.provider==='shared-worker')menu.append(button('Worker settings…',()=>openWorkerSettings(provider)));
-   if(!isDefault)menu.append(button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:provider.provider,providerCredential:provider.name});await refresh()}));
-   menu.append(button('Refresh usage',async()=>{const fresh=await workspaceNav.providerSnapshot(provider);const target=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));if(target){Object.assign(target,fresh.fleet||{}, {providerSnapshot:fresh,hostResources:fresh.host,hostError:fresh.hostError});renderProviders(providers)}}));
-   menu.append(button('Configuration…',()=>{const dialog=node('dialog');dialog.className='vb-sheet-dialog provider-config-dialog';dialog.setAttribute('aria-label','Configuration for '+provider.name);const header=node('header');header.className='vb-sheet-header';const title=node('h2','Configuration · '+provider.name);const close=button('Close',()=>dialog.close());header.append(title,close);const body=node('div');body.className='sheet-scroll-body';body.append(dataTable(['Setting','Value'],Object.entries(provider.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));dialog.append(header,body);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal()}));
-   const remove=button('Delete…',()=>workspaceNav.openProviderDelete(provider,refresh));remove.classList.add('provider-menu-delete');menu.append(remove);
-   const summary=node('summary','⋯');summary.setAttribute('aria-label','More actions for '+provider.name);menu.addEventListener('click',()=>{more.open=false});more.append(summary,menu);actions.append(more);cell.append(actions);
-  });
- }
 }
 const bp=id=>'/v1/logical-boxes/'+encodeURIComponent(id),pp=(p,n)=>'/v1/provider-credentials/'+encodeURIComponent(p)+'/'+encodeURIComponent(n);
 let listedBoxes=[],selectedManagedBoxID='',boxDetailTrigger=null,boxDetailInstructions=null,boxDetailInstructionsRequest=0;
@@ -700,7 +751,7 @@ async function refresh(){
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#login-error').textContent='';$('#app').hidden=false;openProfileFromLink()}));
-$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());resetProviderForm();workerViews.clear();$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
+$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());closeProviderPanel();$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
 $('#refresh').addEventListener('click',action(refresh));
 function resetCreationForm(form){
  const pool=form.elements.pool.value;
@@ -733,7 +784,7 @@ $('#provider').addEventListener('submit',action(async e=>{
  }
  const body={config};if(Object.keys(secret).length){body.secret=secret;if(rev)body.replaceSecret=true}
  await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});
- const saved=f.alias.value;resetProviderForm();$('#provider-editor').open=false;notice('Provider '+saved+' saved. Validate it from its card.');await refresh();
+ const saved=f.alias.value;if(!rev){resetProviderForm();$('#provider-editor').open=false;openProviderKey=poolKey(f.provider.value,saved)}notice('Provider '+saved+' saved. Validate it from its Pool actions.');await refresh();if(openProviderKey){const provider=listedProviders.find(item=>poolKey(item.provider,item.name)===openProviderKey);if(provider){editProvider(provider);renderProviders(listedProviders)}}
 }));
 $('#slots').addEventListener('submit',action(async e=>{const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;if(!target)throw Error('Choose a worker pool first');await api('/v1/fleet/slots','PUT',{...target,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));

@@ -206,8 +206,8 @@ subprocess.run(["vbox","providers","validate","shared-worker",alias],check=True)
 '
 ```
 
-On the controller's Providers page, open this new pool's **⋯** menu and choose
-**Worker settings…**. It shows the VPS's CPUs, RAM, swap and disk; set the slot count and new box
+On the controller's Providers page, choose **Manage** on this new pool's row.
+Its panel shows the VPS's CPUs, RAM, swap and disk; set the slot count and new box
 size there, up to what the machine has. `vbox pools worker shared-worker ALIAS
 --slots N` does the same from the CLI. Changes apply live; the worker is not
 restarted. Do not change another pool or the account default unintentionally.
