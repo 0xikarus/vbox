@@ -24,9 +24,14 @@ func run() error {
 	if os.Geteuid() != 0 {
 		return errors.New("shared worker supervisor must run as root; workloads use separate unprivileged users")
 	}
-	capacity, err := strconv.Atoi(os.Getenv("VMBOX_SHARED_SLOTS"))
-	if err != nil {
-		return errors.New("VMBOX_SHARED_SLOTS must be an integer from 1 to 32")
+	// VMBOX_SHARED_SLOTS only seeds the first start; the controller changes
+	// slots afterwards and the persisted value wins.
+	capacity := 0
+	if raw := os.Getenv("VMBOX_SHARED_SLOTS"); raw != "" {
+		var err error
+		if capacity, err = strconv.Atoi(raw); err != nil || capacity < 1 || capacity > 32 {
+			return errors.New("VMBOX_SHARED_SLOTS must be an integer from 1 to 32 when set")
+		}
 	}
 	root := os.Getenv("VMBOX_SHARED_ROOT")
 	if root == "" {
@@ -55,6 +60,9 @@ func run() error {
 		return err
 	}
 	defer store.Close()
+	if saved := store.SlotCapacity(); capacity != 0 && capacity != saved {
+		log.Printf("shared worker: VMBOX_SHARED_SLOTS=%d ignored; using %d slots saved through the controller", capacity, saved)
+	}
 	handler, err := sharedworker.NewServer(store, runtime, os.Getenv("VMBOX_SHARED_TOKEN"))
 	if err != nil {
 		return err

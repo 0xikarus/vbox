@@ -4,7 +4,8 @@ The controller can run wherever it has PostgreSQL, HTTPS, and the matching
 runtime binary. Worker hosting is a separate choice. A provider alias names a
 worker pool; changing its configuration does not move an existing box or volume.
 
-Use `vbox providers schema|list|show|create|update|validate` to manage aliases.
+Add and edit aliases from the controller's Providers page, where each provider
+type has its own fields, or with `vbox providers schema|list|show|create|update|validate`.
 Secrets are separate from non-secret config. Updates use the alias's revision;
 omitted secrets are preserved and replacement is explicit. Target fields are
 immutable after creation, so create a new alias for a new endpoint or project.
@@ -44,6 +45,9 @@ The trusted process modes are also available, with weaker isolation. See
 [shared-worker isolation](SHARED-WORKERS.md) before putting different workloads
 on the same physical host. The worker needs neither the controller database
 connection nor another provider's management token.
+
+A shared worker's slots and new-box size are changed remotely, bounded by its
+machine: see [changing slots and box size remotely](SHARED-WORKERS.md#changing-slots-and-box-size-remotely).
 
 ## Railway
 

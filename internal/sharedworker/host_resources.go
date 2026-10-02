@@ -33,6 +33,14 @@ func HostResources(workspaceRoot string) (provider.HostResources, error) {
 }
 
 func hostResourcesFromPaths(meminfoPath, cgroupRoot string) (provider.HostResources, error) {
+	result, err := hostMemory(meminfoPath)
+	if err != nil {
+		return result, err
+	}
+	return applyCgroupMemory(result, cgroupRoot)
+}
+
+func hostMemory(meminfoPath string) (provider.HostResources, error) {
 	data, err := os.ReadFile(meminfoPath)
 	if err != nil {
 		return provider.HostResources{}, err
@@ -60,7 +68,10 @@ func hostResourcesFromPaths(meminfoPath, cgroupRoot string) (provider.HostResour
 	if values["MemTotal"] == 0 || values["MemAvailable"] > values["MemTotal"] || values["SwapFree"] > values["SwapTotal"] {
 		return provider.HostResources{}, errors.New("host memory counters unavailable")
 	}
-	result := provider.HostResources{MemoryTotalBytes: values["MemTotal"], MemoryAvailableBytes: values["MemAvailable"], SwapTotalBytes: values["SwapTotal"], SwapFreeBytes: values["SwapFree"], Scope: "host", SwapLimitKnown: true, ObservedAt: time.Now().UTC()}
+	return provider.HostResources{MemoryTotalBytes: values["MemTotal"], MemoryAvailableBytes: values["MemAvailable"], SwapTotalBytes: values["SwapTotal"], SwapFreeBytes: values["SwapFree"], Scope: "host", SwapLimitKnown: true, ObservedAt: time.Now().UTC()}, nil
+}
+
+func applyCgroupMemory(result provider.HostResources, cgroupRoot string) (provider.HostResources, error) {
 	limit, finite, err := cgroupLimit(filepath.Join(cgroupRoot, "memory.max"))
 	if errors.Is(err, os.ErrNotExist) || !finite && err == nil {
 		return result, nil

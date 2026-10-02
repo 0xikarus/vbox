@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -64,6 +65,11 @@ func (s *Server) boxResources(w http.ResponseWriter, r *http.Request, p Principa
 		writeError(w, 409, fmt.Errorf("assignment changed; reload resource settings"))
 		return
 	}
+	if settings, ok := prov.(provider.WorkerSettingsProvider); ok {
+		if config, err := settings.WorkerConfig(r.Context()); err == nil {
+			response["limits"] = config.Limits
+		}
+	}
 	writeJSON(w, 200, response)
 }
 
@@ -112,12 +118,10 @@ func (s *Server) setBoxResources(w http.ResponseWriter, r *http.Request, p Princ
 		writeError(w, 409, fmt.Errorf("compute slot unavailable"))
 		return
 	}
-	if box.Provider == "shared-worker" {
-		if request.CPU != 1 || request.MemoryMiB%1024 != 0 || request.MemoryMiB < 1024 || request.MemoryMiB > 8192 || request.SwapMiB == nil || *request.SwapMiB%1024 != 0 || *request.SwapMiB < 0 || *request.SwapMiB > 4096 {
-			writeError(w, 400, fmt.Errorf("shared-worker CPU is fixed at 1; memoryMiB must be 1024–8192 and swapMiB 0–4096, in 1024 MiB steps"))
-			return
-		}
-	} else if request.SwapMiB != nil {
+	if box.Provider == "shared-worker" && request.SwapMiB == nil {
+		writeError(w, 400, fmt.Errorf("shared-worker resource updates require swapMiB"))
+		return
+	} else if box.Provider != "shared-worker" && request.SwapMiB != nil {
 		writeError(w, 400, fmt.Errorf("per-box swap settings require a container-isolated shared worker"))
 		return
 	}
@@ -125,6 +129,12 @@ func (s *Server) setBoxResources(w http.ResponseWriter, r *http.Request, p Princ
 	if err != nil {
 		writeError(w, 502, err)
 		return
+	}
+	if box.Provider == "shared-worker" {
+		if err := sharedBoxLimitsAllowed(ctx, prov, provider.BoxLimits{CPU: request.CPU, MemoryMiB: request.MemoryMiB, SwapMiB: *request.SwapMiB}); err != nil {
+			writeError(w, 400, err)
+			return
+		}
 	}
 	limits, ok := prov.(provider.ResourceLimitsProvider)
 	if !ok {
@@ -157,7 +167,26 @@ func (s *Server) setBoxResources(w http.ResponseWriter, r *http.Request, p Princ
 	}
 	message := "Limits submitted for this compute slot. No restart was requested. Reload to check configured limits; the live container may require a later restart to adopt them. These settings stay with the slot, not the workspace volume."
 	if box.Provider == "shared-worker" {
-		message = "RAM and swap limits updated on the running container and saved with the workspace. No restart was requested."
+		message = "CPU, RAM and swap limits updated on the running container and saved with the workspace. No restart was requested."
 	}
 	writeJSON(w, 200, map[string]any{"resources": resources, "message": message})
+}
+
+// sharedBoxLimitsAllowed checks one box against its worker machine. Workers
+// without remote settings keep the original fixed 1 CPU, 1–8 GiB RAM and
+// 0–4 GiB swap.
+func sharedBoxLimitsAllowed(ctx context.Context, prov provider.Provider, box provider.BoxLimits) error {
+	if settings, ok := prov.(provider.WorkerSettingsProvider); ok {
+		config, err := settings.WorkerConfig(ctx)
+		if err == nil {
+			return config.Limits.CheckBox(box)
+		}
+		if !errors.Is(err, provider.ErrUnsupported) {
+			return fmt.Errorf("read worker limits: %w", err)
+		}
+	}
+	if box.CPU != 1 || box.MemoryMiB%1024 != 0 || box.MemoryMiB < 1024 || box.MemoryMiB > 8192 || box.SwapMiB%1024 != 0 || box.SwapMiB < 0 || box.SwapMiB > 4096 {
+		return fmt.Errorf("this shared worker fixes CPU at 1 and accepts 1–8 GiB RAM and 0–4 GiB swap; upgrade it to use the machine's full size")
+	}
+	return nil
 }

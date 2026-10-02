@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"time"
 )
 
@@ -83,6 +84,80 @@ type HostResources struct {
 
 type HostResourcesProvider interface {
 	HostResources(context.Context) (HostResources, error)
+}
+
+// BoxLimits are the CPU, memory and swap limits of one box on a worker.
+type BoxLimits struct {
+	CPU       float64 `json:"cpu"`
+	MemoryMiB int64   `json:"memoryMiB"`
+	SwapMiB   int64   `json:"swapMiB"`
+}
+
+// WorkerSettings are the worker-owned values an owner may change remotely.
+// Revision is the optimistic-concurrency token; a write must carry the current one.
+type WorkerSettings struct {
+	Revision    uint64    `json:"revision"`
+	Slots       int       `json:"slots"`
+	BoxDefaults BoxLimits `json:"boxDefaults"`
+}
+
+// WorkerSpecs describe the machine (or cgroup) a worker runs on.
+type WorkerSpecs struct {
+	CPUs           float64 `json:"cpus"`
+	MemoryBytes    int64   `json:"memoryBytes"`
+	SwapBytes      int64   `json:"swapBytes"`
+	DiskTotalBytes int64   `json:"diskTotalBytes"`
+	DiskFreeBytes  int64   `json:"diskFreeBytes"`
+	Scope          string  `json:"scope,omitempty"`
+	IsolationTier  string  `json:"isolationTier,omitempty"`
+}
+
+// WorkerLimits are the bounds a worker enforces on WorkerSettings, derived
+// from its specs and current occupancy.
+type WorkerLimits struct {
+	MinSlots      int       `json:"minSlots"`
+	MaxSlots      int       `json:"maxSlots"`
+	PerBoxLimits  bool      `json:"perBoxLimits"`
+	BoxMin        BoxLimits `json:"boxMin"`
+	BoxMax        BoxLimits `json:"boxMax"`
+	CPUStep       float64   `json:"cpuStep"`
+	MemoryStepMiB int64     `json:"memoryStepMiB"`
+}
+
+// CheckBox reports whether one box's limits fit the worker's machine.
+func (limits WorkerLimits) CheckBox(box BoxLimits) error {
+	steps := box.CPU / limits.CPUStep
+	if math.IsNaN(box.CPU) || steps != math.Trunc(steps) || box.CPU < limits.BoxMin.CPU || box.CPU > limits.BoxMax.CPU {
+		return fmt.Errorf("box CPU must be %g–%g in steps of %g", limits.BoxMin.CPU, limits.BoxMax.CPU, limits.CPUStep)
+	}
+	if box.MemoryMiB%limits.MemoryStepMiB != 0 || box.MemoryMiB < limits.BoxMin.MemoryMiB || box.MemoryMiB > limits.BoxMax.MemoryMiB {
+		return fmt.Errorf("box memory must be %d–%d GiB", limits.BoxMin.MemoryMiB/1024, limits.BoxMax.MemoryMiB/1024)
+	}
+	if box.SwapMiB%limits.MemoryStepMiB != 0 || box.SwapMiB < limits.BoxMin.SwapMiB || box.SwapMiB > limits.BoxMax.SwapMiB {
+		if limits.BoxMax.SwapMiB == 0 {
+			return errors.New("this machine has no swap; box swap must be 0 GiB")
+		}
+		return fmt.Errorf("box swap must be 0–%d GiB", limits.BoxMax.SwapMiB/1024)
+	}
+	return nil
+}
+
+type WorkerConfig struct {
+	Settings      WorkerSettings `json:"settings"`
+	Specs         WorkerSpecs    `json:"specs"`
+	Limits        WorkerLimits   `json:"limits"`
+	SlotsInUse    int            `json:"slotsInUse"`
+	OccupiedSlots int            `json:"occupiedSlots"`
+	// Overcommitted reports that slots × default memory exceeds machine memory.
+	// It is allowed: boxes rarely all use their full limit at once.
+	Overcommitted bool `json:"overcommitted"`
+}
+
+// WorkerSettingsProvider changes a worker's capacity and box defaults live,
+// without redeploying or restarting it.
+type WorkerSettingsProvider interface {
+	WorkerConfig(context.Context) (WorkerConfig, error)
+	SetWorkerSettings(context.Context, WorkerSettings) (WorkerConfig, error)
 }
 
 type Owner struct {

@@ -40,9 +40,16 @@ func TestContainerMemoryLimitsRespectSavedWorkspace(t *testing.T) {
 	if args := strings.Join(r.createArgs(w), " "); !strings.Contains(args, "--memory 4g --memory-swap 6g") {
 		t.Fatalf("saved swap limit missing: %s", args)
 	}
-	w.MemoryGiB = 9
+	w.MemoryGiB = 0
+	w.SwapGiB = nil
+	w.CPU = 2.5
+	if args := strings.Join(r.createArgs(w), " "); !strings.Contains(args, "--memory 2g --memory-swap 3g --cpus 2.5") {
+		t.Fatalf("saved CPU limit missing: %s", args)
+	}
+	swap = -1
+	w.SwapGiB = &swap
 	if _, _, err := containerMemoryLimits(w); err == nil {
-		t.Fatal("oversized memory limit accepted")
+		t.Fatal("negative swap limit accepted")
 	}
 }
 

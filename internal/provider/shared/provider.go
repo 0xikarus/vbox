@@ -139,6 +139,30 @@ func (p *Provider) ResourceUsage(ctx context.Context, id string) (provider.Resou
 	}
 	return *result.ResourceUsage, nil
 }
+
+func (p *Provider) WorkerConfig(ctx context.Context) (provider.WorkerConfig, error) {
+	return p.workerConfig(ctx, sharedworker.Request{Operation: "worker-config"})
+}
+
+func (p *Provider) SetWorkerSettings(ctx context.Context, settings provider.WorkerSettings) (provider.WorkerConfig, error) {
+	return p.workerConfig(ctx, sharedworker.Request{Operation: "set-worker-settings", Settings: settings})
+}
+
+func (p *Provider) workerConfig(ctx context.Context, request sharedworker.Request) (provider.WorkerConfig, error) {
+	result, err := p.rpc(ctx, request)
+	if err != nil && err.Error() == sharedworker.ErrUnsupportedOperation.Error() {
+		// Workers released before remote settings keep their startup slot count.
+		return provider.WorkerConfig{}, fmt.Errorf("%w: upgrade this shared worker to change its settings remotely", provider.ErrUnsupported)
+	}
+	if err != nil {
+		return provider.WorkerConfig{}, err
+	}
+	if result.WorkerConfig == nil {
+		return provider.WorkerConfig{}, errors.New("shared worker omitted its settings")
+	}
+	return *result.WorkerConfig, nil
+}
+
 func (p *Provider) Delete(ctx context.Context, id string, owner provider.Owner) error {
 	_, err := p.rpc(ctx, sharedworker.Request{Operation: "delete", ID: id, Owner: owner})
 	return err

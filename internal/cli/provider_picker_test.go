@@ -177,3 +177,39 @@ func TestProvidersReadableAndExplicitJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestPoolWorkerChangesOnlyRequestedValues(t *testing.T) {
+	var sent map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/fleet/worker" || (r.Method == "GET" && r.URL.Query().Get("providerCredential") != "vps") {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL)
+			return
+		}
+		if r.Method == "PUT" {
+			json.NewDecoder(r.Body).Decode(&sent)
+		}
+		w.Write([]byte(`{"provider":"shared-worker","providerCredential":"vps","supported":true,"worker":{"settings":{"revision":7,"slots":2,"boxDefaults":{"cpu":1,"memoryMiB":2048,"swapMiB":1024}}}}`))
+	}))
+	defer server.Close()
+	a := New()
+	var out bytes.Buffer
+	a.Out, a.Err = &out, &out
+	ctx := config.Context{Controller: server.URL}
+	if err := a.controllerProviders(context.Background(), ctx, "test", []string{"worker", "shared-worker", "vps"}); err != nil || sent != nil {
+		t.Fatalf("show wrote settings: %v %v", err, sent)
+	}
+	if err := a.controllerProviders(context.Background(), ctx, "test", []string{"worker", "shared-worker", "vps", "--slots", "5", "--box-memory", "3"}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"provider": "shared-worker", "providerCredential": "vps", "revision": float64(7), "slots": float64(5), "boxDefaults": map[string]any{"cpu": float64(1), "memoryMiB": float64(3072), "swapMiB": float64(1024)}}
+	if got, _ := json.Marshal(sent); string(got) != string(must(json.Marshal(want))) {
+		t.Fatalf("sent %s", got)
+	}
+}
+
+func must[T any](value T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return value
+}

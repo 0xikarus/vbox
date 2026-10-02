@@ -38,6 +38,9 @@ func (r CreateLogicalBoxRequest) ShouldAllocateWhenReady() bool {
 	return r.AllocateWhenReady == nil || *r.AllocateWhenReady
 }
 
+// MaxBoxMemoryGiB is a sanity ceiling; a worker's machine sets the real limit.
+const MaxBoxMemoryGiB = 1024
+
 func (r *CreateLogicalBoxRequest) Normalize() {
 	r.DefaultAgent = strings.ToLower(strings.TrimSpace(r.DefaultAgent))
 	if r.DefaultAgent == "" {

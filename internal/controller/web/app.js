@@ -45,7 +45,18 @@ function renderPoolChoices(providers){
 function syncCreateMemorySettings(){
  let pool=null;try{pool=$('#create-pool').value?JSON.parse($('#create-pool').value):null}catch{}
  $('#create-memory-settings').hidden=pool?.provider!=='shared-worker';
+ if(pool?.provider==='shared-worker')void applyWorkerBoxBounds(pool,$('#create').elements);
 }
+// Box size inputs follow the selected worker's machine and its default size.
+async function applyWorkerBoxBounds(pool,fields){
+ let view;try{view=await api('/v1/fleet/worker?'+new URLSearchParams(pool))}catch{return}
+ const limits=view?.worker?.limits,defaults=view?.worker?.settings?.boxDefaults;
+ if(!limits?.perBoxLimits||!fields.memoryGiB||!fields.swapGiB)return;
+ fields.memoryGiB.max=String(limits.boxMax.memoryMiB/1024);fields.swapGiB.max=String(limits.boxMax.swapMiB/1024);
+ if(!fields.memoryGiB.dataset.edited)fields.memoryGiB.value=String(defaults.memoryMiB/1024);
+ if(!fields.swapGiB.dataset.edited)fields.swapGiB.value=String(defaults.swapMiB/1024);
+}
+for(const name of ['memoryGiB','swapGiB'])$('#create').elements[name]?.addEventListener('input',e=>{e.target.dataset.edited='1'});
 $('#create-pool').addEventListener('change',syncCreateMemorySettings);
 async function chooseCreationPool(tools){
  const fallback=await api('/v1/controller-defaults');
@@ -234,6 +245,104 @@ function renderNotifications(values){const root=$('#destinations');root.replaceC
   row.append(dot,text,badge);list.append(row);
  }
  root.append(list,rawDetails(values))}
+let providerTypes=[];
+const workerViews=new Map();
+const gibText=bytes=>{const value=bytes/(1024**3);return (value>=10?Math.round(value):value.toFixed(1))+' GiB'};
+function renderProviderTypes(schema){
+ providerTypes=schema?.types||[];
+ const form=$('#provider'),select=form.elements.provider,previous=select.value;
+ select.replaceChildren(...providerTypes.map(type=>{const option=node('option',type.label);option.value=type.name;return option}));
+ if(providerTypes.some(type=>type.name===previous))select.value=previous;
+ if(!form.elements.revision.value)renderProviderFields();
+}
+function renderProviderFields(existing){
+ const form=$('#provider'),type=providerTypes.find(item=>item.name===form.elements.provider.value),root=$('#provider-fields'),editing=!!existing;
+ root.replaceChildren();$('#provider-type-help').textContent=type?.help||'';
+ for(const field of type?.fields||[]){
+  const label=node('label');label.className='field'+(field.type==='boolean'?' provider-check':'');
+  let input;
+  if(field.type==='select'){input=node('select');const blank=node('option','Default');blank.value='';input.append(blank,...field.options.map(value=>{const option=node('option',value);option.value=value;return option}))}
+  else{input=node('input');input.type=field.type==='boolean'?'checkbox':field.secret?'password':'text';input.spellcheck=false}
+  input.name=(field.secret?'secret:':'config:')+field.name;input.autocomplete='off';
+  const value=existing?.config?.[field.name];
+  if(field.type==='boolean')input.checked=value===true;else if(value!==undefined&&value!==null)input.value=String(value);
+  if(field.placeholder)input.placeholder=field.placeholder;
+  if(field.secret&&editing)input.placeholder='Leave blank to keep the saved value';
+  else if(field.required)input.required=true;
+  // Target fields are immutable; a different target is a new provider.
+  if(editing&&!field.mutable&&!field.secret){input.disabled=true;label.title='Fixed after creation. Add a new provider for a different target.'}
+  label.append(document.createTextNode(field.label+(input.required?' *':'')),input);
+  if(field.help){const hint=node('small',field.help);hint.className='hint';label.append(hint)}
+  root.append(label);
+ }
+}
+function editProvider(provider){
+ const form=$('#provider'),f=form.elements;
+ f.provider.value=provider.provider;f.alias.value=provider.name;f.revision.value=provider.updatedAt;f.provider.disabled=true;f.alias.readOnly=true;
+ renderProviderFields(provider);$('#provider-editor-title').textContent='Edit '+provider.name;$('#provider-form-status').textContent='';
+ const editor=$('#provider-editor');editor.open=true;editor.scrollIntoView({block:'start'});
+}
+function resetProviderForm(){
+ const form=$('#provider'),f=form.elements;form.reset();f.revision.value='';f.provider.disabled=false;f.alias.readOnly=false;
+ if(providerTypes.length&&!f.provider.value)f.provider.value=providerTypes[0].name;
+ $('#provider-editor-title').textContent='Add provider';$('#provider-form-status').textContent='';renderProviderFields();
+}
+$('#provider').elements.provider.addEventListener('change',()=>renderProviderFields());
+$('#provider-cancel').addEventListener('click',()=>{resetProviderForm();$('#provider-editor').open=false});
+function workerPoolTarget(provider){return {provider:provider.provider,providerCredential:provider.name||''}}
+function openWorkerSettings(provider){
+ const dialog=node('dialog');dialog.className='vb-sheet-dialog provider-config-dialog worker-settings';dialog.setAttribute('aria-label','Worker settings for '+provider.name);
+ const header=node('header');header.className='vb-sheet-header';header.append(node('h2','Worker settings · '+provider.name),button('Close',()=>dialog.close()));
+ const body=node('div');body.className='sheet-scroll-body';dialog.append(header,body);
+ const key=poolKey(provider.provider,provider.name);
+ const load=async()=>{
+  body.replaceChildren(node('p','Loading worker settings…'));
+  try{const view=await api('/v1/fleet/worker?'+new URLSearchParams(workerPoolTarget(provider)));workerViews.set(key,view)}
+  catch(err){workerViews.set(key,{error:err.message})}
+  if(dialog.isConnected)renderWorkerSettings(body,provider,workerViews.get(key),load);
+ };
+ document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();void load();
+}
+function renderWorkerSettings(body,provider,view,reload){
+ body.replaceChildren();
+ if(view?.error){const error=node('p','Worker settings unavailable: '+view.error);error.className='worker-settings-note';body.append(error,button('Retry',reload));return}
+ if(!view?.supported||!view.worker){const note=node('p',view?.reason?'Remote settings unavailable: '+view.reason:'Remote settings are unavailable for this worker.');note.className='worker-settings-note';body.append(note);return}
+ const {settings,specs,limits}=view.worker;
+ const facts=[(specs.cpus%1?specs.cpus.toFixed(1):specs.cpus)+' CPU'+(specs.cpus===1?'':'s'),gibText(specs.memoryBytes)+' RAM',specs.swapBytes?gibText(specs.swapBytes)+' swap':'no swap'];
+ if(specs.diskTotalBytes)facts.push(gibText(specs.diskFreeBytes)+' free of '+gibText(specs.diskTotalBytes)+' disk');
+ if(specs.isolationTier)facts.push(specs.isolationTier+' isolation');
+ const machine=node('p',facts.join(' · '));machine.className='worker-specs';machine.title='Machine specs reported by the worker';
+ const form=node('form');form.className='worker-settings-form';
+ const numberField=(label,name,value,min,max,step,hint)=>{const field=node('label');field.className='field';const input=node('input');input.type='number';input.name=name;input.min=String(min);input.max=String(max);input.step=String(step);input.value=String(value);input.required=true;field.append(document.createTextNode(label),input);if(hint){const small=node('small',hint);small.className='hint';field.append(small)}return field};
+ const used=view.worker.occupiedSlots===1?'1 holds a box':view.worker.occupiedSlots+' hold boxes';
+ form.append(numberField('Slots','slots',settings.slots,Math.max(1,view.worker.occupiedSlots),limits.maxSlots,1,'Up to '+limits.maxSlots+' on this machine · '+used+'.'));
+ if(limits.perBoxLimits){
+  const sizes=node('fieldset');sizes.className='worker-box-size';sizes.append(node('legend','New box size'));
+  sizes.append(numberField('CPU','cpu',settings.boxDefaults.cpu,limits.boxMin.cpu,limits.boxMax.cpu,limits.cpuStep,'Max '+limits.boxMax.cpu),
+   numberField('RAM GiB','memory',settings.boxDefaults.memoryMiB/1024,limits.boxMin.memoryMiB/1024,limits.boxMax.memoryMiB/1024,1,'Max '+limits.boxMax.memoryMiB/1024),
+   numberField('Swap GiB','swap',settings.boxDefaults.swapMiB/1024,0,limits.boxMax.swapMiB/1024,1,limits.boxMax.swapMiB?'Max '+limits.boxMax.swapMiB/1024:'No swap on this machine'));
+  form.append(sizes);
+ }
+ const overcommit=node('p');overcommit.className='worker-overcommit';overcommit.setAttribute('role','note');
+ const status=node('p');status.setAttribute('role','status');
+ const save=node('button','Save worker settings');save.className='primary';
+ const actions=node('div');actions.className='form-actions';actions.append(save);
+ form.append(overcommit,actions,status);
+ const syncOvercommit=()=>{
+  const slots=Number(form.elements.slots.value)||0,memory=limits.perBoxLimits?Number(form.elements.memory.value)||0:0,total=slots*memory;
+  overcommit.hidden=!(limits.perBoxLimits&&total*1024**3>specs.memoryBytes);
+  overcommit.textContent=slots+' slots × '+memory+' GiB = '+total+' GiB, more than this machine\'s '+gibText(specs.memoryBytes)+' RAM. That is fine while boxes stay light; under load they compete for memory and swap.';
+ };
+ form.addEventListener('input',syncOvercommit);syncOvercommit();
+ form.addEventListener('submit',action(async event=>{
+  const f=event.target.elements,request={...workerPoolTarget(provider),revision:settings.revision,slots:Number(f.slots.value)};
+  if(limits.perBoxLimits)request.boxDefaults={cpu:Number(f.cpu.value),memoryMiB:Number(f.memory.value)*1024,swapMiB:Number(f.swap.value)*1024};
+  save.disabled=true;status.textContent='Saving…';
+  try{const updated=await api('/v1/fleet/worker','PUT',request);workerViews.set(poolKey(provider.provider,provider.name),updated);renderWorkerSettings(body,provider,updated,reload);notice('Worker settings for '+provider.name+' saved. The worker applied them without a restart.');void refresh()}
+  catch(err){status.textContent=err.message;save.disabled=false;if(/reload/i.test(err.message))void reload()}
+ }));
+ body.append(machine,form);
+}
 function renderProviders(providers){
  const root=$('#provider-list');root.replaceChildren();
  if(!providers.length){root.append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));return}
@@ -245,8 +354,9 @@ function renderProviders(providers){
   const snapshot=fleet?fleet.providerSnapshot:{fleet:null,config:null,host:null,hostError:'',errors:[]};
   workspaceNav.renderProviderRow(row,provider,isDefault,snapshot,cell=>{
    const actions=node('div');actions.className='provider-actions';
-   actions.append(button('Edit',()=>{const form=$('#provider').elements;form.provider.value=provider.provider;form.alias.value=provider.name;form.config.value=JSON.stringify(provider.config||{},null,2);form.secret.value='';form.revision.value=provider.updatedAt;$('#provider-editor').open=true;$('#provider-editor').scrollIntoView({block:'start'});form.config.focus()}),button('Validate',async()=>{const result=await api(pp(provider.provider,provider.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}));
+   actions.append(button('Edit',()=>editProvider(provider)),button('Validate',async()=>{const result=await api(pp(provider.provider,provider.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}));
    const more=node('details');more.className='provider-actions-more';const menu=node('div');menu.className='provider-actions-extra';
+   if(provider.provider==='shared-worker')menu.append(button('Worker settings…',()=>openWorkerSettings(provider)));
    if(!isDefault)menu.append(button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:provider.provider,providerCredential:provider.name});await refresh()}));
    menu.append(button('Refresh usage',async()=>{const fresh=await workspaceNav.providerSnapshot(provider);const target=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));if(target){Object.assign(target,fresh.fleet||{}, {providerSnapshot:fresh,hostResources:fresh.host,hostError:fresh.hostError});renderProviders(providers)}}));
    menu.append(button('Configuration…',()=>{const dialog=node('dialog');dialog.className='vb-sheet-dialog provider-config-dialog';dialog.setAttribute('aria-label','Configuration for '+provider.name);const header=node('header');header.className='vb-sheet-header';const title=node('h2','Configuration · '+provider.name);const close=button('Close',()=>dialog.close());header.append(title,close);const body=node('div');body.className='sheet-scroll-body';body.append(dataTable(['Setting','Value'],Object.entries(provider.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));dialog.append(header,body);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal()}));
@@ -586,11 +696,11 @@ async function refresh(){
  for(const agent of agentCLIChoices)renderAgentCLIVersionChoice(agent,cliVersions[agent]||'',null,true);
  void loadAgentCLIVersionChoices(version);
  renderProviders(providers);
- $('#schema').textContent=JSON.stringify(schema,null,2);renderNotifications(notifications);defaults=null;
+ renderProviderTypes(schema);renderNotifications(notifications);defaults=null;
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#login-error').textContent='';$('#app').hidden=false;openProfileFromLink()}));
-$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
+$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());resetProviderForm();workerViews.clear();$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
 $('#refresh').addEventListener('click',action(refresh));
 function resetCreationForm(form){
  const pool=form.elements.pool.value;
@@ -613,7 +723,18 @@ createCard?.addEventListener('toggle',()=>{if(createCard.open)focusCreateName()}
 $('#create-cancel')?.addEventListener('click',()=>{resetCreationForm($('#create'));createCard.open=false;createCard.scrollIntoView({behavior:'smooth',block:'nearest'})});
 $('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,profile=f.loginProfile?.value,profileRef=profile?JSON.parse(profile):null,loginProfiles=profileRef?[{...profileRef,model:f.agentModel.value.trim(),...(f.agentReasoningEffort.value?{reasoningEffort:f.agentReasoningEffort.value}:{})}]:[],github=f.githubProfile?.value,tools=['desktop',...[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value)],setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();if(profileRef&&!loginProfiles[0].model)throw Error('Choose a model');if(github)loginProfiles.push(JSON.parse(github));const createdName=f.name.value.trim(),created=await api('/v1/logical-boxes','POST',{name:createdName,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,tools,...(d.provider==='shared-worker'?{memoryGiB:Number(f.memoryGiB.value),swapGiB:Number(f.swapGiB.value)}:{}),...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);resetCreationForm(e.target);try{await refresh();notice('Box '+createdName+' is starting.')}finally{document.activeElement?.blur();window.scrollTo(0,0)}}));
 $('#agent-cli-versions').addEventListener('submit',action(async e=>{const fields=e.target.elements,values={};for(const agent of ['claude','codex','opencode'])values[agent]=fields[agent].value.trim();await api('/v1/agent-cli-versions','PUT',values);$('#agent-cli-versions-status').textContent='Saved. New boxes will use these versions.'}));
-$('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
+$('#provider').addEventListener('submit',action(async e=>{
+ const f=e.target.elements,rev=f.revision.value,type=providerTypes.find(t=>t.name===f.provider.value),config={},secret={};
+ for(const field of type?.fields||[]){
+  const input=f[(field.secret?'secret:':'config:')+field.name];if(!input||input.disabled)continue;
+  if(field.secret){if(input.value)secret[field.name]=input.value;continue}
+  if(field.type==='boolean'){config[field.name]=input.checked;continue}
+  const value=input.value.trim();if(value)config[field.name]=value;else if(rev)config[field.name]=null;
+ }
+ const body={config};if(Object.keys(secret).length){body.secret=secret;if(rev)body.replaceSecret=true}
+ await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});
+ const saved=f.alias.value;resetProviderForm();$('#provider-editor').open=false;notice('Provider '+saved+' saved. Validate it from its card.');await refresh();
+}));
 $('#slots').addEventListener('submit',action(async e=>{const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;if(!target)throw Error('Choose a worker pool first');await api('/v1/fleet/slots','PUT',{...target,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));
 

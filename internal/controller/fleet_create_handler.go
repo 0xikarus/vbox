@@ -73,7 +73,7 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 	}
 	request.DefaultAgent = selectedProfileAgent(request.DefaultAgent, request.LoginProfiles)
 	if customBoxMemory(request) {
-		if err := s.verifyBoxMemoryPool(r.Context(), p.AccountID, request.Provider, request.ProviderCredential); err != nil {
+		if err := s.verifyBoxMemoryPool(r.Context(), p.AccountID, request.Provider, request.ProviderCredential, requestedBoxMemory(request)); err != nil {
 			writeError(w, 400, err)
 			return
 		}

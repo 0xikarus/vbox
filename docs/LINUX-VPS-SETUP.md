@@ -88,8 +88,9 @@ On your **workstation**, `vbox whoami --json` supplies your controller account I
 Only that ID belongs on the worker—not your controller login token, database
 credentials or another provider's management credentials.
 
-On the VPS, enter the account ID, desired capacity and selected worker image
-when this script prompts. The script refuses to overwrite an existing config.
+On the VPS, enter the account ID, a starting slot count and selected worker image
+when this script prompts. The slot count only seeds the first start; change it
+later from the controller without touching the VPS. The script refuses to overwrite an existing config.
 
 ```sh
 install -d -m 700 /etc/vmbox /srv/vmbox-isolated/data
@@ -97,7 +98,7 @@ python3 -c '
 import os, secrets
 account = input("Controller account UUID: ").strip()
 image = input("Worker image, including @sha256:digest: ").strip()
-slots = int(input("Slot count (1-3 on a 4-core/8-GB host): "))
+slots = int(input("Starting slot count (1-3 on a 4-core/8-GB host): "))
 assert 1 <= slots <= 3 and "@sha256:" in image
 assert account and all("\n" not in v and "\r" not in v for v in (account,image))
 values = {
@@ -169,7 +170,7 @@ install -m 644 deploy/linux-vps/vmbox-cert-renew.service /etc/systemd/system/
 install -m 644 deploy/linux-vps/vmbox-cert-renew.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now vmbox-cert-renew.timer
-/opt/vmbox/certbot/bin/certbot renew --dry-run --no-random-sleep-on-renewal \
+/opt/vmbox/certbot/bin/certbot renew --dry-run \
   --run-deploy-hooks --deploy-hook '/usr/bin/systemctl reload nginx'
 ```
 
@@ -205,10 +206,11 @@ subprocess.run(["vbox","providers","validate","shared-worker",alias],check=True)
 '
 ```
 
-In the controller's Capacity page, select **this new pool** and set its desired
-slot count to the configured capacity. Do not change another pool or the account
-default unintentionally. The CLI's `fleet slots set` targets the default provider;
-use the selected-pool UI when preserving an existing default.
+On the controller's Providers page, open this new pool's **⋯** menu and choose
+**Worker settings…**. It shows the VPS's CPUs, RAM, swap and disk; set the slot count and new box
+size there, up to what the machine has. `vbox pools worker shared-worker ALIAS
+--slots N` does the same from the CLI. Changes apply live; the worker is not
+restarted. Do not change another pool or the account default unintentionally.
 
 ## 6. Verify and operate
 

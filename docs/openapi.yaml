@@ -617,11 +617,30 @@ paths:
         - {$ref: '#/components/parameters/ProviderCredentialQuery'}
       responses: {'200': {description: Desired compute-slot configuration, content: {application/json: {schema: {$ref: '#/components/schemas/FleetConfig'}}}}}
     put:
-      description: Owner-only update of desired reusable compute slots.
+      description: Owner-only update of desired reusable compute slots. For a shared worker that supports remote settings, a positive count also sets the worker's own slot capacity (see /v1/fleet/worker).
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/FleetConfig'}}}
       responses: {'200': {description: Fleet configuration accepted}}
+  /v1/fleet/worker:
+    get:
+      description: A worker pool's remotely editable settings, the machine specs that bound them, and the controller's desired slot count. Pools whose provider has no configurable worker report supported=false with a reason.
+      parameters:
+        - {$ref: '#/components/parameters/ProviderQuery'}
+        - {$ref: '#/components/parameters/ProviderCredentialQuery'}
+      responses: {'200': {description: Worker pool settings, content: {application/json: {schema: {$ref: '#/components/schemas/WorkerPool'}}}}}
+    put:
+      description: >-
+        Owner-only. Sets one slot count for the worker and the fleet together, plus the default size of new boxes, without
+        restarting the worker. Values are bounded by the worker's machine; memory overcommit across slots is allowed and
+        reported. Lowering retires free slots first and never evicts occupied ones. Requires the current settings revision.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SetWorkerPool'}}}
+      responses:
+        '200': {description: Settings applied, content: {application/json: {schema: {$ref: '#/components/schemas/WorkerPool'}}}}
+        '400': {description: Outside the machine's limits or below the boxes on the worker}
+        '409': {description: Stale revision or the provider has no configurable worker}
   /v1/inventory:
     get:
       description: Combined inventory for one provider credential. All fleet slot services are omitted; occupied capacity is represented once by its logical box, and only non-fleet services appear as external.
@@ -971,6 +990,62 @@ components:
         providerCredential: {type: string}
         compute_box_slots: {type: integer, minimum: 0, maximum: 32, default: 4}
         updatedAt: {type: string, format: date-time}
+    BoxLimits:
+      type: object
+      required: [cpu, memoryMiB, swapMiB]
+      properties:
+        cpu: {type: number, description: CPUs in steps of cpuStep}
+        memoryMiB: {type: integer, description: RAM in whole GiB}
+        swapMiB: {type: integer, description: Swap in whole GiB}
+    WorkerPool:
+      type: object
+      required: [provider, supported, desiredSlots]
+      properties:
+        provider: {type: string}
+        providerCredential: {type: string}
+        supported: {type: boolean}
+        reason: {type: string, description: Why remote settings are unavailable}
+        desiredSlots: {type: integer}
+        worker:
+          type: object
+          properties:
+            settings:
+              type: object
+              properties:
+                revision: {type: integer}
+                slots: {type: integer}
+                boxDefaults: {$ref: '#/components/schemas/BoxLimits'}
+            specs:
+              type: object
+              properties:
+                cpus: {type: number}
+                memoryBytes: {type: integer}
+                swapBytes: {type: integer}
+                diskTotalBytes: {type: integer}
+                diskFreeBytes: {type: integer}
+                isolationTier: {type: string}
+            limits:
+              type: object
+              properties:
+                minSlots: {type: integer}
+                maxSlots: {type: integer, description: At most 32 and at most one slot per GiB of machine RAM}
+                perBoxLimits: {type: boolean, description: Whether boxes get their own CPU and memory limits (container isolation)}
+                boxMin: {$ref: '#/components/schemas/BoxLimits'}
+                boxMax: {$ref: '#/components/schemas/BoxLimits'}
+                cpuStep: {type: number}
+                memoryStepMiB: {type: integer}
+            slotsInUse: {type: integer}
+            occupiedSlots: {type: integer}
+            overcommitted: {type: boolean, description: Slots times default box memory exceeds machine RAM; allowed}
+    SetWorkerPool:
+      type: object
+      required: [provider, revision, slots]
+      properties:
+        provider: {type: string}
+        providerCredential: {type: string}
+        revision: {type: integer}
+        slots: {type: integer, minimum: 1}
+        boxDefaults: {$ref: '#/components/schemas/BoxLimits'}
     FleetStatus:
       type: object
       required: [provider, desiredSlots, actualSlots, freeSlots, occupiedSlots, slots, detachedLogicalBoxes]

@@ -31,7 +31,7 @@ before(async()=>{
    '/v1/logical-boxes/box-1':{id:'box-1',name:'helper ü',state:'running',roles:fixtureRoles.filter(role=>fixtureBoxRoleIds.includes(role.id)).map(({id,name})=>({id,name}))},
    '/v1/agent-roles':fixtureRoles,
    '/v1/provider-credentials':[{provider:'railway',name:'primary',config:{projectId:'p',environmentId:'e',image:'old'},updatedAt:revision}],
-   '/v1/provider-schemas':{providers:{railway:{image:'string'}}},
+   '/v1/provider-schemas':{providers:{railway:{image:'string'}},types:[{name:'shared-worker',label:'Shared worker',help:'Your Linux server.',fields:[{name:'endpoint',label:'Worker URL',type:'string',required:true},{name:'token',label:'Worker token',type:'string',required:true,secret:true}]},{name:'railway',label:'Railway',fields:[{name:'projectId',label:'Project ID',type:'string',required:true},{name:'environmentId',label:'Environment ID',type:'string',required:true},{name:'tokenEnvironment',label:'Token type',type:'select',options:['RAILWAY_API_TOKEN','RAILWAY_TOKEN']},{name:'image',label:'Worker image',type:'string',mutable:true},{name:'token',label:'Railway token',type:'string',required:true,secret:true}]}]},
    '/v1/controller-defaults':{provider:'railway',providerCredential:'primary'},
    '/v1/fleet/status':{desiredSlots:2,actualSlots:2,freeSlots:1,occupiedSlots:1,unhealthySlots:0,slots:[{ordinal:1,state:'occupied',health:'healthy',region:'europe-west4',logicalBoxName:'helper ü'},{ordinal:2,state:'free',health:'healthy',region:'europe-west4'}]},
    '/v1/fleet/costs':{provider:'railway',providerCredential:'primary',period:'current provider billing period',observedAt:revision,total:{currency:'USD',accrued:1.23,available:true,detail:'Sum of available fleet service costs.'},availableSlotCount:1,unavailableSlotCount:1,slots:[{ordinal:1,state:'occupied',logicalBoxName:'helper ü',cost:{currency:'USD',accrued:1.23,available:true,detail:'Railway service entries'}},{ordinal:2,state:'free',cost:{currency:'USD',available:false,detail:'Project token cannot read billing'}}]},
@@ -62,6 +62,7 @@ before(async()=>{
   if(req.method==='POST' && path==='/v1/logical-boxes/box-1/sessions/interactive')return res.end(JSON.stringify({session:'persistent-shell'}));
   if(req.method==='PATCH' && (path==='/v1/logical-boxes/box-1'||path==='/v1/provider-credentials/railway/primary'))return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/fleet/slots')return res.end(JSON.stringify(body));
+  if(req.method==='PUT' && path==='/v1/provider-credentials/shared-worker/my-vps')return res.end(JSON.stringify({provider:'shared-worker',name:'my-vps',config:body.config,updatedAt:revision}));
   if(req.method==='PUT' && path==='/v1/agent-cli-versions')return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/login-profiles/codex/browser-test')return res.end(JSON.stringify({application:'codex',name:'browser-test'}));
   if(req.method==='PUT' && path==='/v1/logical-boxes/box-1/instructions')return res.end(JSON.stringify({...values['/v1/logical-boxes/box-1/instructions'],note:'fixture applied'}));
@@ -777,7 +778,9 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  await page.waitForFunction(()=>document.querySelector('#provider-list button'));
  await page.click('#provider-list button');
  await page.waitForFunction(()=>document.querySelector('#provider-editor').open);
- await page.$eval('#provider textarea[name=config]',n=>{n.value=JSON.stringify({image:'new'})});
+ assert.equal(await page.$('#provider textarea'),null);
+ assert.deepEqual(await page.$eval('#provider',form=>({type:form.elements.provider.disabled,project:form.elements['config:projectId'].disabled,image:form.elements['config:image'].value,secret:form.elements['secret:token'].type,secretRequired:form.elements['secret:token'].required})),{type:true,project:true,image:'old',secret:'password',secretRequired:false});
+ await page.$eval('#provider input[name="config:image"]',n=>{n.value='new'});
  const saved=page.waitForResponse(r=>r.request().method()==='PATCH'&&r.url().endsWith('/primary'));
  await page.$eval('#provider',form=>form.requestSubmit());await saved;
  const edit=requests.findLast(r=>r.method==='PATCH'&&r.path.endsWith('/primary'));assert.equal(edit.revision,revision);assert.deepEqual(edit.body,{config:{image:'new'}});
@@ -809,7 +812,6 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  await page.waitForFunction(()=>document.querySelector('#capacity').textContent.includes('Free: 1'));
  assert.match(await page.$eval('#capacity',n=>n.textContent),/Free: 1/);
  assert.equal(await page.$eval('#capacity details',n=>n.open),false);
- assert.equal(await page.$eval('#schema',n=>n.parentElement.open),false);
  assert.match(await page.$eval('#destinations',n=>n.textContent),/No notification destinations/);
  assert.equal(await page.$eval('#slots input',n=>n.value),'2');
  const capacitySaved=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().endsWith('/v1/fleet/slots'));
@@ -818,7 +820,62 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.equal(await page.$('#terminal'),null);
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.screenshot({path:mobile?'/tmp/vmbox-config-mobile.png':'/tmp/vmbox-config-desktop.png',fullPage:true});
- await page.click('#manage-menu');await page.click('#logout');await page.waitForFunction(()=>document.querySelector('#app').hidden);assert.equal(await page.$eval('#provider textarea[name=secret]',n=>n.value),'');
+ await page.click('#manage-menu');await page.click('#logout');await page.waitForFunction(()=>document.querySelector('#app').hidden);assert.equal(await page.$eval('#provider',form=>form.elements.provider.disabled||!!form.elements.revision.value),false);
+ assert.deepEqual(errors,[]);await page.close();
+});
+
+test('shared worker slots and box size are set from its row up to the machine',async()=>{
+ const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setViewport({width:1280,height:900});
+ await page.evaluateOnNewDocument(revision=>{
+  const original=window.fetch;window.workerWrites=[];
+  let view={provider:'shared-worker',providerCredential:'my-vps',supported:true,desiredSlots:2,worker:{
+   settings:{revision:3,slots:2,boxDefaults:{cpu:1,memoryMiB:2048,swapMiB:1024}},
+   specs:{cpus:4,memoryBytes:7.8*1024**3,swapBytes:4*1024**3,diskTotalBytes:80*1024**3,diskFreeBytes:40*1024**3,isolationTier:'container'},
+   limits:{minSlots:2,maxSlots:7,perBoxLimits:true,boxMin:{cpu:.5,memoryMiB:1024,swapMiB:0},boxMax:{cpu:4,memoryMiB:7168,swapMiB:4096},cpuStep:.5,memoryStepMiB:1024},
+   slotsInUse:2,occupiedSlots:1}};
+  const json=value=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
+  window.fetch=async(path,options={})=>{
+   if(path==='/v1/provider-credentials')return json([{provider:'shared-worker',name:'my-vps',config:{endpoint:'https://203.0.113.10'},updatedAt:revision}]);
+   if(path==='/v1/controller-defaults')return json({provider:'shared-worker',providerCredential:'my-vps'});
+   if(path.startsWith('/v1/fleet/status?'))return json({desiredSlots:2,actualSlots:2,freeSlots:1,occupiedSlots:1,slots:[{ordinal:1,state:'occupied',health:'healthy'},{ordinal:2,state:'free',health:'healthy'}]});
+   if(path.startsWith('/v1/fleet/host-resources?'))return json({memoryTotalBytes:8*1024**3,memoryAvailableBytes:4*1024**3,swapTotalBytes:0,swapFreeBytes:0});
+   if(path.startsWith('/v1/fleet/worker?'))return json(view);
+   if(path==='/v1/fleet/worker'&&options.method==='PUT'){const body=JSON.parse(options.body);workerWrites.push(body);view={...view,desiredSlots:body.slots,worker:{...view.worker,settings:{revision:4,slots:body.slots,boxDefaults:body.boxDefaults}}};return json(view)}
+   return original(path,options);
+  };
+ },revision);
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');
+ await page.click('.workspace-links a[href="#providers"]');
+ await page.waitForSelector('#provider-list .provider-actions-more summary');
+ await page.click('#provider-list .provider-actions-more summary');
+ await page.evaluate(()=>[...document.querySelectorAll('#provider-list .provider-actions-extra button')].find(b=>b.textContent==='Worker settings…').click());
+ await page.waitForSelector('dialog.worker-settings[open] .worker-settings-form');
+ assert.match(await page.$eval('.worker-specs',n=>n.textContent),/4 CPUs · 7\.8 GiB RAM · 4\.0 GiB swap · 40 GiB free of 80 GiB disk · container isolation/);
+ assert.deepEqual(await page.$eval('.worker-settings-form',form=>({min:form.elements.slots.min,max:form.elements.slots.max,cpuMax:form.elements.cpu.max,memoryMax:form.elements.memory.max,warning:form.querySelector('.worker-overcommit').hidden})),{min:'1',max:'7',cpuMax:'4',memoryMax:'7',warning:true});
+ await page.$eval('.worker-settings-form input[name=slots]',n=>{n.value='6';n.dispatchEvent(new Event('input',{bubbles:true}))});
+ await page.$eval('.worker-settings-form input[name=cpu]',n=>{n.value='1.5'});
+ assert.match(await page.$eval('.worker-overcommit',n=>n.hidden?'':n.textContent),/6 slots × 2 GiB = 12 GiB, more than this machine's 7\.8 GiB RAM/);
+ if(process.env.VMBOX_SCREENSHOT_DIR)await (await page.$('dialog.worker-settings')).screenshot({path:process.env.VMBOX_SCREENSHOT_DIR+'/worker-panel.png'});
+ await page.$eval('.worker-settings-form',form=>form.requestSubmit());
+ await page.waitForFunction(()=>window.workerWrites.length===1);
+ assert.deepEqual(await page.evaluate(()=>window.workerWrites[0]),{provider:'shared-worker',providerCredential:'my-vps',revision:3,slots:6,boxDefaults:{cpu:1.5,memoryMiB:2048,swapMiB:1024}});
+ await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('without a restart'));
+ await page.waitForFunction(()=>document.querySelector('.worker-settings-form input[name=slots]')?.value==='6');
+ await page.evaluate(()=>document.querySelector('dialog.worker-settings').close());
+ await page.waitForFunction(()=>!document.querySelector('dialog.worker-settings'));
+ // A new provider is typed fields, not JSON; the token goes only into the secret.
+ await page.click('#provider-editor summary');
+ await page.select('#provider select[name=provider]','shared-worker');
+ await page.type('#provider input[name=alias]','my-vps');
+ await page.type('#provider input[name="config:endpoint"]','https://203.0.113.10');
+ await page.type('#provider input[name="secret:token"]','disposable-token-not-real-0123456789');
+ if(process.env.VMBOX_SCREENSHOT_DIR)await (await page.$('#provider-editor')).screenshot({path:process.env.VMBOX_SCREENSHOT_DIR+'/provider-form.png'});
+ const created=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().endsWith('/v1/provider-credentials/shared-worker/my-vps'));
+ await page.$eval('#provider',form=>form.requestSubmit());await created;
+ assert.deepEqual(requests.findLast(r=>r.path==='/v1/provider-credentials/shared-worker/my-vps').body,{config:{endpoint:'https://203.0.113.10'},secret:{token:'disposable-token-not-real-0123456789'}});
+ assert.equal(await page.$eval('#provider-editor',n=>n.open),false);
+ if(process.env.VMBOX_SCREENSHOT_DIR)await page.screenshot({path:process.env.VMBOX_SCREENSHOT_DIR+'/worker-settings.png',fullPage:true});
  assert.deepEqual(errors,[]);await page.close();
 });
 
