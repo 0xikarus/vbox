@@ -2975,7 +2975,7 @@ dialog:not([open]){display:none}
 #inspect.details-prototype .ip-page .inspect-contact-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:12px 14px;border-bottom:1px solid var(--vb-line)}
 #inspect.details-prototype .ip-page .inspect-contact-heading h3,
 #inspect.details-prototype .ip-page #inspect-attachment-storage h3{margin:0;color:var(--vb-ink);font-size:var(--vb-type-px-13);font-weight:700;letter-spacing:0;text-transform:none}
-#inspect.details-prototype .ip-page #inspect-add-contact{min-height:34px;padding:5px 12px;border:1px solid var(--vb-line);border-radius:var(--vb-radius-pill);background:var(--vb-surface-2);color:var(--vb-ink);font-size:var(--vb-type-px-12);font-weight:700}
+#inspect.details-prototype .ip-page #inspect-add-contact{min-height:40px;padding:5px 12px;border:1px solid var(--vb-line);border-radius:var(--vb-radius-pill);background:var(--vb-surface-2);color:var(--vb-ink);font-size:var(--vb-type-px-12);font-weight:700}
 #inspect.details-prototype .ip-page #inspect-add-contact:hover{border-color:var(--vb-line-strong)}
 #inspect.details-prototype .ip-page #inspect-contact-list,
 #inspect.details-prototype .ip-page #inspect-contact-options{margin:0;padding:0;list-style:none}
@@ -2986,12 +2986,12 @@ dialog:not([open]){display:none}
 #inspect.details-prototype .ip-page .contact-info{min-width:0;flex:1}
 #inspect.details-prototype .ip-page .contact-name{color:var(--vb-ink);font-size:var(--vb-type-px-13);font-weight:700}
 #inspect.details-prototype .ip-page .contact-meta{color:var(--vb-ink-soft);font-size:var(--vb-type-px-11)}
-#inspect.details-prototype .ip-page .contact-access{min-height:32px;padding:4px 10px;border:1px solid var(--vb-line);border-radius:var(--vb-radius-pill);background:var(--vb-surface-2);color:var(--vb-ink);font-size:var(--vb-type-px-11);font-weight:700}
+#inspect.details-prototype .ip-page .contact-access{min-height:40px;padding:4px 10px;border:1px solid var(--vb-line);border-radius:var(--vb-radius-pill);background:var(--vb-surface-2);color:var(--vb-ink);font-size:var(--vb-type-px-11);font-weight:700}
 #inspect.details-prototype .ip-page #inspect-contact-picker{padding:8px 0 0;border-top:1px solid var(--vb-line);background:var(--vb-surface-2)}
 #inspect.details-prototype .ip-page #inspect-contact-picker[hidden]{display:none}
 #inspect.details-prototype .ip-page #inspect-contact-search{display:block;width:calc(100% - 28px);margin:0 14px 8px;padding:9px 11px;border:1px solid var(--vb-line-strong);border-radius:var(--vb-radius-10);background:var(--vb-surface);color:var(--vb-ink)}
 #inspect.details-prototype .ip-page .inspect-lede{margin:0;padding:12px 14px;border-top:1px solid var(--vb-line);color:var(--vb-ink-soft);font-size:var(--vb-type-px-12);line-height:1.4}
-#inspect.details-prototype .ip-page .inspect-lede button{padding:0;border:0;background:none;color:var(--vb-ink);text-decoration:underline;text-underline-offset:2px}
+#inspect.details-prototype .ip-page .inspect-lede button{display:inline-flex;align-items:center;min-height:40px;padding:0;border:0;background:none;color:var(--vb-ink);text-decoration:underline;text-underline-offset:2px}
 #inspect.details-prototype .ip-page #inspect-contact-status:empty,
 #inspect.details-prototype .ip-page #inspect-attachment-status:empty{display:none}
 #inspect.details-prototype .ip-page #inspect-contact-status,
@@ -3003,17 +3003,24 @@ dialog:not([open]){display:none}
 #inspect.details-prototype .ip-page .inspect-access-copy{min-width:0;flex:1}
 #inspect.details-prototype .ip-page .inspect-access-copy strong{color:var(--vb-ink);font-size:var(--vb-type-px-13)}
 #inspect.details-prototype .ip-page .inspect-access-copy small{color:var(--vb-ink-soft);font-size:var(--vb-type-px-11)}
+#inspect.details-prototype .ip-page #inspect-toggle-protection{width:44px;height:40px;background:transparent}
+#inspect.details-prototype .ip-page #inspect-toggle-protection[aria-checked="true"]{background:transparent}
+#inspect.details-prototype .ip-page #inspect-toggle-protection::before{content:"";position:absolute;top:8px;left:2px;width:40px;height:24px;border-radius:var(--vb-radius-pill);background:var(--vb-line-strong)}
+#inspect.details-prototype .ip-page #inspect-toggle-protection[aria-checked="true"]::before{background:var(--vb-ink)}
+#inspect.details-prototype .ip-page #inspect-toggle-protection span{top:11px;left:5px}
+#inspect.details-prototype .ip-page #inspect-toggle-protection:focus-visible{outline:2px solid var(--vb-ink);outline-offset:2px}
 #inspect.details-prototype .ip-page #inspect-create-limit{display:block;margin:0;border:1px solid var(--vb-line);border-radius:var(--vb-radius-16);background:var(--vb-surface);box-shadow:var(--vb-shadow);overflow:hidden}
 #inspect.details-prototype .ip-page #inspect-create-limit[hidden]{display:none}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy{margin:0;padding:15px;border:0;background:transparent;box-shadow:none}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-top strong{color:var(--vb-ink);font-size:var(--vb-type-px-13)}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-badge{display:none}
-#inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-switch{margin-left:auto}
+#inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-switch{display:flex;align-items:center;justify-content:center;width:44px;height:40px;margin-left:auto}
+#inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-switch input{inset:0;width:44px;min-height:40px}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-switch input:disabled+span{opacity:.55;cursor:not-allowed}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-controls{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-controls label{display:flex;align-items:center;gap:6px;color:var(--vb-ink-soft);font-size:var(--vb-type-px-12)}
-#inspect.details-prototype .ip-page #inspect-create-limit input{width:62px;min-height:36px;border:1px solid var(--vb-line-strong);border-radius:var(--vb-radius-10);background:var(--vb-surface-2);color:var(--vb-ink);text-align:center}
-#inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-controls button{min-height:36px;padding:6px 12px;border:1px solid var(--vb-line-strong);border-radius:var(--vb-radius-10);background:var(--vb-surface-2);color:var(--vb-ink);font-size:var(--vb-type-px-12);font-weight:700}
+#inspect.details-prototype .ip-page #inspect-create-limit input[type="number"]{width:62px;min-height:40px;border:1px solid var(--vb-line-strong);border-radius:var(--vb-radius-10);background:var(--vb-surface-2);color:var(--vb-ink);text-align:center}
+#inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-controls button{min-height:40px;padding:6px 12px;border:1px solid var(--vb-line-strong);border-radius:var(--vb-radius-10);background:var(--vb-surface-2);color:var(--vb-ink);font-size:var(--vb-type-px-12);font-weight:700}
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-note,
 #inspect.details-prototype .ip-page #inspect-create-limit .idle-policy-status{margin:7px 0 0;color:var(--vb-ink-soft);font-size:var(--vb-type-px-11)}
 #inspect.details-prototype .ip-page #inspect-attachment-storage{padding:0}

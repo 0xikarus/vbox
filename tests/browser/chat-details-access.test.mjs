@@ -50,6 +50,7 @@ test('Details keeps direct contacts separate from Access actions',async()=>{
   await page.$eval('[data-ip-row="access"]',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-title').textContent==='Access & permissions'&&!document.querySelector('[data-ip-page="access"]').hidden);
   assert.equal(await page.$eval('#inspect-access',node=>getComputedStyle(node).display),'block');
+  assert.ok(await page.evaluate(()=>['#inspect-toggle-protection','#inspect-create-limit .idle-policy-switch input','#inspect-create-limit input[type=number]','#inspect-create-limit .idle-policy-controls button'].every(selector=>{const rect=document.querySelector(selector).getBoundingClientRect();return rect.width>=40&&rect.height>=40})),'Access controls have at least 40px tap targets');
   await page.screenshot({path:captureDir+'/access-390.png'});
   await page.setViewport({width:1440,height:900,isMobile:true,hasTouch:true});await page.screenshot({path:captureDir+'/access-1440.png'});
   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
@@ -62,6 +63,7 @@ test('Details keeps direct contacts separate from Access actions',async()=>{
   await page.$eval('#inspect-prototype-back',button=>button.click());
   await page.$eval('[data-ip-row="contacts"]',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-title').textContent==='Contacts'&&!document.querySelector('[data-ip-page="contacts"]').hidden);
+  assert.ok(await page.evaluate(()=>['#inspect-add-contact','#inspect-contact-list .contact-access','#inspect-contact-permissions'].every(selector=>{const rect=document.querySelector(selector).getBoundingClientRect();return rect.width>=40&&rect.height>=40})),'Contact controls have at least 40px tap targets');
   await page.screenshot({path:captureDir+'/contacts-390.png'});
   await page.setViewport({width:1440,height:900,isMobile:true,hasTouch:true});await page.screenshot({path:captureDir+'/contacts-1440.png'});
   await page.$eval('#inspect-contact-permissions',button=>button.click());
