@@ -27,8 +27,8 @@ func TestImportedCredentialsReadsControllerStateWithoutWorker(t *testing.T) {
 			if tc.state != nil {
 				query.WillReturnError(tc.state)
 			} else {
-				query.WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending"}).
-					AddRow(`[{"application":"claude","name":"work"}]`, true, `[]`))
+				query.WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending", "pending_set"}).
+					AddRow(`[{"application":"claude","name":"work"}]`, true, `[]`, false))
 			}
 			server := &Server{Store: store} // A nil provider would panic if this GET contacted a worker.
 			request := httptest.NewRequest(http.MethodGet, "/v1/logical-boxes/box-1/imported-credentials", nil)

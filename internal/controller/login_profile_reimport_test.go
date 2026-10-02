@@ -3,10 +3,12 @@ package controller
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,6 +53,33 @@ func TestValidateBoxProfileRefsRejectsDuplicateOversizedAndUnavailable(t *testin
 	// No encryption envelope: the profile cannot be loaded, so it must be rejected.
 	if err := server.validateBoxProfileRefs(context.Background(), "a", []v1.LoginProfileRef{{Application: "codex", Name: "work"}}); err == nil {
 		t.Fatal("unavailable profile accepted")
+	}
+}
+
+func TestLoginProfileListExposesOnlyAccountIdentity(t *testing.T) {
+	claims := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"codex@example.test"}`))
+	for _, tc := range []struct {
+		app, name string
+		files     map[string][]byte
+		email     string
+		host      string
+		user      string
+	}{
+		{"claude", "work", map[string][]byte{".claude.json": []byte(`{"oauthAccount":{"emailAddress":"claude@example.test"},"token":"synthetic-secret"}`)}, "claude@example.test", "", ""},
+		{"codex", "work", map[string][]byte{"auth.json": []byte(`{"tokens":{"id_token":"x.` + claims + `.y","access_token":"synthetic-secret"}}`)}, "codex@example.test", "", ""},
+		{"github", "work", map[string][]byte{"credential.json": []byte(`{"host":"github.com","user":"synthetic-user","token":"synthetic-secret"}`)}, "", "github.com", "synthetic-user"},
+	} {
+		t.Run(tc.app, func(t *testing.T) {
+			profile := v1.LoginProfile{Application: tc.app, Name: tc.name}
+			profilePublicMetadata(&profile, tc.files)
+			if profile.Email != tc.email || profile.Host != tc.host || profile.User != tc.user {
+				t.Fatalf("public identity=%+v", profile)
+			}
+			encoded, _ := json.Marshal(profile)
+			if strings.Contains(string(encoded), "synthetic-secret") {
+				t.Fatal("credential leaked into public metadata")
+			}
+		})
 	}
 }
 
@@ -119,10 +148,10 @@ func TestBoxLoginProfileStateReadsImportedPendingAndVerified(t *testing.T) {
 	imported, _ := json.Marshal([]v1.LoginProfileRef{{Application: "codex", Name: "work"}})
 	pending, _ := json.Marshal([]v1.LoginProfileRef{{Application: "claude", Name: "personal"}})
 	m.ExpectQuery(`SELECT COALESCE\(metadata->'importedLoginProfiles'`).WithArgs("a", "box-1").
-		WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending"}).AddRow(imported, true, pending))
+		WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending", "pending_set"}).AddRow(imported, true, pending, true))
 	server := &Server{Store: s}
 	state, err := server.boxLoginProfileState(context.Background(), "a", "box-1")
-	if err != nil || !state.Verified || len(state.Imported) != 1 || state.Imported[0].Name != "work" || len(state.Pending) != 1 || state.Pending[0].Application != "claude" {
+	if err != nil || !state.Verified || !state.PendingSet || len(state.Imported) != 1 || state.Imported[0].Name != "work" || len(state.Pending) != 1 || state.Pending[0].Application != "claude" {
 		t.Fatalf("state projection: %v %+v", err, state)
 	}
 	// A missing box is an error, never fabricated state.
@@ -138,7 +167,7 @@ func TestBoxLoginProfileStateReadsImportedPendingAndVerified(t *testing.T) {
 func TestProvisionPendingBoxProfilesSkipsWithoutPending(t *testing.T) {
 	s, m := testStore(t)
 	m.ExpectQuery(`SELECT COALESCE\(metadata->'importedLoginProfiles'`).WithArgs("a", "box-1").
-		WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending"}).AddRow([]byte(`[]`), true, []byte(`[]`)))
+		WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending", "pending_set"}).AddRow([]byte(`[]`), true, []byte(`[]`), false))
 	server := &Server{Store: s}
 	if err := server.provisionPendingBoxProfiles(context.Background(), nil, "a", fleetAssignment{Box: v1.LogicalBox{ID: "box-1", AccountID: "a"}}); err != nil {
 		t.Fatalf("no pending selection must be a no-op: %v", err)
@@ -233,5 +262,307 @@ func TestProfileSyncRemovesOtherHarnessCredentials(t *testing.T) {
 	}
 	if removed["/data/home/.codex/auth.json"] {
 		t.Fatal("selected credential would be removed after writing")
+	}
+}
+
+func sealTestProfile(t *testing.T, store *Store, app, name string, files map[string][]byte) string {
+	t.Helper()
+	plain, err := json.Marshal(v1.SaveLoginProfileRequest{Files: files})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := store.Envelope.Seal(profileEncryptionScope("a", app, name), plain)
+	clear(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sealed
+}
+
+func TestProfileSyncKeepsTheOtherCredentialSlot(t *testing.T) {
+	agent := v1.LoginProfileRef{Application: "codex", Name: "work", Model: "gpt-5.6-sol", ReasoningEffort: "high"}
+	for _, tc := range []struct {
+		name       string
+		refs       []v1.LoginProfileRef
+		keepGitHub bool
+	}{
+		{"change agent keeping GitHub", []v1.LoginProfileRef{{Application: "codex", Name: "new"}, {Application: "github", Name: "work"}}, true},
+		{"change GitHub keeping agent model", []v1.LoginProfileRef{agent, {Application: "github", Name: "personal"}}, true},
+		{"remove GitHub keeping agent", []v1.LoginProfileRef{agent}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, mock := testStore(t)
+			var err error
+			store.Envelope, err = secrets.New(make([]byte, 32))
+			if err != nil {
+				t.Fatal(err)
+			}
+			mock.ExpectBegin()
+			for _, ref := range tc.refs {
+				files := map[string][]byte{"auth.json": []byte(`{"OPENAI_API_KEY":"synthetic-only"}`), "config.toml": []byte("model = \"gpt-5.6-sol\"\n")}
+				if ref.Application == "github" {
+					files = map[string][]byte{"credential.json": []byte(`{"host":"github.com","user":"synthetic","token":"synthetic-only"}`)}
+				}
+				sealed := sealTestProfile(t, store, ref.Application, ref.Name, files)
+				mock.ExpectQuery("SELECT encrypted_value FROM login_profiles").WithArgs("a", ref.Application, ref.Name).
+					WillReturnRows(sqlmock.NewRows([]string{"encrypted_value"}).AddRow(sealed))
+			}
+			tx, err := store.DB.Begin()
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, _, _, err := (&Server{Store: store}).profileSyncRequest(context.Background(), tx, "a", tc.refs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			written := map[string]bool{}
+			for _, file := range request.Files {
+				written[file.Path] = true
+			}
+			if !written["/data/home/.codex/auth.json"] || !written["/data/home/.codex/config.toml"] {
+				t.Fatalf("agent files missing: %+v", written)
+			}
+			if slices.Contains(request.Remove, "/data/home/.codex/auth.json") || slices.Contains(request.Remove, "/data/home/.codex/config.toml") {
+				t.Fatalf("agent files removed: %+v", request.Remove)
+			}
+			githubPath := "/data/home/.config/gh/hosts.yml"
+			if written[githubPath] != tc.keepGitHub || slices.Contains(request.Remove, githubPath) == tc.keepGitHub {
+				t.Fatalf("GitHub slot transfer wrong: written=%v removed=%v", written[githubPath], request.Remove)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestProfileSyncTransfersOnlyChangedSlot(t *testing.T) {
+	agent := v1.LoginProfileRef{Application: "codex", Name: "work", Model: "gpt-5.6-sol", ReasoningEffort: "high"}
+	previous := []v1.LoginProfileRef{agent, {Application: "github", Name: "work"}}
+	for _, tc := range []struct {
+		name      string
+		requested []v1.LoginProfileRef
+		slot      string
+		write     string
+		remove    string
+	}{
+		{"change agent", []v1.LoginProfileRef{{Application: "codex", Name: "new"}, previous[1]}, "agent", "/data/home/.codex/auth.json", "/data/home/.claude/.credentials.json"},
+		{"change GitHub", []v1.LoginProfileRef{agent, {Application: "github", Name: "personal"}}, "github", "/data/home/.config/gh/hosts.yml", ""},
+		{"remove GitHub", []v1.LoginProfileRef{agent}, "github", "", "/data/home/.config/gh/hosts.yml"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, mock := testStore(t)
+			var err error
+			store.Envelope, err = secrets.New(make([]byte, 32))
+			if err != nil {
+				t.Fatal(err)
+			}
+			slots := changedBoxProfileSlots(previous, tc.requested)
+			if len(slots) != 1 || !slots[tc.slot] {
+				t.Fatalf("wrong changed slots: %v", slots)
+			}
+			mock.ExpectBegin()
+			for _, ref := range tc.requested {
+				if !slots[profileRefSlot(ref)] {
+					continue
+				}
+				files := map[string][]byte{"auth.json": []byte(`{"OPENAI_API_KEY":"synthetic-only"}`), "config.toml": []byte("model = \"gpt-5.6-sol\"\n")}
+				if ref.Application == "github" {
+					files = map[string][]byte{"credential.json": []byte(`{"host":"github.com","user":"synthetic","token":"synthetic-only"}`)}
+				}
+				sealed := sealTestProfile(t, store, ref.Application, ref.Name, files)
+				mock.ExpectQuery("SELECT encrypted_value FROM login_profiles").WithArgs("a", ref.Application, ref.Name).
+					WillReturnRows(sqlmock.NewRows([]string{"encrypted_value"}).AddRow(sealed))
+			}
+			tx, err := store.DB.Begin()
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, _, _, err := (&Server{Store: store}).profileSyncRequestForSlots(context.Background(), tx, "a", tc.requested, slots)
+			if err != nil {
+				t.Fatal(err)
+			}
+			written := map[string]bool{}
+			for _, file := range request.Files {
+				written[file.Path] = true
+				if profilePathSlot(file.Path) != tc.slot {
+					t.Fatalf("unrelated slot file written: %s", file.Path)
+				}
+			}
+			if tc.write != "" && !written[tc.write] {
+				t.Fatalf("expected file missing: %s", tc.write)
+			}
+			if tc.remove != "" && !slices.Contains(request.Remove, tc.remove) {
+				t.Fatalf("expected removal missing: %s", tc.remove)
+			}
+			for _, path := range request.Remove {
+				if profilePathSlot(path) != tc.slot {
+					t.Fatalf("unrelated slot file removed: %s", path)
+				}
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestApplyBoxLoginProfilesChangesOneSlotWithoutTouchingOther(t *testing.T) {
+	agent := v1.LoginProfileRef{Application: "codex", Name: "work", Model: "gpt-5.6-sol", ReasoningEffort: "high"}
+	previous := []v1.LoginProfileRef{agent, {Application: "github", Name: "work"}}
+	for _, tc := range []struct {
+		name      string
+		requested []v1.LoginProfileRef
+		slot      string
+	}{
+		{"agent", []v1.LoginProfileRef{{Application: "codex", Name: "new"}, previous[1]}, "agent"},
+		{"GitHub", []v1.LoginProfileRef{agent, {Application: "github", Name: "personal"}}, "github"},
+		{"remove GitHub", []v1.LoginProfileRef{agent}, "github"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, mock := testStore(t)
+			var err error
+			store.Envelope, err = secrets.New(make([]byte, 32))
+			if err != nil {
+				t.Fatal(err)
+			}
+			slots := changedBoxProfileSlots(previous, tc.requested)
+			mock.ExpectBegin()
+			mock.ExpectQuery(`SELECT id::text FROM logical_boxes`).WithArgs("a", "box-1", "slot", int64(1), "fence", "volume").
+				WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("box-1"))
+			for _, ref := range tc.requested {
+				if !slots[profileRefSlot(ref)] {
+					continue
+				}
+				files := map[string][]byte{"auth.json": []byte(`{"OPENAI_API_KEY":"synthetic-only"}`), "config.toml": []byte("model = \"gpt-5.6-sol\"\n")}
+				if ref.Application == "github" {
+					files = map[string][]byte{"credential.json": []byte(`{"host":"github.com","user":"synthetic","token":"synthetic-only"}`)}
+				}
+				sealed := sealTestProfile(t, store, ref.Application, ref.Name, files)
+				mock.ExpectQuery("SELECT encrypted_value FROM login_profiles").WithArgs("a", ref.Application, ref.Name).
+					WillReturnRows(sqlmock.NewRows([]string{"encrypted_value"}).AddRow(sealed))
+			}
+			encoded, _ := json.Marshal(tc.requested)
+			mock.ExpectExec(`UPDATE logical_boxes SET default_agent`).WithArgs("a", "box-1", encoded, "codex").
+				WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectCommit()
+			transport := &profileTestTransport{volume: "volume"}
+			assignment := fleetAssignment{Box: v1.LogicalBox{ID: "box-1", AccountID: "a", DefaultAgent: "codex", VolumeID: "volume", AssignmentGeneration: 1}, Slot: v1.ComputeSlot{ID: "slot", ServiceID: "service"}, FencingToken: "fence"}
+			if err := (&Server{Store: store}).applyBoxLoginProfiles(context.Background(), transport, assignment, tc.requested, slots, false); err != nil {
+				t.Fatalf("apply %s: %v", tc.name, err)
+			}
+			if transport.writes != 1 {
+				t.Fatalf("transfer count=%d", transport.writes)
+			}
+			for _, file := range transport.files {
+				if profilePathSlot(file.Path) != tc.slot {
+					t.Fatalf("unrelated file written: %s", file.Path)
+				}
+			}
+			for _, path := range transport.removes {
+				if profilePathSlot(path) != tc.slot {
+					t.Fatalf("unrelated file removed: %s", path)
+				}
+			}
+			if tc.name == "remove GitHub" && !slices.Contains(transport.removes, "/data/home/.config/gh/hosts.yml") {
+				t.Fatal("GitHub hosts file was not removed")
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestGitHubOnlyReplacementRollbackKeepsAgentRef(t *testing.T) {
+	agent := v1.LoginProfileRef{Application: "codex", Name: "work", Model: "gpt-5.6-sol", ReasoningEffort: "high"}
+	previous := []v1.LoginProfileRef{agent, {Application: "github", Name: "work"}}
+	requested := []v1.LoginProfileRef{agent, {Application: "github", Name: "personal"}}
+	if agentProfileChanged(previous, requested) || agentProfileChanged(previous, previous[:1]) {
+		t.Fatal("GitHub-only changes would restart agent sessions")
+	}
+	var calls [][]v1.LoginProfileRef
+	err := applyBoxLoginProfilesWithRollback(requested, previous, func(refs []v1.LoginProfileRef) error {
+		calls = append(calls, slices.Clone(refs))
+		if len(calls) == 1 {
+			return errors.New("rejected")
+		}
+		return nil
+	})
+	if err == nil || len(calls) != 2 || !slices.Equal(calls[0], requested) || !slices.Equal(calls[1], previous) {
+		t.Fatalf("GitHub rollback did not restore full previous refs: %v %+v", err, calls)
+	}
+}
+
+func TestHibernatedGitHubRemovalIsSavedAndAppliedOnNextStart(t *testing.T) {
+	store, mock := testStore(t)
+	var err error
+	store.Envelope, err = secrets.New(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := v1.LoginProfileRef{Application: "codex", Name: "work", Model: "gpt-5.6-sol", ReasoningEffort: "high"}
+	previous, _ := json.Marshal([]v1.LoginProfileRef{agent, {Application: "github", Name: "work"}})
+	pending, _ := json.Marshal([]v1.LoginProfileRef{agent})
+	stateQuery := func(pendingJSON []byte, pendingSet bool) {
+		mock.ExpectQuery(`SELECT COALESCE\(metadata->'importedLoginProfiles'`).WithArgs("a", "box-1").
+			WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending", "pending_set"}).AddRow(previous, true, pendingJSON, pendingSet))
+	}
+	mock.ExpectQuery(`SELECT id::text,account_id::text,owner_user_id::text,name,provider`).WithArgs("a", "box-1").
+		WillReturnRows(logicalBoxRows("box-1", "hibernated"))
+	stateQuery([]byte(`[]`), false)
+	mock.ExpectExec(`UPDATE logical_boxes SET default_agent`).WithArgs("a", "box-1", pending, "codex").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	stateQuery(pending, true)
+	server := &Server{Store: store}
+	request := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"profiles":[{"application":"codex","name":"work","model":"gpt-5.6-sol","reasoningEffort":"high"}]}`))
+	request.SetPathValue("id", "box-1")
+	response := httptest.NewRecorder()
+	server.putBoxLoginProfiles(response, request, Principal{AccountID: "a", UserID: "u", Role: "owner"})
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"pendingSet":true`) {
+		t.Fatalf("hibernated selection was not saved: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	stateQuery(pending, true)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id::text FROM logical_boxes`).WithArgs("a", "box-1", "slot", int64(1), "fence", "volume").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("box-1"))
+	mock.ExpectExec(`UPDATE logical_boxes SET default_agent`).WithArgs("a", "box-1", pending, "codex").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	transport := &profileTestTransport{volume: "volume"}
+	assignment := fleetAssignment{Box: v1.LogicalBox{ID: "box-1", AccountID: "a", DefaultAgent: "codex", VolumeID: "volume", AssignmentGeneration: 1}, Slot: v1.ComputeSlot{ID: "slot", ServiceID: "service"}, FencingToken: "fence"}
+	if err := server.provisionPendingBoxProfiles(context.Background(), transport, "a", assignment); err != nil {
+		t.Fatalf("pending selection was not applied on wake: %v", err)
+	}
+	if transport.writes != 1 || len(transport.files) != 0 || !slices.Contains(transport.removes, "/data/home/.config/gh/hosts.yml") || slices.Contains(transport.removes, "/data/home/.codex/auth.json") {
+		t.Fatalf("wrong wake transfer: writes=%d files=%v remove=%v", transport.writes, transport.files, transport.removes)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEmptyPendingSelectionStillProvisionsOnWake(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery(`SELECT COALESCE\(metadata->'importedLoginProfiles'`).WithArgs("a", "box-1").
+		WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending", "pending_set"}).
+			AddRow(`[{"application":"github","name":"work"}]`, true, `[]`, true))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id::text FROM logical_boxes`).WithArgs("a", "box-1", "slot", int64(1), "fence", "volume").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("box-1"))
+	mock.ExpectExec(`UPDATE logical_boxes SET default_agent`).WithArgs("a", "box-1", []byte(`[]`), "codex").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	transport := &profileTestTransport{volume: "volume"}
+	assignment := fleetAssignment{Box: v1.LogicalBox{ID: "box-1", AccountID: "a", DefaultAgent: "codex", VolumeID: "volume", AssignmentGeneration: 1}, Slot: v1.ComputeSlot{ID: "slot", ServiceID: "service"}, FencingToken: "fence"}
+	if err := (&Server{Store: store}).provisionPendingBoxProfiles(context.Background(), transport, "a", assignment); err != nil {
+		t.Fatalf("queued empty selection was skipped: %v", err)
+	}
+	if transport.writes != 1 || len(transport.files) != 0 || !slices.Contains(transport.removes, "/data/home/.config/gh/hosts.yml") {
+		t.Fatalf("queued GitHub removal was not transferred: writes=%d files=%v remove=%v", transport.writes, transport.files, transport.removes)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

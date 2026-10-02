@@ -351,12 +351,15 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   the local Codex callback listener. Browser OAuth sessions are serialized
   because the CLI uses a fixed callback port. Saved credentials
   use the same encrypted account profile store. A box has at most one imported agent
-  profile, and its application authoritatively selects the managed harness.
-  Replacing it uses the locked, integrity-checked transfer, removes portable
-  credential/config files for other harnesses, fails stale chat tasks, kills only
-  managed agent tmux sessions, and rewrites the tmux snapshot so an old harness
-  cannot return after deployment. Shell/desktop sessions survive. Stopped boxes
-  queue the same reconciliation for their next allocation. Managed agent restore
+  profile and one independent GitHub profile. The agent profile's application
+  authoritatively selects the managed harness. Changing only GitHub transfers its
+  hosts file and leaves agent credentials and sessions untouched; removing GitHub
+  removes only that file. Replacing the agent profile uses the locked,
+  integrity-checked transfer, removes portable credential/config files for other
+  harnesses, fails stale chat tasks, kills only managed agent tmux sessions, and
+  rewrites the tmux snapshot so an old harness cannot return after deployment.
+  Shell/desktop sessions survive. Stopped boxes queue the full profile selection
+  for their next allocation, including a queued removal. Managed agent restore
   always uses `agent-restore`, which reconstructs current channel/API/backend
   arguments instead of launching a bare executable. Deleting a controller-saved
   profile does not revoke a copy already imported into a box.

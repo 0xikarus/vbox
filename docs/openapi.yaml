@@ -707,6 +707,30 @@ paths:
     get:
       parameters: [{$ref: '#/components/parameters/ID'}]
       responses: {'200': {description: Logical box, content: {application/json: {schema: {$ref: '#/components/schemas/LogicalBox'}}}}}
+  /v1/logical-boxes/{id}/imported-credentials:
+    get:
+      summary: Owner-only imported agent and GitHub credential references
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses:
+        '200': {description: Current and queued references, content: {application/json: {schema: {$ref: '#/components/schemas/BoxLoginProfiles'}}}}
+  /v1/logical-boxes/{id}/login-profiles:
+    put:
+      summary: Replace a box's full imported credential reference list
+      description: Include the unchanged slot when changing or removing the other. An empty list clears both portable credential slots. Running boxes apply changed slots immediately; hibernated or detached boxes queue the full selection for their next start.
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profiles]
+              properties:
+                profiles: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/LoginProfileRef'}}
+      responses:
+        '200': {description: Applied or queued references, content: {application/json: {schema: {$ref: '#/components/schemas/BoxLoginProfiles'}}}}
+        '400': {description: Invalid or unavailable selected profile}
+        '409': {description: Box transition or credential transfer conflict}
   /v1/agent-roles:
     get:
       description: Owner-only account role definitions and affected-box counts.
@@ -974,6 +998,19 @@ components:
           properties:
             createdAt: {type: string, format: date-time}
             model: {type: string, description: Non-secret model default read from the saved profile configuration}
+            email: {type: string, format: email, description: Account email when present in a saved agent profile}
+            host: {type: string, description: GitHub host for a saved GitHub profile}
+            user: {type: string, description: GitHub account name for a saved GitHub profile}
+    BoxLoginProfiles:
+      type: object
+      required: [profiles, pending, verified]
+      properties:
+        profiles: {type: array, items: {$ref: '#/components/schemas/LoginProfileRef'}, description: References currently imported into the box}
+        pending: {type: array, items: {$ref: '#/components/schemas/LoginProfileRef'}, description: Full selection queued for the next start}
+        pendingSet: {type: boolean, description: Whether a queued selection exists, including an empty removal list}
+        verified: {type: boolean, description: Whether the imported selection was explicitly recorded}
+        applied: {type: boolean, description: Whether this PUT applied immediately to a running box}
+        note: {type: string}
     ToolPreset:
       type: object
       required: [id, name, version, description]

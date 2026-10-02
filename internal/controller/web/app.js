@@ -11,7 +11,7 @@ const presetBodyCache=new Map();
 const agentCLICatalogCache=new Map();
 window.VMBoxAIHelper?.attach({input:$('#instruction-form textarea[name="markdown"]'),kind:'markdown',status:$('#instruction-status')});
 $('#ai-settings-open').addEventListener('click',()=>window.VMBoxAIHelper.openSettings());
-let boxInstructionTarget=null,boxCredentialTarget=null;
+let boxInstructionTarget=null,boxCredentialTarget=null,boxCredentialState=null,boxCredentialOptions=[],boxCredentialRequest=0,boxCredentialBusy=false,boxCredentialRetryAction=null;
 const poolKey=(provider,providerCredential)=>JSON.stringify({provider,providerCredential:providerCredential||''});
 const poolLabel=(provider,alias)=>(provider==='shared-worker'?'Shared worker':'Dedicated · '+provider)+' / '+(alias||'default');
 function boxPlacement(box){
@@ -963,32 +963,73 @@ $('#box-instructions-apply').addEventListener('click',action(async()=>{
  $('#box-instructions-effective').textContent=result.effectiveMarkdown||'';
  await refresh();
 }));
+const boxCredentialSlot=ref=>ref.application==='github'?'github':'agent';
+const boxCredentialRefs=state=>(state.pendingSet||(state.pending||[]).length?state.pending:state.profiles)||[];
+const boxCredentialRef=(refs,slot)=>refs.find(ref=>boxCredentialSlot(ref)===slot);
+function boxCredentialLabel(ref){
+ if(!ref)return 'None';
+ const profile=boxCredentialOptions.find(item=>item.application===ref.application&&item.name===ref.name);
+ const app={claude:'Claude',codex:'Codex',opencode:'OpenCode',github:'GitHub'}[ref.application]||ref.application;
+ return [app,ref.name,profile?.email,ref.application==='github'&&[profile?.user,profile?.host].filter(Boolean).join('@')].filter(Boolean).join(' · ');
+}
+function renderBoxCredentials(){
+ const root=$('#box-credentials-form');root.replaceChildren();if(!boxCredentialState)return;
+ const effective=boxCredentialRefs(boxCredentialState),imported=boxCredentialState.profiles||[];
+ for(const [slot,title] of [['agent','Agent login'],['github','GitHub']]){
+  const ref=boxCredentialRef(effective,slot),saved=boxCredentialRef(imported,slot);
+  const options=boxCredentialOptions.filter(profile=>boxCredentialSlot(profile)===slot);
+  const row=node('section');row.className='credential-slot';row.dataset.slot=slot;
+  const heading=node('div');heading.className='credential-slot-heading';heading.append(node('strong',title));
+  const account=node('div',boxCredentialLabel(ref));account.className='credential-slot-account';
+  const queued=boxCredentialState.pendingSet||(boxCredentialState.pending||[]).length>0;
+  const note=node('p',queued&&JSON.stringify(ref)!==JSON.stringify(saved)?'Pending restart · applies on next start':ref?'Applied':'No account connected');note.className='credential-slot-note';
+  const actions=node('div');actions.className='credential-slot-actions';
+  const change=node('button','Change');change.type='button';change.className='credential-slot-change';change.setAttribute('aria-label','Change '+title);change.disabled=boxCredentialBusy||!options.length;
+  if(!options.length)change.title='Save a '+title+' profile first';
+  const picker=node('div');picker.className='credential-slot-picker';picker.hidden=true;
+  const label=node('label','Saved account');const select=node('select');select.setAttribute('aria-label',title+' saved account');
+  for(const profile of options){const option=node('option',boxCredentialLabel(profile));option.value=JSON.stringify({application:profile.application,name:profile.name});select.append(option)}
+  const current=ref&&JSON.stringify({application:ref.application,name:ref.name});if(current&&[...select.options].some(option=>option.value===current))select.value=current;
+  label.append(select);picker.append(label);
+  const pickerActions=node('div');pickerActions.className='credential-picker-actions';
+  const cancel=node('button','Cancel');cancel.type='button';cancel.onclick=()=>{picker.hidden=true;change.focus()};
+  const save=node('button','Save');save.type='button';save.className='credential-slot-save';save.setAttribute('aria-label','Save '+title);save.onclick=()=>void updateBoxCredentialSlot(slot,JSON.parse(select.value));
+  pickerActions.append(cancel,save);picker.append(pickerActions);
+  change.onclick=()=>{picker.hidden=false;select.focus()};actions.append(change);
+  if(slot==='github'&&ref){const remove=node('button','Remove');remove.type='button';remove.className='credential-slot-remove';remove.setAttribute('aria-label','Remove GitHub');remove.disabled=boxCredentialBusy;remove.onclick=()=>void updateBoxCredentialSlot(slot,null);actions.append(remove)}
+  row.append(heading,account,note,actions,picker);root.append(row);
+ }
+}
+function replaceBoxCredentialSlot(refs,slot,replacement){
+ const result=[];let replaced=false;
+ for(const ref of refs){if(boxCredentialSlot(ref)!==slot){result.push(ref);continue}if(!replaced&&replacement)result.push(replacement);replaced=true}
+ if(!replaced&&replacement)result.push(replacement);
+ return result;
+}
 async function openBoxCredentials(box){
- boxCredentialTarget=box;
- const status=$('#box-credentials-status');status.textContent='Loading…';
- $('#box-credentials-title').textContent='Agent profile · '+box.name;
+ boxCredentialTarget=box;boxCredentialState=null;boxCredentialBusy=false;boxCredentialRetryAction=null;
+ const request=++boxCredentialRequest,status=$('#box-credentials-status');status.textContent='Loading accounts…';
+ $('#box-credentials-title').textContent='Credentials · '+box.name;$('#box-credentials-form').replaceChildren();$('#box-credentials-retry').hidden=true;$('#box-credentials-retry').textContent='Retry';
+ modalEl('box-credentials-modal').hidden=false;
  try{
   const [state,profiles]=await Promise.all([api(bp(box.id)+'/imported-credentials'),api('/v1/login-profiles')]);
-  const byApplication={};for(const profile of profiles)(byApplication[profile.application]??=[]).push(profile.name);
-  const current=(state.profiles||[])[0];
-  const wrap=$('#box-credentials-form');wrap.replaceChildren();
-  const label=node('label','Login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=node('option','None');empty.value='';select.append(empty);
-  for(const application of ['claude','codex','opencode']){const names=(byApplication[application]||[]).slice().sort();if(!names.length)continue;const group=document.createElement('optgroup');group.label=application;for(const name of names){const option=node('option',name);option.value=JSON.stringify({application,name});group.append(option)}select.append(group)}
-  const currentValue=current&&JSON.stringify({application:current.application,name:current.name});if(currentValue&&[...select.options].some(option=>option.value===currentValue))select.value=currentValue;label.append(select);wrap.append(label);
-  const parts=[(state.profiles||[]).length?'Imported: '+(state.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', '):'No imported login profiles recorded'];
-  if((state.pending||[]).length)parts.push('Queued for next start: '+(state.pending||[]).map(ref=>ref.application+' · '+ref.name).join(', '));
-  $('#box-credentials-current').textContent=parts.join(' · ')+'.';
-  status.textContent='';
-  modalEl('box-credentials-modal').hidden=false;
- }catch(e){status.textContent=e.message}
+  if(request!==boxCredentialRequest)return;
+  boxCredentialState=state;boxCredentialOptions=profiles||[];status.textContent='';renderBoxCredentials();
+ }catch(e){if(request===boxCredentialRequest){status.textContent='Could not load credentials: '+e.message;$('#box-credentials-retry').hidden=false}}
 }
-$('#box-credentials-apply').addEventListener('click',action(async()=>{
- if(!boxCredentialTarget)return;
- const status=$('#box-credentials-status'),profile=$('#box-credentials-form select')?.value,profiles=profile?[JSON.parse(profile)]:[];
- status.textContent='Applying profile and closing stale agent conversations…';
- const result=await api(bp(boxCredentialTarget.id)+'/login-profiles','PUT',{profiles});
- status.textContent=result.note||'Saved.';
- $('#box-credentials-current').textContent=(result.profiles||[]).length?'Imported: '+(result.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', ')+'.':'No imported login profiles recorded.';
- await refresh();
-}));
+async function updateBoxCredentialSlot(slot,replacement){
+ if(!boxCredentialTarget||!boxCredentialState||boxCredentialBusy)return;
+ const target=boxCredentialTarget,request=boxCredentialRequest,status=$('#box-credentials-status');
+ const profiles=replaceBoxCredentialSlot(boxCredentialRefs(boxCredentialState),slot,replacement);
+ boxCredentialRetryAction=null;$('#box-credentials-retry').hidden=true;
+ boxCredentialBusy=true;status.textContent='Applying '+(slot==='github'?'GitHub':'agent login')+'…';renderBoxCredentials();
+ try{
+  const result=await api(bp(target.id)+'/login-profiles','PUT',{profiles});
+  if(request!==boxCredentialRequest)return;
+  boxCredentialState=result;status.textContent=result.note||'Saved.';
+  void refresh().catch(e=>{if(request===boxCredentialRequest)status.textContent=(result.note||'Saved.')+' Box list refresh failed: '+e.message});
+ }catch(e){if(request===boxCredentialRequest){status.textContent=e.message;boxCredentialRetryAction={slot,replacement};$('#box-credentials-retry').textContent='Retry change';$('#box-credentials-retry').hidden=false}}
+ finally{if(request===boxCredentialRequest){boxCredentialBusy=false;renderBoxCredentials()}}
+}
+$('#box-credentials-retry').onclick=()=>{if(boxCredentialRetryAction)void updateBoxCredentialSlot(boxCredentialRetryAction.slot,boxCredentialRetryAction.replacement);else if(boxCredentialTarget)void openBoxCredentials(boxCredentialTarget)};
 document.querySelectorAll('[data-close]').forEach(element=>element.addEventListener('click',()=>{const card=element.closest('.modal');if(card)card.hidden=true}));

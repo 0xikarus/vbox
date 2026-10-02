@@ -14,6 +14,9 @@ type LoginProfile struct {
 	Application string    `json:"application"`
 	Name        string    `json:"name"`
 	Model       string    `json:"model,omitempty"`
+	Email       string    `json:"email,omitempty"`
+	Host        string    `json:"host,omitempty"`
+	User        string    `json:"user,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -23,8 +26,7 @@ type SaveLoginProfileRequest struct {
 }
 
 // PutBoxLoginProfilesRequest replaces the login profiles imported into one box.
-// An empty list clears the recorded references; it does not remove credential
-// files already present in the box, mirroring saved-profile deletion.
+// An empty list clears the recorded references and portable credential files.
 type PutBoxLoginProfilesRequest struct {
 	Profiles []LoginProfileRef `json:"profiles"`
 }
@@ -33,9 +35,10 @@ type PutBoxLoginProfilesRequest struct {
 // holds a selection queued for the next box start. Credential bytes never
 // appear here.
 type BoxLoginProfiles struct {
-	Imported []LoginProfileRef `json:"profiles"`
-	Pending  []LoginProfileRef `json:"pending"`
-	Verified bool              `json:"verified"`
-	Applied  bool              `json:"applied,omitempty"`
-	Note     string            `json:"note,omitempty"`
+	Imported   []LoginProfileRef `json:"profiles"`
+	Pending    []LoginProfileRef `json:"pending"`
+	PendingSet bool              `json:"pendingSet,omitempty"`
+	Verified   bool              `json:"verified"`
+	Applied    bool              `json:"applied,omitempty"`
+	Note       string            `json:"note,omitempty"`
 }
