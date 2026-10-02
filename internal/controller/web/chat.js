@@ -1142,6 +1142,17 @@
   if(event.target.closest?.('.tv-button,.preview-trigger'))return;
   hideTvPreview();
  },{passive:true});
+ // A browser may synthesize a plain MouseEvent after a touch gesture, without
+ // pointerType or sourceCapabilities. Consume that click before row/message
+ // handlers see it. A new touch/pointer sequence starts a new tap.
+ let gestureClickUntil=0,gestureClickPending=false;
+ function suppressGestureClick(){gestureClickUntil=Date.now()+400;gestureClickPending=true}
+ document.addEventListener('touchstart',()=>{gestureClickPending=false},{capture:true,passive:true});
+ document.addEventListener('pointerdown',()=>{gestureClickPending=false},true);
+ document.addEventListener('click',event=>{
+  if(!gestureClickPending||Date.now()>gestureClickUntil||!event.isTrusted&&event.detail===0)return;
+  gestureClickPending=false;event.preventDefault();event.stopImmediatePropagation();
+ },true);
  // A touch-friendly context menu: hold a chat row instead of right-clicking.
  function bindLongPress(element,handler,delay=500){
   let timer=0,startX=0,startY=0,fired=false;
@@ -1149,7 +1160,7 @@
   element.addEventListener('touchstart',event=>{
    if(event.touches.length!==1)return;
    const touch=event.touches[0];startX=touch.clientX;startY=touch.clientY;fired=false;
-   cancel();timer=setTimeout(()=>{fired=true;handler(touch.clientX,touch.clientY)},delay);
+   cancel();timer=setTimeout(()=>{fired=true;if(element._chatTap)element._chatTap.invalid=true;suppressGestureClick();handler(touch.clientX,touch.clientY)},delay);
   },{passive:true});
   element.addEventListener('touchmove',event=>{const touch=event.touches[0];if(!touch)return;if(Math.abs(touch.clientX-startX)>12||Math.abs(touch.clientY-startY)>12)cancel()},{passive:true});
   element.addEventListener('touchend',event=>{cancel();if(fired){fired=false;event.preventDefault();event.stopPropagation()}},{passive:false});
@@ -1233,6 +1244,26 @@
   for(const event of ['touchend','touchcancel'])row.addEventListener(event,()=>row.classList.remove('pressing'),{passive:true});
   row.addEventListener('touchmove',()=>row.classList.remove('pressing'),{passive:true});
  }
+ function bindChatTapGuard(row){
+  const tap={x:0,y:0,active:false,invalid:false,endedAt:0};row._chatTap=tap;
+  const start=(x,y)=>{tap.x=x;tap.y=y;tap.active=true;tap.invalid=false};
+  const move=(x,y)=>{if(tap.active&&Math.hypot(x-tap.x,y-tap.y)>=10)tap.invalid=true};
+  const end=()=>{tap.active=false;tap.endedAt=Date.now()};
+  row.addEventListener('pointerdown',event=>start(event.clientX,event.clientY),{passive:true});
+  row.addEventListener('pointermove',event=>move(event.clientX,event.clientY),{passive:true});
+  row.addEventListener('pointerup',end,{passive:true});
+  row.addEventListener('pointercancel',()=>{tap.invalid=true;end()},{passive:true});
+  row.addEventListener('touchstart',event=>{const touch=event.touches[0];if(touch)start(touch.clientX,touch.clientY)},{passive:true});
+  row.addEventListener('touchmove',event=>{const touch=event.touches[0];if(touch)move(touch.clientX,touch.clientY)},{passive:true});
+  row.addEventListener('touchend',end,{passive:true});
+  row.addEventListener('touchcancel',()=>{tap.invalid=true;end()},{passive:true});
+ }
+ function cleanChatRowClick(row,event){
+  if(event.detail===0&&!event.isTrusted)return true;
+  const tap=row._chatTap;
+  if(navSwipe?.axis==='navigate'||activeHorizontalGestures||tap?.active||tap?.invalid&&Date.now()-tap.endedAt<700){event.preventDefault();return false}
+  return true;
+ }
  function sectionHeader(row,id,label,unread,alertUnread=unread){
   if(!row.dataset.section){
    row.dataset.section=id;
@@ -1294,13 +1325,14 @@
     bindHistoryPrefetch(row,'box:'+box.id);
     bindChatDrag(row,pinKey('box',box.id));
     bindPressFeedback(row);
+    bindChatTapGuard(row);
     bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{x,y})});
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu({box},{x:event.clientX,y:event.clientY})};
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open chat with '+box.name);
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,bell,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
     meta.append(r1,r2);row.append(meta);
-    row.onclick=()=>{location.hash='box='+box.id;openBox(box.id)};
+    row.onclick=event=>{if(!cleanChatRowClick(row,event))return;location.hash='box='+box.id;openBox(box.id)};
     rows.set(box.id,row);
    }
    row.classList.toggle('active',box.id===selected&&!selectedPair);
@@ -1335,13 +1367,14 @@
     bindHistoryPrefetch(row,'pair:'+key);
     bindChatDrag(row,pinKey('pair',key));
     bindPressFeedback(row);
+    bindChatTapGuard(row);
     bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({pair},{x,y})});
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu({pair},{x:event.clientX,y:event.clientY})};
     const avatar=pairAvatarNode(pair);
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
     const first=document.createElement('div');first.className='row1';const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),bell,document.createElement('time'));first.firstChild.className='name';
     const second=document.createElement('div');second.className='row2';const badge=mk('span','Box ↔ Box');badge.className='agent-badge';const preview=mk('span');preview.className='preview';const unread=mk('span');unread.className='unread';unread.hidden=true;second.append(badge,preview,unread);
-    meta.append(first,second);row.append(avatar,meta);row.onclick=()=>{location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
+    meta.append(first,second);row.append(avatar,meta);row.onclick=event=>{if(!cleanChatRowClick(row,event))return;location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
    }
    const name=pair.boxAName+' ↔ '+pair.boxBName;
    row.querySelector('.name').textContent=name;row.querySelector('.name').title=name;
@@ -2635,10 +2668,11 @@ function pairTileStatus(tile,mode,label){
    updateSendState();
   }
  };
- $('#chat-back').onclick=()=>{void flushReadMarkers();appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname);void prefetchActiveChat();scheduleListPrefetch()};
+ function showChatList(){void flushReadMarkers();appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname);void prefetchActiveChat();scheduleListPrefetch()}
+ $('#chat-back').onclick=showChatList;
  // Both directions share one drag and settle path. The list moves at 30% of
  // the chat's distance, so it is visible beneath the page while dragging.
- let navSwipe=null,navSettleTimer=0,navSettleEnd=null,navFrame=0,suppressNavClickUntil=0,historyLoadingFor='';
+ let navSwipe=null,navSettleTimer=0,navSettleEnd=null,navFrame=0,historyLoadingFor='';
  const navMain=$('#chat-main'),navList=$('#chat-list');
  const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
  function paintNavSwipe(){
@@ -2676,10 +2710,10 @@ function pairTileStatus(tile,mode,label){
   const touch=event.changedTouches?.[0],distance=touch?(touch.clientX-gesture.x)*(gesture.direction==='back'?1:-1):gesture.travel;
   const elapsed=Math.max(1,performance.now()-gesture.started);
   const completed=event.type==='touchend'&&(distance>=gesture.width*.35||gesture.fastFlick||(distance>50&&distance/elapsed>.65));
-  suppressNavClickUntil=Date.now()+500;
+  suppressGestureClick();
   appEl.classList.remove('nav-swiping');
   if(gesture.reduced){
-   if(gesture.direction==='back'){if(completed)$('#chat-back').click()}
+   if(gesture.direction==='back'){if(completed)showChatList()}
    else if(completed){appEl.classList.add('in-chat');history.replaceState(null,'',location.pathname+selectedChatHash())}
    if(gesture.direction==='forward')appEl.classList.remove('nav-forward');
    navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
@@ -2687,7 +2721,7 @@ function pairTileStatus(tile,mode,label){
   }
   clearTimeout(navSettleTimer);
   appEl.classList.add(completed?'nav-completing':'nav-returning');
-  if(completed&&gesture.direction==='back')$('#chat-back').click();
+  if(completed&&gesture.direction==='back')showChatList();
   if(completed&&gesture.direction==='forward')history.replaceState(null,'',location.pathname+selectedChatHash());
   requestAnimationFrame(()=>{
    navMain.style.transform=`translate3d(${completed?(gesture.direction==='back'?gesture.width:0):(gesture.direction==='back'?0:gesture.width)}px,0,0)`;
@@ -2732,8 +2766,8 @@ function pairTileStatus(tile,mode,label){
    if(document.querySelector('.msg-actions-menu:not([hidden]),#row-menu:not([hidden])')){navSwipe=null;return}
    if(dx>10&&dx>1.5*Math.abs(dy)){
     navSwipe.axis='navigate';
+    suppressGestureClick();
     if(direction==='forward'){
-     suppressNavClickUntil=Date.now()+500;
      navMain.style.transform=`translate3d(${navSwipe.width}px,0,0)`;
      appEl.classList.add('nav-forward');
     }
@@ -2755,7 +2789,6 @@ function pairTileStatus(tile,mode,label){
  navList.addEventListener('touchmove',event=>moveNavSwipe(event,'forward'),{passive:false});
  navList.addEventListener('touchend',finishNavSwipe,{passive:true});
  navList.addEventListener('touchcancel',finishNavSwipe,{passive:true});
- navList.addEventListener('click',event=>{if(Date.now()<suppressNavClickUntil&&(event.pointerType==='touch'||event.sourceCapabilities?.firesTouchEvents)){event.preventDefault();event.stopPropagation()}},true);
  addEventListener('hashchange',()=>{
   const params=new URLSearchParams(location.hash.slice(1)),pair=params.get('pair');
   if(pair){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match&&match!==selectedPair&&openingSelection!=='pair:'+match)void openPair(match);return}
