@@ -2412,8 +2412,6 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 @media(max-width:600px){
  #chat-app.nav-forward{z-index:30;overflow:visible}
  #chat-app.nav-forward #chat-main{position:fixed;inset:0;width:100vw;height:100dvh;z-index:30}
- #chat-main.nav-preview-loading #chat-messages{visibility:hidden}
- #chat-main.nav-preview-loading #chat-conversation::after{content:'Loading chat…';position:absolute;inset:var(--chat-header-height,4rem) 0 4rem;display:grid;place-items:center;background:var(--vb-bg);color:var(--vb-ink-soft);font:var(--vb-type-px-14)/1.4 var(--vb-font);pointer-events:none}
  #chat-app.nav-swiping #chat-main,#chat-app.nav-swiping #chat-list{transition:none;will-change:transform}
  #chat-app.nav-returning #chat-main,#chat-app.nav-returning #chat-list,#chat-app.nav-completing #chat-main,#chat-app.nav-completing #chat-list{transition:transform .22s var(--vb-ease)}
 }

@@ -28,12 +28,14 @@ test('forward swipe keeps a heavy transcript and list stable',async()=>{
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
  try{
   const page=await browser.newPage();await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true,deviceScaleFactor:1});await page.emulateCPUThrottling(4);
-  await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=box-0');
-  await page.waitForFunction(()=>document.querySelector('#chat-entries [data-box-id="box-1"]')&&document.querySelector('#chat-messages .msg'));
+  await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=box-1');
+  await page.waitForFunction(()=>document.querySelector('#chat-entries [data-box-id="box-0"]')&&document.querySelectorAll('#chat-messages .msg').length>=100);
   await page.$eval('#chat-back',el=>el.click());await new Promise(resolve=>setTimeout(resolve,280));
-  await page.evaluate(()=>{window.swipeFrames=[];window.recordSwipe=true;const main=document.querySelector('#chat-main'),messages=document.querySelector('#chat-messages'),list=document.querySelector('#chat-list');const rows=[...document.querySelectorAll('#chat-entries li[data-box-id]')].slice(0,5);list.addEventListener('touchend',()=>{window.swipeRelease={before:new DOMMatrix(getComputedStyle(main).transform).m41};queueMicrotask(()=>{window.swipeRelease.after=new DOMMatrix(getComputedStyle(main).transform).m41})},{capture:true,once:true});function frame(){if(!window.recordSwipe)return;const transform=new DOMMatrix(getComputedStyle(main).transform);window.swipeFrames.push({t:performance.now(),x:transform.m41,scrollTop:messages.scrollTop,scrollHeight:messages.scrollHeight,header:document.querySelector('#chat-header-name').textContent,rows:rows.map(row=>{const r=row.getBoundingClientRect();return [row.dataset.boxId,r.top,r.left-list.getBoundingClientRect().left]})});requestAnimationFrame(frame)}requestAnimationFrame(frame)});
+  transcript.push({id:'new-while-away',direction:'agent',state:'delivered',text:'Arrived while on the list',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+  await page.waitForFunction(()=>document.querySelector('#chat-messages').textContent.includes('Arrived while on the list'),{timeout:10000});
+  await page.evaluate(()=>{window.swipeFrames=[];window.recordSwipe=true;const main=document.querySelector('#chat-main'),messages=document.querySelector('#chat-messages'),list=document.querySelector('#chat-list');const rows=[...document.querySelectorAll('#chat-entries li[data-box-id]')].slice(0,5);list.addEventListener('touchend',()=>{window.swipeRelease={before:new DOMMatrix(getComputedStyle(main).transform).m41};queueMicrotask(()=>{window.swipeRelease.after=new DOMMatrix(getComputedStyle(main).transform).m41})},{capture:true,once:true});function frame(){if(!window.recordSwipe)return;const transform=new DOMMatrix(getComputedStyle(main).transform);window.swipeFrames.push({t:performance.now(),x:transform.m41,scrollTop:messages.scrollTop,scrollHeight:messages.scrollHeight,header:document.querySelector('#chat-header-name').textContent,loading:!document.querySelector('#chat-loading').hidden,rows:rows.map(row=>{const r=row.getBoundingClientRect();return [row.dataset.boxId,r.top,r.left-list.getBoundingClientRect().left]})});requestAnimationFrame(frame)}requestAnimationFrame(frame)});
   const dir=captureRoot+'/'+phase;await mkdir(dir,{recursive:true});
-  const row=await page.$eval('[data-box-id="box-1"]',el=>{const r=el.getBoundingClientRect();return {x:310,y:r.top+r.height/2}});
+  const row=await page.$eval('[data-box-id="box-0"]',el=>{const r=el.getBoundingClientRect();return {x:310,y:r.top+r.height/2}});
   await page.touchscreen.touchStart(row.x,row.y);
   let index=0;
   for(const x of [285,255,225,195,165,135,105]){await page.touchscreen.touchMove(x,row.y);await new Promise(resolve=>setTimeout(resolve,80));await page.screenshot({path:dir+'/frame-'+String(index++).padStart(2,'0')+'.png'})}
@@ -47,9 +49,12 @@ test('forward swipe keeps a heavy transcript and list stable',async()=>{
   if(phase==='after'){
    const visible=trace.filter(frame=>frame.x<390&&frame.x>0);
    assert.ok(visible.length>5,'recorded visible drag frames');
+   assert.ok(visible.every(frame=>frame.header==='contact 01'),'active chat stays in the pane');
+   assert.ok(visible.every(frame=>!frame.loading),'no loading surface appears in drag frames');
+   assert.equal(await page.$eval('#chat-loading',el=>el.hidden),true,'no loading surface appears');
    assert.ok(Math.abs(release.before-release.after)<1,'release starts settling from the last drag position');
    assert.ok(visible.every((frame,i)=>i===0||frame.x<=visible[i-1].x+1),'pane moves monotonically with the finger');
-   assert.ok(visible.every(frame=>frame.rows.every(([id,y,x],i)=>id===visible[0].rows[i][0]&&Math.abs(y-visible[0].rows[i][1])<1&&Math.abs(x-visible[0].rows[i][2])<1)),'list rows keep their positions and order');
+   assert.ok(visible.every(frame=>frame.rows.every(([id,y,x],i)=>id===visible[0].rows[i][0]&&Math.abs(y-visible[0].rows[i][1])<1&&Math.abs(x-visible[0].rows[i][2])<4)),'list rows keep their positions and order apart from the pressed row highlight');
    const settled=trace.filter(frame=>frame.x<300&&frame.scrollHeight>1000);
    assert.ok(settled.length>0&&settled.every(frame=>Math.abs(frame.scrollTop-settled[0].scrollTop)<2),'transcript scroll stays fixed once visible');
   }

@@ -16,9 +16,9 @@ const appcss=await readFile('internal/controller/web/app.css','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
 
-// Switching chats must never leave the previous box's transcript on screen
-// while the next one loads. Hold beta's history so the switch is observable.
-test('switching chats clears the previous transcript',async()=>{
+// Keep the old pane until uncached history is ready, then paint the new pane
+// before switching. Hold beta's history so the handoff is observable.
+test('switching chats waits for new history before replacing the transcript',async()=>{
  const now=new Date().toISOString();
  const alpha=[{id:'a1',direction:'agent',state:'delivered',text:'ALPHA-ONLY',createdAt:now,updatedAt:now}];
  const beta=[{id:'b1',direction:'agent',state:'delivered',text:'BETA-ONLY',createdAt:now,updatedAt:now}];
@@ -55,9 +55,9 @@ test('switching chats clears the previous transcript',async()=>{
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=alpha');
   await p.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('ALPHA-ONLY'),{timeout:8000});
   await p.$eval('[data-box-id="beta"]',element=>element.click());
-  // openBox clears synchronously; beta's history is still held by the server.
+  // Beta is still loading, so the previous complete transcript stays visible.
   const during=await p.$eval('#chat-messages',element=>element.textContent);
-  assert.equal(during.includes('ALPHA-ONLY'),false,'previous transcript must be cleared immediately on switch');
+  assert.equal(during.includes('ALPHA-ONLY'),true,'previous transcript remains until the new one is ready');
   await p.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('BETA-ONLY'),{timeout:8000});
   assert.equal(await p.$eval('#chat-messages',element=>element.textContent.includes('ALPHA-ONLY')),false);
   await p.close();
