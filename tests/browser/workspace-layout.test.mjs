@@ -68,16 +68,22 @@ test('workspace layout, resource visibility polling, and chat navigation',async(
   await new Promise(resolve=>setTimeout(resolve,120));
   const awayCount=resourceGets;await new Promise(resolve=>setTimeout(resolve,250));
   assert.equal(resourceGets,awayCount,'offscreen resources stop polling');
+  await page.close();
+  const desktopPage=await browser.newPage();
+  desktopPage.on('pageerror',error=>errors.push(error.message));
+  await desktopPage.setViewport({width:1024,height:900,deviceScaleFactor:1,isMobile:false,hasTouch:false});
+  await desktopPage.goto('http://127.0.0.1:'+server.address().port+'/boxes/test');
+  await desktopPage.waitForFunction(()=>!document.querySelector('#workspace').hidden,{timeout:8000});
   for(const width of [1024,1440]){
-   await page.setViewport({width,height:900,deviceScaleFactor:1,isMobile:false,hasTouch:false});
-   const layout=await page.evaluate(()=>({viewer:document.querySelector('.viewer-card').getBoundingClientRect().toJSON(),side:document.querySelector('.workspace-side').getBoundingClientRect().toJSON(),status:document.querySelector('[aria-label="Status"]').getBoundingClientRect().toJSON(),resources:document.querySelector('.workspace-resources').getBoundingClientRect().toJSON()}));
+   await desktopPage.setViewport({width,height:900,deviceScaleFactor:1,isMobile:false,hasTouch:false});
+   const layout=await desktopPage.evaluate(()=>({viewer:document.querySelector('.viewer-card').getBoundingClientRect().toJSON(),side:document.querySelector('.workspace-side').getBoundingClientRect().toJSON(),status:document.querySelector('[aria-label="Status"]').getBoundingClientRect().toJSON(),resources:document.querySelector('.workspace-resources').getBoundingClientRect().toJSON()}));
    assert.ok(layout.viewer.right<layout.side.left,'viewer and compact side column remain adjacent at '+width);
    assert.ok(layout.viewer.width>layout.side.width,'viewer is wider at '+width);
    assert.ok(layout.resources.top>layout.status.top&&layout.resources.left===layout.status.left,'Resources is directly below Status');
   }
-  await page.click('#workspace-resources-adjust');
-  await page.waitForFunction(()=>document.querySelector('#box-settings').open&&!document.querySelector('#resource-form').hidden);
+  await desktopPage.click('#workspace-resources-adjust');
+  await desktopPage.waitForFunction(()=>document.querySelector('#box-settings').open&&!document.querySelector('#resource-form').hidden);
   assert.deepEqual(errors,[],'no Workspace JavaScript errors');
-  await page.close();
+  await desktopPage.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });
