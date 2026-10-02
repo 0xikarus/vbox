@@ -28,7 +28,7 @@
  }
  window.VBoxChatGesture={begin:beginHorizontalGesture,end:endHorizontalGesture};
  const previewFetched=new Map();let boxesPending=null;
- const attachmentDrafts=new Map();
+ const attachmentDrafts=new Map(),threadAttachmentDrafts=new Map();
  let pendingKey='',pendingFingerprint='',replyingTo=null;
  let instructionPresets={defaultName:'',presets:[]},chatCommands=[];
  const presetBodyCache=new Map();
@@ -687,35 +687,59 @@
   }
  },true);
 
- /* ---------- annotate a received image, then attach it to a reply ---------- */
+ /* ---------- shared image annotation for received and outgoing attachments ---------- */
  const annotationDialog=$('#image-annotation'),annotationCanvas=$('#image-annotation-canvas'),annotationContext=annotationCanvas.getContext('2d');
  const annotationStatus=$('#image-annotation-status');
- let annotationImage=null,annotationTarget=null,annotationStrokes=[],activeAnnotationStroke=null,activeAnnotationPointer=null,annotationColor=getComputedStyle(document.documentElement).getPropertyValue('--vb-annotation-red').trim(),annotationBusy=false;
+ let annotationImage=null,annotationTarget=null,annotationHistory=[[]],annotationHistoryIndex=0,activeAnnotationObject=null,activeAnnotationPointer=null,annotationTool='pen',annotationColor=getComputedStyle(document.documentElement).getPropertyValue('--vb-annotation-red').trim(),annotationBusy=false;
  function annotationPoint(event){
   const rect=annotationCanvas.getBoundingClientRect();
-  return {x:Math.max(0,Math.min(annotationCanvas.width,(event.clientX-rect.left)*annotationCanvas.width/rect.width)),y:Math.max(0,Math.min(annotationCanvas.height,(event.clientY-rect.top)*annotationCanvas.height/rect.height))};
+  return {x:Math.max(0,Math.min(annotationImage.naturalWidth,(event.clientX-rect.left)*annotationImage.naturalWidth/rect.width)),y:Math.max(0,Math.min(annotationImage.naturalHeight,(event.clientY-rect.top)*annotationImage.naturalHeight/rect.height))};
  }
- function drawAnnotationStroke(stroke){
-  if(!stroke.points.length)return;
-  const ctx=annotationContext;ctx.strokeStyle=stroke.color;ctx.fillStyle=stroke.color;ctx.lineWidth=stroke.width;ctx.lineCap='round';ctx.lineJoin='round';
-  if(stroke.points.length===1){const point=stroke.points[0];ctx.beginPath();ctx.arc(point.x,point.y,stroke.width/2,0,Math.PI*2);ctx.fill();return}
-  ctx.beginPath();ctx.moveTo(stroke.points[0].x,stroke.points[0].y);
-  for(const point of stroke.points.slice(1))ctx.lineTo(point.x,point.y);
+ function drawAnnotationObject(ctx,object){
+  ctx.strokeStyle=object.color;ctx.fillStyle=object.color;ctx.lineWidth=object.width;ctx.lineCap='round';ctx.lineJoin='round';
+  if(object.tool==='pen'){
+   if(object.points.length===1){ctx.beginPath();ctx.arc(object.points[0].x,object.points[0].y,object.width/2,0,Math.PI*2);ctx.fill();return}
+   ctx.beginPath();ctx.moveTo(object.points[0].x,object.points[0].y);
+   for(const point of object.points.slice(1))ctx.lineTo(point.x,point.y);
+  }else{
+   const {x:startX,y:startY}=object.start,{x:endX,y:endY}=object.end;
+   ctx.beginPath();
+   if(object.tool==='rectangle')ctx.rect(Math.min(startX,endX),Math.min(startY,endY),Math.abs(endX-startX),Math.abs(endY-startY));
+   else if(object.tool==='ellipse')ctx.ellipse((startX+endX)/2,(startY+endY)/2,Math.max(.01,Math.abs(endX-startX)/2),Math.max(.01,Math.abs(endY-startY)/2),0,0,Math.PI*2);
+   else{
+    ctx.moveTo(startX,startY);ctx.lineTo(endX,endY);
+    if(object.tool==='arrow'){
+     const angle=Math.atan2(endY-startY,endX-startX),length=Math.max(object.width*5,Math.min(annotationImage.naturalWidth,annotationImage.naturalHeight)/35);
+     ctx.moveTo(endX-length*Math.cos(angle-.55),endY-length*Math.sin(angle-.55));ctx.lineTo(endX,endY);
+     ctx.lineTo(endX-length*Math.cos(angle+.55),endY-length*Math.sin(angle+.55));
+    }
+   }
+  }
   ctx.stroke();
  }
- function redrawAnnotation(){
+ function paintAnnotation(ctx,width,height,includeActive=false){
   if(!annotationImage)return;
-  annotationContext.clearRect(0,0,annotationCanvas.width,annotationCanvas.height);
-  annotationContext.drawImage(annotationImage,0,0,annotationCanvas.width,annotationCanvas.height);
-  for(const stroke of annotationStrokes)drawAnnotationStroke(stroke);
+  ctx.clearRect(0,0,width,height);ctx.save();ctx.scale(width/annotationImage.naturalWidth,height/annotationImage.naturalHeight);
+  ctx.drawImage(annotationImage,0,0,annotationImage.naturalWidth,annotationImage.naturalHeight);
+  for(const object of annotationHistory[annotationHistoryIndex])drawAnnotationObject(ctx,object);
+  if(includeActive&&activeAnnotationObject)drawAnnotationObject(ctx,activeAnnotationObject);
+  ctx.restore();
+ }
+ function redrawAnnotation(){paintAnnotation(annotationContext,annotationCanvas.width,annotationCanvas.height,true)}
+ function commitAnnotation(objects){
+  annotationHistory=annotationHistory.slice(0,annotationHistoryIndex+1);
+  annotationHistory.push(objects);annotationHistoryIndex++;
+  redrawAnnotation();updateAnnotationTools();
  }
  function updateAnnotationTools(){
-  const enabled=annotationStrokes.length>0&&!annotationBusy;
-  $('#image-annotation-undo').disabled=!enabled;$('#image-annotation-clear').disabled=!enabled;
+  $('#image-annotation-undo').disabled=annotationBusy||annotationHistoryIndex===0;
+  $('#image-annotation-redo').disabled=annotationBusy||annotationHistoryIndex===annotationHistory.length-1;
+  $('#image-annotation-clear').disabled=annotationBusy||!annotationHistory[annotationHistoryIndex].length;
  }
- async function openImageAnnotation(item,url){
-  const target={boxId:item.boxId,message:item.replyMessage,imageId:item.imageId};
-  closeMediaViewer();annotationTarget=target;annotationImage=null;annotationStrokes=[];activeAnnotationStroke=null;activeAnnotationPointer=null;annotationBusy=false;
+ async function openAnnotation(target,url){
+  annotationTarget=target;annotationImage=null;annotationHistory=[[]];annotationHistoryIndex=0;activeAnnotationObject=null;activeAnnotationPointer=null;annotationBusy=false;
+  $('#image-annotation-note').hidden=target.type==='draft';
+  $('#image-annotation-add').textContent=target.type==='draft'?'Done':'Add to reply';
   $('#image-annotation-text').value='';annotationStatus.textContent='Loading image…';updateAnnotationTools();
   annotationDialog.showModal();
   try{
@@ -723,57 +747,99 @@
    if(annotationTarget!==target||!annotationDialog.open)return;
    const scale=Math.min(1,4096/image.naturalWidth,4096/image.naturalHeight,Math.sqrt(8000000/(image.naturalWidth*image.naturalHeight)));
    annotationCanvas.width=Math.max(1,Math.round(image.naturalWidth*scale));annotationCanvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
-   annotationImage=image;redrawAnnotation();annotationStatus.textContent='Draw on the image, then add it to your reply.';
+   annotationImage=image;redrawAnnotation();annotationStatus.textContent=target.type==='draft'?'Draw on the image, then tap Done.':'Draw on the image, then add it to your reply.';
   }catch{if(annotationTarget===target)annotationStatus.textContent='Could not open the full image for annotation.'}
  }
+ function openImageAnnotation(item,url){closeMediaViewer();return openAnnotation({type:'received',boxId:item.boxId,message:item.replyMessage,imageId:item.imageId},url)}
+ function openDraftAnnotation(entry,store,key,threadId=''){return openAnnotation({type:'draft',boxId:selected,entry,store,key,threadId},entry.url)}
+ function annotationEnd(object,point,shift){
+  if(!shift||object.tool==='pen')return point;
+  const dx=point.x-object.start.x,dy=point.y-object.start.y;
+  if(object.tool==='rectangle'||object.tool==='ellipse'){
+   const side=Math.min(Math.abs(dx),Math.abs(dy));
+   return {x:object.start.x+Math.sign(dx)*side,y:object.start.y+Math.sign(dy)*side};
+  }
+  const length=Math.hypot(dx,dy),angle=Math.round(Math.atan2(dy,dx)/(Math.PI/4))*Math.PI/4;
+  return {x:object.start.x+Math.cos(angle)*length,y:object.start.y+Math.sin(angle)*length};
+ }
  annotationCanvas.addEventListener('pointerdown',event=>{
-  if(!annotationImage||annotationBusy||activeAnnotationStroke||(event.button!==0&&event.pointerType!=='touch'))return;
+  if(!annotationImage||annotationBusy||activeAnnotationObject||(event.button!==0&&event.pointerType!=='touch'))return;
   event.preventDefault();annotationCanvas.setPointerCapture(event.pointerId);
   activeAnnotationPointer=event.pointerId;
-  activeAnnotationStroke={color:annotationColor,width:Math.max(3,annotationCanvas.width/260)*Number($('#image-annotation-size').value),points:[annotationPoint(event)]};
-  annotationStrokes.push(activeAnnotationStroke);drawAnnotationStroke(activeAnnotationStroke);updateAnnotationTools();
+  const point=annotationPoint(event);
+  activeAnnotationObject={tool:annotationTool,color:annotationColor,width:Math.max(3,annotationImage.naturalWidth/260)*Number($('#image-annotation-size').value),start:point,end:point,points:[point]};
+  redrawAnnotation();
  });
  annotationCanvas.addEventListener('pointermove',event=>{
-  if(!activeAnnotationStroke||activeAnnotationPointer!==event.pointerId||!annotationCanvas.hasPointerCapture(event.pointerId))return;
-  event.preventDefault();const stroke=activeAnnotationStroke,previous=stroke.points.at(-1),point=annotationPoint(event);
-  stroke.points.push(point);annotationContext.strokeStyle=stroke.color;annotationContext.lineWidth=stroke.width;annotationContext.lineCap='round';annotationContext.beginPath();annotationContext.moveTo(previous.x,previous.y);annotationContext.lineTo(point.x,point.y);annotationContext.stroke();
+  if(!activeAnnotationObject||activeAnnotationPointer!==event.pointerId||!annotationCanvas.hasPointerCapture(event.pointerId))return;
+  event.preventDefault();const point=annotationPoint(event);
+  if(activeAnnotationObject.tool==='pen')activeAnnotationObject.points.push(point);
+  else activeAnnotationObject.end=annotationEnd(activeAnnotationObject,point,event.shiftKey);
+  redrawAnnotation();
  });
- const finishAnnotationStroke=event=>{if(activeAnnotationPointer===event.pointerId){activeAnnotationStroke=null;activeAnnotationPointer=null}};
+ const finishAnnotationStroke=event=>{
+  if(activeAnnotationPointer!==event.pointerId||!activeAnnotationObject)return;
+  if(event.type==='pointerup'){
+   const point=annotationPoint(event);
+   if(activeAnnotationObject.tool==='pen'){
+    const last=activeAnnotationObject.points.at(-1);
+    if(last.x!==point.x||last.y!==point.y)activeAnnotationObject.points.push(point);
+   }
+   else activeAnnotationObject.end=annotationEnd(activeAnnotationObject,point,event.shiftKey);
+   const objects=[...annotationHistory[annotationHistoryIndex],activeAnnotationObject];
+   activeAnnotationObject=null;activeAnnotationPointer=null;commitAnnotation(objects);
+  }else{activeAnnotationObject=null;activeAnnotationPointer=null;redrawAnnotation()}
+ };
  annotationCanvas.addEventListener('pointerup',finishAnnotationStroke);annotationCanvas.addEventListener('pointercancel',finishAnnotationStroke);
+ annotationDialog.querySelectorAll('[data-annotation-tool]').forEach(button=>button.onclick=()=>{
+  annotationTool=button.dataset.annotationTool;
+  annotationDialog.querySelectorAll('[data-annotation-tool]').forEach(choice=>choice.setAttribute('aria-pressed',String(choice===button)));
+ });
  annotationDialog.querySelectorAll('[data-annotation-color]').forEach(button=>button.onclick=()=>{
   annotationColor=getComputedStyle(document.documentElement).getPropertyValue('--vb-annotation-'+button.dataset.annotationColor).trim();
   annotationDialog.querySelectorAll('[data-annotation-color]').forEach(choice=>choice.setAttribute('aria-pressed',String(choice===button)));
  });
- $('#image-annotation-undo').onclick=()=>{annotationStrokes.pop();redrawAnnotation();updateAnnotationTools()};
- $('#image-annotation-clear').onclick=()=>{annotationStrokes=[];redrawAnnotation();updateAnnotationTools()};
+ $('#image-annotation-undo').onclick=()=>{annotationHistoryIndex--;redrawAnnotation();updateAnnotationTools()};
+ $('#image-annotation-redo').onclick=()=>{annotationHistoryIndex++;redrawAnnotation();updateAnnotationTools()};
+ $('#image-annotation-clear').onclick=()=>commitAnnotation([]);
  $('#image-annotation-close').onclick=()=>{if(!annotationBusy)annotationDialog.close()};
+ $('#image-annotation-cancel').onclick=()=>{if(!annotationBusy)annotationDialog.close()};
  annotationDialog.addEventListener('cancel',event=>{if(annotationBusy)event.preventDefault()});
- annotationDialog.addEventListener('close',()=>{annotationTarget=null;annotationImage=null;annotationStrokes=[];activeAnnotationStroke=null;activeAnnotationPointer=null;annotationCanvas.width=0;annotationCanvas.height=0});
+ annotationDialog.addEventListener('close',()=>{annotationTarget=null;annotationImage=null;annotationHistory=[[]];annotationHistoryIndex=0;activeAnnotationObject=null;activeAnnotationPointer=null;annotationCanvas.width=0;annotationCanvas.height=0});
  $('#image-annotation-add').onclick=async()=>{
   const target=annotationTarget;if(!target||annotationBusy||!annotationImage)return;
   if(selected!==target.boxId){annotationStatus.textContent='Return to the original chat before adding this image.';return}
-  annotationBusy=true;$('#image-annotation-add').disabled=true;$('#image-annotation-close').disabled=true;updateAnnotationTools();
+  if(target.type==='draft'&&(!target.store.get(target.key)?.includes(target.entry)||target.threadId&&openThreadID!==target.threadId)){annotationStatus.textContent='This attachment is no longer in the composer.';return}
+  annotationBusy=true;$('#image-annotation-add').disabled=true;$('#image-annotation-close').disabled=true;$('#image-annotation-cancel').disabled=true;updateAnnotationTools();
   try{
    annotationStatus.textContent='Preparing image…';
-   let blob=await new Promise(resolve=>annotationCanvas.toBlob(resolve,'image/png'));
+   const exported=document.createElement('canvas');exported.width=annotationImage.naturalWidth;exported.height=annotationImage.naturalHeight;
+   if(exported.width!==annotationImage.naturalWidth||exported.height!==annotationImage.naturalHeight)throw Error('This image is too large to annotate at its original resolution.');
+   paintAnnotation(exported.getContext('2d'),exported.width,exported.height);
+   const blob=await new Promise(resolve=>exported.toBlob(resolve,'image/png'));
+   exported.width=0;exported.height=0;
    if(!blob)throw Error('Could not export the annotated image.');
-   let extension='png';
-   if(blob.size>25*1024*1024){
-    const flattened=document.createElement('canvas');flattened.width=annotationCanvas.width;flattened.height=annotationCanvas.height;
-    const ctx=flattened.getContext('2d');ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--vb-white').trim();ctx.fillRect(0,0,flattened.width,flattened.height);ctx.drawImage(annotationCanvas,0,0);
-    blob=await new Promise(resolve=>flattened.toBlob(resolve,'image/jpeg',.85));extension='jpg';
-    flattened.width=0;flattened.height=0;
-    if(!blob)throw Error('Could not export the annotated image.');
-   }
-   const file=new File([blob],'annotated-'+target.imageId+'.'+extension,{type:blob.type});
+   if(blob.size>25*1024*1024)throw Error('The annotated PNG is over the 25 MiB attachment limit.');
+   const base=target.type==='draft'?(target.entry.fileName||'image').replace(/\.[^.]+$/,'').replace(/-annotated$/,''):'annotated-'+target.imageId;
+   const file=new File([blob],base+(target.type==='draft'?'-annotated':'')+'.png',{type:'image/png'});
    annotationStatus.textContent='Uploading image…';
-   if(await uploadImages([file],{boxID:target.boxId,statusTarget:annotationStatus})!==1)return;
-   setReply(target.message);
-   const note=$('#image-annotation-text').value.trim();
-   if(note){inputEl.value=inputEl.value.trim()?inputEl.value.trimEnd()+'\n'+note:note;inputEl.dispatchEvent(new Event('input',{bubbles:true}))}
-   annotationDialog.close();toast('Annotated image added to your reply.');inputEl.focus();
+   if(target.type==='draft'){
+    const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(120000)});
+    let result;try{result=await response.json()}catch{}
+    if(!response.ok||!result?.id)throw Error(result?.error||'Upload failed.');
+    if(!target.store.get(target.key)?.includes(target.entry))throw Error('This attachment is no longer in the composer.');
+    URL.revokeObjectURL(target.entry.url);target.entry.url=URL.createObjectURL(file);target.entry.id=result.id;target.entry.fileName=file.name;target.entry.mediaType='image/png';
+    if(target.threadId)renderThreadDrafts();else renderDrafts();
+    annotationDialog.close();toast('Annotation saved.');(target.threadId?$('#thread-composer textarea'):inputEl).focus();
+   }else{
+    if(await uploadImages([file],{boxID:target.boxId,statusTarget:annotationStatus})!==1)return;
+    setReply(target.message);
+    const note=$('#image-annotation-text').value.trim();
+    if(note){inputEl.value=inputEl.value.trim()?inputEl.value.trimEnd()+'\n'+note:note;inputEl.dispatchEvent(new Event('input',{bubbles:true}))}
+    annotationDialog.close();toast('Annotated image added to your reply.');inputEl.focus();
+   }
   }catch(error){annotationStatus.textContent=error.message||'Could not add the annotated image.'}
-  finally{annotationBusy=false;$('#image-annotation-add').disabled=false;$('#image-annotation-close').disabled=false;updateAnnotationTools()}
+  finally{annotationBusy=false;$('#image-annotation-add').disabled=false;$('#image-annotation-close').disabled=false;$('#image-annotation-cancel').disabled=false;updateAnnotationTools()}
  };
 
  /* ---------- avatars: desktop preview thumbnails, blob-cached for 60s ---- */
@@ -1324,6 +1390,7 @@
   copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
   forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
   reply:[['polyline',{points:'9 17 4 12 9 7'}],['path',{d:'M20 18v-2a4 4 0 0 0-4-4H4'}]],
+  pencil:[['path',{d:'M12 20h9'}],['path',{d:'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'}]],
  };
  function lucide(name){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -1586,16 +1653,46 @@
  function cancelReply(){replyingTo=null;replyPreview.hidden=true;$('#reply-preview-text').textContent=''}
  $('#reply-cancel').onclick=cancelReply;
  let openThreadID='';
- $('#thread-close').onclick=()=>{openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren()};
+ const threadComposer=$('#thread-composer'),threadFileInput=$('#thread-attachments'),threadStatus=$('#thread-status');
+ const threadDraftKey=(boxID=selected,threadID=openThreadID)=>JSON.stringify([boxID,threadID]);
+ function updateThreadSendState(){
+  $('#thread-send').disabled=!openThreadID||boxes.get(selected)?.state!=='running'||(!threadComposer.elements.text.value.trim()&&!(threadAttachmentDrafts.get(threadDraftKey())||[]).length);
+ }
+ threadComposer.elements.text.addEventListener('input',updateThreadSendState);
+ $('#thread-close').onclick=()=>{openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();renderThreadDrafts()};
  async function openThread(threadID){
-  if(!selected||!threadID)return;openThreadID=threadID;threadPanel.hidden=false;applyThreadWidth();threadMessages.replaceChildren(mk('p','Loading thread…'));
+  if(!selected||!threadID)return;openThreadID=threadID;threadPanel.hidden=false;threadStatus.textContent='';applyThreadWidth();renderThreadDrafts();threadMessages.replaceChildren(mk('p','Loading thread…'));
   try{const result=await chatHistory(boxPath(selected)+'/messages?limit=100&threadId='+encodeURIComponent(threadID)),box=boxes.get(selected);threadMessages.replaceChildren();$('#thread-origin').textContent=(box?.name||'Box')+' · '+(box?.defaultAgent||'agent');$('#thread-count').textContent=result.messages.length+' message'+(result.messages.length===1?'':'s');for(const message of result.messages)threadMessages.append(bubble({...box,messages:result.messages},message));const taskID=result.messages.find(message=>message.taskId)?.taskId;if(taskID)void api('/v1/tasks/'+encodeURIComponent(taskID)).then(task=>{if(openThreadID===threadID&&task?.agent)$('#thread-origin').textContent=(box?.name||'Box')+' · '+task.agent}).catch(()=>{})}
   catch(e){threadMessages.replaceChildren(mk('p',e.message))}
  }
- $('#thread-composer').onsubmit=async event=>{
-  event.preventDefault();const form=event.currentTarget,text=form.elements.text.value.trim(),button=form.querySelector('button');if(!selected||!openThreadID||!text)return;if(boxes.get(selected)?.state!=='running'){statusEl.textContent='Wait for this box to be running before sending.';return}button.disabled=true;
-  try{await api(boxPath(selected)+'/messages','POST',{'Idempotency-Key':crypto.randomUUID()},{text,parentMessageId:openThreadID});form.reset();await refreshMessages(true);await openThread(openThreadID)}
-  catch(e){statusEl.textContent=e.message}finally{button.disabled=boxes.get(selected)?.state!=='running'}
+ $('#thread-attach').onclick=()=>threadFileInput.click();
+ threadFileInput.onchange=()=>void uploadImages([...threadFileInput.files],{store:threadAttachmentDrafts,key:threadDraftKey(),input:threadFileInput,statusTarget:threadStatus});
+ threadComposer.addEventListener('paste',event=>{
+  const files=[...(event.clipboardData?.items||[])].filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);
+  if(files.length){event.preventDefault();void uploadImages(files,{store:threadAttachmentDrafts,key:threadDraftKey(),input:threadFileInput,statusTarget:threadStatus})}
+ });
+ threadComposer.addEventListener('dragover',event=>{if([...(event.dataTransfer?.types||[])].includes('Files'))event.preventDefault()});
+ threadComposer.addEventListener('drop',event=>{const files=[...(event.dataTransfer?.files||[])];if(files.length){event.preventDefault();void uploadImages(files,{store:threadAttachmentDrafts,key:threadDraftKey(),input:threadFileInput,statusTarget:threadStatus})}});
+ threadComposer.onsubmit=async event=>{
+  event.preventDefault();const form=event.currentTarget,text=form.elements.text.value.trim(),button=$('#thread-send'),boxID=selected,threadID=openThreadID,key=threadDraftKey(),drafts=threadAttachmentDrafts.get(key)||[];
+  if(!boxID||!threadID||(!text&&!drafts.length))return;
+  if(boxes.get(boxID)?.state!=='running'){threadStatus.textContent='Wait for this box to be running before sending.';return}button.disabled=true;threadStatus.textContent='';
+  threadAttachmentDrafts.delete(key);form.elements.text.value='';renderThreadDrafts();
+  let sent=false;
+  try{
+   await api(boxPath(boxID)+'/messages','POST',{'Idempotency-Key':crypto.randomUUID()},{text,images:drafts.map(({id,number})=>({id,number})),parentMessageId:threadID});
+   sent=true;
+   for(const draft of drafts)URL.revokeObjectURL(draft.url);
+   await refreshMessages(true);if(openThreadID===threadID&&selected===boxID)await openThread(threadID);
+  }catch(e){
+   threadStatus.textContent=e.message;
+   if(!sent){
+    if(!form.elements.text.value&&selected===boxID&&openThreadID===threadID)form.elements.text.value=text;
+    const restored=[...drafts,...(threadAttachmentDrafts.get(key)||[])].map((draft,index)=>({...draft,number:index+1}));
+    if(restored.length)threadAttachmentDrafts.set(key,restored);
+    if(selected===boxID&&openThreadID===threadID)renderThreadDrafts();
+   }
+  }finally{updateThreadSendState()}
  };
  function closeAllMsgActions(){for(const menu of document.querySelectorAll('.msg-actions-menu')){menu.hidden=true;menu._contextPoint=null}for(const toggle of document.querySelectorAll('.msg-more'))toggle.setAttribute('aria-expanded','false')}
  function openMsgActions(menu,toggle,point=null){menu._contextPoint=point;menu.hidden=false;toggle.setAttribute('aria-expanded','true');placeMsgActions(menu,toggle)}
@@ -1781,6 +1878,7 @@
   for(const id of [...boxes.keys()])if(!alive.has(id)){
    const cached=avatarCache.get(id);if(cached?.url)URL.revokeObjectURL(cached.url);
    for(const draft of attachmentDrafts.get(id)||[])URL.revokeObjectURL(draft.url);
+   for(const [key,drafts] of threadAttachmentDrafts)if(JSON.parse(key)[0]===id){for(const draft of drafts)URL.revokeObjectURL(draft.url);threadAttachmentDrafts.delete(key)}
    boxes.delete(id);resumeChecks.delete(id);avatarCache.delete(id);previewFetched.delete(id);tvReplayCache.delete(id);attachmentDrafts.delete(id);
   }
   for(const [id,b] of current)boxes.set(id,b);
@@ -1920,7 +2018,7 @@
   $('#chat-wake').hidden=!canWakeBox(box);
   $('#chat-wake').disabled=wakingBoxes.has(box.id);
   $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
-  $('#thread-composer button').disabled=box.state!=='running';
+  updateThreadSendState();
   updateSendState();
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
   renderResourceCard();
@@ -2326,31 +2424,46 @@ function pairTileStatus(tile,mode,label){
   event.preventDefault();composer.requestSubmit();
  });
  inputEl.addEventListener('click',()=>void updateComposerPicker());
- function renderDrafts(){
-  const drafts=attachmentDrafts.get(selected)||[];
-  draftsEl.hidden=!drafts.length;draftsEl.replaceChildren();
+ function renderDraftList(root,store,key,threadID=''){
+  const drafts=store.get(key)||[];
+  root.hidden=!drafts.length||store===threadAttachmentDrafts&&!openThreadID;root.replaceChildren();
   for(const entry of drafts){
    const wrap=document.createElement('span');wrap.className='draft';
+   wrap.title=entry.fileName||'Attachment '+entry.number;
    const open=document.createElement('button');open.type='button';open.className='draft-open';
-   open.setAttribute('aria-label','Inspect attachment '+entry.number);
    const kind=entry.kind||'image';
+   const mobile=matchMedia('(hover:none) and (pointer:coarse)').matches;
+   open.setAttribute('aria-label',(kind==='image'&&mobile?'Annotate':'Inspect')+' attachment '+entry.number);
    if(kind==='video'||kind==='audio'){
     const el=document.createElement(kind);el.src=entry.url;el.muted=true;el.playsInline=true;el.preload='metadata';el.setAttribute('aria-hidden','true');open.append(el);
    }else{
     const img=document.createElement('img');img.src=entry.url;img.alt='Attachment '+entry.number;open.append(img);
    }
-   open.onclick=()=>openMediaViewer([{url:entry.url,kind,alt:'Attachment '+entry.number,label:'Attachment '+entry.number}]);
+   open.onclick=()=>{if(kind==='image'&&mobile)void openDraftAnnotation(entry,store,key,threadID);else openMediaViewer([{url:entry.url,kind,alt:'Attachment '+entry.number,label:'Attachment '+entry.number}])};
    const remove=document.createElement('button');remove.type='button';remove.className='draft-remove';remove.textContent='×';remove.title='Remove attachment';
-   remove.onclick=()=>{const remaining=drafts.filter(d=>d!==entry);URL.revokeObjectURL(entry.url);remaining.forEach((d,i)=>d.number=i+1);if(remaining.length)attachmentDrafts.set(selected,remaining);else attachmentDrafts.delete(selected);renderDrafts()};
-   wrap.append(open,remove);draftsEl.append(wrap);
+   remove.setAttribute('aria-label','Remove attachment '+entry.number);
+   remove.onclick=()=>{const remaining=(store.get(key)||[]).filter(d=>d!==entry);URL.revokeObjectURL(entry.url);remaining.forEach((d,i)=>d.number=i+1);if(remaining.length)store.set(key,remaining);else store.delete(key);if(threadID)renderThreadDrafts();else renderDrafts()};
+   wrap.append(open);
+   if(kind==='image'){
+    const annotate=document.createElement('button');annotate.type='button';annotate.className='draft-annotate';annotate.title='Annotate';annotate.setAttribute('aria-label','Annotate attachment '+entry.number);annotate.append(lucide('pencil'));
+    annotate.onclick=()=>void openDraftAnnotation(entry,store,key,threadID);wrap.append(annotate);
+   }
+   wrap.append(remove);root.append(wrap);
   }
+ }
+ function renderDrafts(){
+  renderDraftList(draftsEl,attachmentDrafts,selected);
   updateSendState();
  }
- async function uploadImages(files,{boxID=selected,statusTarget=statusEl}={}){
+ function renderThreadDrafts(){
+  renderDraftList($('#thread-image-drafts'),threadAttachmentDrafts,threadDraftKey(),openThreadID);
+  updateThreadSendState();
+ }
+ async function uploadImages(files,{boxID=selected,statusTarget=statusEl,store=attachmentDrafts,key=boxID,input=fileInput}={}){
   if(!boxID)return 0;
   let uploaded=0;
   for(const file of files){
-   if((attachmentDrafts.get(boxID)||[]).length>=8){statusTarget.textContent='Attach at most 8 files.';break}
+   if((store.get(key)||[]).length>=8){statusTarget.textContent='Attach at most 8 files.';break}
    const isVideo=file.type==='video/mp4'||file.type==='video/webm';
    const isImage=['image/png','image/jpeg','image/gif'].includes(file.type);
    if(!isVideo&&!isImage){statusTarget.textContent='Choose PNG, JPEG, GIF, MP4 or WebM.';continue}
@@ -2362,16 +2475,18 @@ function pairTileStatus(tile,mode,label){
     if(!response.ok)throw Error(result?.error||'Upload failed.');
     // Re-read after the await: another picker/paste may have completed for the
     // same chat while this upload was in flight.
-    const drafts=attachmentDrafts.get(boxID)||[];
+    const drafts=store.get(key)||[];
     if(drafts.length>=8){statusTarget.textContent='Attach at most 8 files.';continue}
-    drafts.push({id:result.id,number:drafts.length+1,url:URL.createObjectURL(file),kind:isVideo?'video':'image',mediaType:file.type});
+    drafts.push({id:result.id,number:drafts.length+1,url:URL.createObjectURL(file),kind:isVideo?'video':'image',mediaType:file.type,fileName:file.name});
     uploaded++;
-    attachmentDrafts.set(boxID,drafts);
-    if(selected===boxID)renderDrafts();
+    store.set(key,drafts);
+    statusTarget.textContent='';
+    if(store===threadAttachmentDrafts){if(selected===boxID&&threadDraftKey()===key)renderThreadDrafts()}
+    else if(selected===boxID)renderDrafts();
     if(owner&&inspectOpen&&selected===boxID)void loadInspectAttachmentStorage(boxes.get(boxID));
    }catch(e){statusTarget.textContent=e.message}
   }
-  fileInput.value='';
+  input.value='';
   return uploaded;
  }
  attachBtn.onclick=()=>fileInput.click();
@@ -3751,7 +3866,8 @@ function pairTileStatus(tile,mode,label){
   for(const cached of tvShotCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   avatarCache.clear();previewFetched.clear();tvReplayCache.clear();hideTvPreview();headerAvatarKey='';
   for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url);
-  attachmentDrafts.clear();renderDrafts();pendingKey='';pendingFingerprint='';
+  for(const drafts of threadAttachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url);
+  attachmentDrafts.clear();threadAttachmentDrafts.clear();renderDrafts();renderThreadDrafts();pendingKey='';pendingFingerprint='';
   boxes.clear();rows.clear();pairs.clear();pairRows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;delete messagesEl.dataset.pair;
   owner=false;providersNav?.setOwner(false);extrasLoaded=false;chatCommands=[];mentionCache.clear();hideComposerPicker();closeSheets();
   selected='';selectedPair='';restoringTranscript=false;newMessagesBtn.hidden=true;scrollMemory.clear();followMemory.clear();lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').classList.remove('pair-view');
@@ -3781,7 +3897,7 @@ function pairTileStatus(tile,mode,label){
  }
  addEventListener('pagehide',()=>{
   if(pendingReadMarkers.size)try{void fetch('/v1/chat-read-markers',{method:'PUT',credentials:'same-origin',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(pendingReadMarkers))})}catch{}
-  activityGeneration++;resourceRequest++;clearInterval(readSyncTimer);clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(resourceTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)
+  activityGeneration++;resourceRequest++;clearInterval(readSyncTimer);clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(resourceTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const store of [attachmentDrafts,threadAttachmentDrafts])for(const drafts of store.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)
  });
  document.addEventListener('visibilitychange',()=>{if(document.hidden)void flushReadMarkers()});
 

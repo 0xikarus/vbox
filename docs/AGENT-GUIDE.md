@@ -236,7 +236,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   with bare URLs still linkified. Every attachment and media embed is a focusable
   control: images are buttons that open a focus-managed lightbox (video and audio
   included, focus restored on Escape) with left/right gallery stepping, and
-  attached drafts can be inspected before sending. Attachments may be PNG/JPEG/GIF
+  attached drafts can be inspected before sending. Image drafts in the main and
+  thread composers open the shared annotation dialog from a pen button (or a
+  thumbnail tap on touch devices); Done replaces that draft with a PNG, while
+  Cancel keeps its original. The same pen and shape tools annotate received
+  images into a reply. Attachments may be PNG/JPEG/GIF
   up to 25 MiB or MP4/WebM video up to 100 MiB (`/v1/run-once-images` sniffs the
   container); media is served with range requests so video can seek, and video is
   played from the authenticated same-origin endpoint rather than a blob. Unsent

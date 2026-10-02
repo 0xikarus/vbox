@@ -215,7 +215,7 @@ test('Reply uses the main composer without opening the thread sidebar',async()=>
   assert.equal(await p.evaluate(()=>Number(localStorage.getItem('vmboxChatThreadWidth'))),keyboardWidth,'thread width is remembered');
   await p.evaluate(()=>document.activeElement.blur());
   await p.screenshot({path:'/tmp/vmbox-chat-thread-resized.png'});
-  await p.type('#thread-composer textarea','One more thing.');await p.click('#thread-composer button');await p.waitForFunction(()=>document.querySelector('#thread-composer textarea').value==='');assert.equal(posts.at(-1).parentMessageId,threadRoot);
+  await p.type('#thread-composer textarea','One more thing.');await p.click('#thread-send');await p.waitForFunction(()=>document.querySelector('#thread-composer textarea').value==='');assert.equal(posts.at(-1).parentMessageId,threadRoot);
   await (await p.$('#thread-panel')).screenshot({path:'docs/chat-ui/screenshots/chat-thread.png'});await p.close();
  });
 });
