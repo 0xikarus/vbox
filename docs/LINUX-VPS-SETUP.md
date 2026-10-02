@@ -170,7 +170,7 @@ install -m 644 deploy/linux-vps/vmbox-cert-renew.service /etc/systemd/system/
 install -m 644 deploy/linux-vps/vmbox-cert-renew.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now vmbox-cert-renew.timer
-/opt/vmbox/certbot/bin/certbot renew --dry-run --no-random-sleep-on-renewal \
+/opt/vmbox/certbot/bin/certbot renew --dry-run \
   --run-deploy-hooks --deploy-hook '/usr/bin/systemctl reload nginx'
 ```
 
@@ -206,8 +206,8 @@ subprocess.run(["vbox","providers","validate","shared-worker",alias],check=True)
 '
 ```
 
-On the controller's Providers page, open **Worker settings** on this new pool's
-card. It shows the VPS's CPUs, RAM, swap and disk; set the slot count and new box
+On the controller's Providers page, open this new pool's **⋯** menu and choose
+**Worker settings…**. It shows the VPS's CPUs, RAM, swap and disk; set the slot count and new box
 size there, up to what the machine has. `vbox pools worker shared-worker ALIAS
 --slots N` does the same from the CLI. Changes apply live; the worker is not
 restarted. Do not change another pool or the account default unintentionally.
