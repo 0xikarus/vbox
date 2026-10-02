@@ -10,7 +10,7 @@ const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg
 const box={id:'builder',name:'Builder',state:'running',defaultAgent:'claude',provider:'shared-worker',providerCredential:'pool',slotId:'slot-1',assignmentGeneration:3,processing:true};
 const gib=1024**3;
 
-test('review-only Details prototype uses grouped rows, subpages and the credentials sheet',async()=>{
+test('Details drawer uses grouped rows, subpages and the credentials sheet',async()=>{
  let runSeconds=28800;
  const server=http.createServer(async(request,response)=>{
   const path=new URL(request.url,'http://localhost').pathname;
@@ -46,7 +46,7 @@ test('review-only Details prototype uses grouped rows, subpages and the credenti
   const base='http://127.0.0.1:'+server.address().port;
   for(const width of [360,390,1440]){
    const page=await browser.newPage();await page.setViewport({width,height:900,isMobile:width<600,hasTouch:width<600});
-   await page.goto(base+'/chat?detailsMockup=1#box=builder');
+   await page.goto(base+'/chat#box=builder');
    await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden&&document.querySelector('#chat-loading').hidden);
    await page.$eval('#chat-info',button=>button.click());
    await page.waitForFunction(()=>document.querySelector('[data-ip-row="power"] .ip-row-value').textContent.includes('3h idle'));
@@ -93,7 +93,7 @@ test('review-only Details prototype uses grouped rows, subpages and the credenti
   const normal=await browser.newPage();await normal.goto(base+'/chat#box=builder');
   await normal.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
   await normal.$eval('#chat-info',button=>button.click());
-  assert.equal(await normal.$eval('#inspect-prototype',node=>node.hidden),true);
+  assert.equal(await normal.$eval('#inspect-prototype',node=>node.hidden),false);
   await normal.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });

@@ -2924,7 +2924,7 @@ dialog:not([open]){display:none}
 .provider-panel{padding:13px}
 }
 
-/* Review-only Details information architecture (?detailsMockup=1). */
+/* Chat Details drawer. */
 #inspect.details-prototype{width:min(26rem,100%);background:var(--vb-bg-soft);border-left:1px solid var(--vb-line);box-shadow:var(--vb-shadow-lg)}
 #inspect.details-prototype #inspect-body{display:none}
 #inspect.details-prototype #inspect-header{display:flex;min-height:48px;box-sizing:border-box;padding:6px 12px;background:var(--vb-surface);border-bottom:1px solid var(--vb-line);justify-content:flex-start}

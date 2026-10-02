@@ -2940,7 +2940,7 @@ function pairTileStatus(tile,mode,label){
 
  /* ---------- inspect drawer: ping / activity per box ---------- */
  const inspect=$('#inspect');
- const inspectPrototypeEnabled=new URLSearchParams(location.search).get('detailsMockup')==='1';
+ const inspectPrototypeEnabled=true;
  let inspectOpen=false,inspectTimer,controllerPing=null;
  const heroFrame=$('#inspect-screen .inspect-screen-frame'),heroLive=$('#inspect-screen-live'),heroControls=document.createElement('div');
  let heroBox='',heroEnabled=null,heroChecking=false,heroConnected=false,heroDispose=null,heroRetry=null,heroDelay=1000,heroEpoch=0,heroFailure='';
