@@ -9,7 +9,7 @@ const script=await readFile('internal/controller/web/workspace.js','utf8');
 const mascotScript=await readFile('internal/controller/web/mascot.js','utf8');
 test('workspace desktop selection, tabs, and manual fallback',async t=>{
  let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',state='running',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
- let requests=[],messageHistory=[],messagePayloads=[],interactiveRequests=[],defaultAgent='shell';
+ let requests=[],interactiveRequests=[],defaultAgent='shell';
  let protectedBox=false,contacts=[],tags=['backend'];
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
@@ -19,22 +19,8 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   if(path==='/workspace.js'){res.setHeader('Content-Type','text/javascript');return res.end(script)}
   if(!path.startsWith('/v1/'))return res.end();
   requests.push(method+' '+path);
-	if(path==='/v1/run-once-images'&&method==='POST'){
-		for await(const _ of req){}
-		res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:'uploaded-image'}));
-	}
-	if(path==='/v1/messages/agent-reply/images/reply-image'){
-		res.setHeader('Content-Type','image/png');return res.end(thumbnail);
-	}
 	if(path==='/v1/logical-boxes/test/logs?tail=200'){
 		res.setHeader('Content-Type','text/plain');return res.end('worker ready\nagent enrolled\n');
-	}
-	if(path==='/v1/logical-boxes/test/messages'){
-		res.setHeader('Content-Type','application/json');
-		if(method==='GET')return res.end(JSON.stringify(messageHistory));
-		let body='';for await(const chunk of req)body+=chunk;messagePayloads.push(JSON.parse(body));
-		messageHistory.push({id:'user-'+messagePayloads.length,direction:'user',state:'delivered',text:messagePayloads.at(-1).text,images:messagePayloads.at(-1).images});
-		return res.end(JSON.stringify({message:{state:'delivered'}}));
 	}
   if(path==='/v1/logical-boxes/test/desktop/screenshot?thumbnail=true'){
    thumbnailRequests++;
@@ -77,20 +63,13 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
  async function terminalReady(p){await p.waitForFunction(()=>window.terminals===1&&!document.querySelector('#connect').disabled)}
  async function selected(p,id){return p.$eval(id,e=>({selected:e.getAttribute('aria-selected'),panel:document.getElementById(e.getAttribute('aria-controls')).hidden}))}
  try{
-  await t.test('agent chat sends, receives, and selects image-backed messages',async()=>{
-   tools=['foundry'];enabled=false;messageHistory=[{id:'agent-reply',direction:'agent',state:'delivered',text:'Here is the image.',images:[{id:'reply-image',number:1,mediaType:'image/png'}]},{id:'agent-question',direction:'agent',state:'delivered',text:'Pick colors',question:{text:'Pick colors',choices:['Purple','Green'],multiple:true}}];messagePayloads=[];
+  await t.test('workspace links to chat without embedding a second composer',async()=>{
    const p=await page();await terminalReady(p);
-   await p.waitForFunction(()=>document.querySelector('#agent-messages img')?.naturalWidth===1);
-   await p.evaluate(png=>{const bytes=Uint8Array.from(atob(png),c=>c.charCodeAt(0)),file=new File([bytes],'input.png',{type:'image/png'}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector('#agent-message-form input[name=images]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}))},thumbnail.toString('base64'));
-   await p.waitForFunction(()=>document.querySelectorAll('#agent-image-draft img').length===1);
-   await p.type('#agent-message-form textarea','inspect this purple image');await p.click('#agent-message-form button[type=submit]');
-   await p.waitForFunction(()=>document.querySelector('#agent-message-status').textContent==='Message sent.');
-   assert.deepEqual(messagePayloads[0],{text:'inspect this purple image',images:[{id:'uploaded-image',number:1}]});
-   await p.waitForFunction(()=>document.querySelectorAll('#agent-messages input[type=checkbox]').length===2);
-   const choices=await p.$$eval('#agent-messages input[type=checkbox]',values=>values.map(value=>value.value));assert.deepEqual(choices,['Purple','Green']);
-   await p.click('#agent-messages input[value=Purple]');await p.click('#agent-messages form button');
-   await p.waitForFunction(()=>document.querySelector('#agent-message-status').textContent==='Selection sent.');
-   assert.match(messagePayloads[1].text,/Purple/);await p.close();enabled=true;
+   assert.equal(await p.$('#agent-chat'),null);
+   assert.equal(await p.$('#agent-message-form'),null);
+   assert.equal(await p.$eval('.workspace-top-chat',element=>element.getAttribute('href')),'/chat#box=test');
+   assert.equal(requests.some(request=>request.includes('/messages')),false);
+   await p.close();
   });
   await t.test('desktop reconnect requests reuse regardless of default agent',async()=>{
    for(const agent of ['codex','claude','opencode']){
@@ -107,7 +86,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   });
   await t.test('resource and connection controls load on demand without restarting viewers',async()=>{
    const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
-   assert.equal(requests.some(r=>/resources|connection$/.test(r)),false);
+   assert.equal(requests.some(r=>/connection$/.test(r)),false);
    await p.click('#box-settings summary');await p.click('#load-resources');await p.waitForFunction(()=>!document.querySelector('#resource-form').hidden);
    assert.equal(await p.$eval('#resource-form input[name=cpu]',e=>e.value),'2');
    p.on('dialog',d=>d.accept());await p.click('#resource-form button');await p.waitForFunction(()=>document.querySelector('#resource-status').textContent.includes('Limits submitted'));

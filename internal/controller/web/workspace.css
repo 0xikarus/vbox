@@ -9,8 +9,6 @@ body{max-width:none;margin:0;padding:0;background:var(--vb-swatch-fff)}
 .workspace-top #logout{margin:0;padding:.42rem .65rem;border:1px solid var(--vb-swatch-2b3848);border-radius:var(--r-control);background:var(--vb-swatch-202e3d);color:var(--vb-swatch-eaf0f8);font:650 var(--vb-type-rem-0-79) system-ui,-apple-system,"Segoe UI",sans-serif;text-decoration:none;text-transform:none;white-space:nowrap}
 .workspace-top #logout:hover{background:var(--vb-swatch-263749);border-color:var(--vb-swatch-8fb8f5)}
 .workspace-body h1{overflow-wrap:anywhere}
-#agent-message-form label{min-width:0;max-width:100%}
-#agent-message-form textarea{width:min(32rem,100%)}
 #terminal-screen,#desktop-screen{max-width:100%;overflow:hidden}
 @media(max-width:720px){
  .topbar.workspace-top{flex-wrap:wrap;gap:.35rem;padding:.5rem .75rem}
@@ -32,4 +30,3 @@ body{max-width:none;margin:0;padding:0;background:var(--vb-swatch-fff)}
 
 .connection-stats{display:flex;flex-wrap:wrap;gap:8px 20px;margin:16px 0 0;font-size:var(--vb-type-rem-0-9);color:var(--vb-swatch-898781)}.connection-stats[hidden]{display:none}.connection-stats span{white-space:nowrap}
 #box-settings{margin:12px 0}#box-settings input{max-width:130px}#forward-command{white-space:pre-wrap;overflow-wrap:anywhere}#connection-address{overflow-wrap:anywhere}
-#agent-messages img,#agent-image-draft img{display:block;max-width:min(420px,100%);max-height:320px;margin:6px 0}#agent-image-draft{display:flex;flex-wrap:wrap;gap:8px}#agent-image-draft p{margin:4px}
