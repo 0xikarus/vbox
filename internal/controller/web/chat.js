@@ -2156,7 +2156,7 @@
   else{syncAvatarMascot($('#chat-header-avatar .avatar'),box);refreshAvatarNodes(box)}
   $('#chat-wake').hidden=!canWakeBox(box);
   $('#chat-wake').disabled=wakingBoxes.has(box.id);
-  $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
+  const clearContext=$('[data-ip-row="context"]');if(clearContext)clearContext.disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
   updateThreadSendState();
   updateSendState();
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
@@ -2924,11 +2924,11 @@ function pairTileStatus(tile,mode,label){
  };
 
  /* ---------- clear agent context ---------- */
- $('#chat-clear-context').onclick=async()=>{
+ async function clearChatContext(){
   const box=boxes.get(selected);if(!box)return;
   if(box.state!=='running'){statusEl.textContent=box.name+' is '+box.state+'; resume it before clearing context.';return}
   if(!confirm('Clear the active '+(box.defaultAgent||'agent')+' context for "'+box.name+'"? Chat history stays visible, but the next message starts without the agent\'s prior context.'))return;
-  const btn=$('#chat-clear-context');btn.disabled=true;statusEl.textContent='Clearing agent context…';
+  const btn=$('[data-ip-row="context"]');if(btn)btn.disabled=true;statusEl.textContent='Clearing agent context…';
   try{
    const result=await api(boxPath(box.id)+'/messages/clear-context','POST',{'Idempotency-Key':crypto.randomUUID()},{},45000);
    statusEl.textContent='Context cleared. The next message continues in the same visible terminal with fresh context.';
@@ -2936,11 +2936,10 @@ function pairTileStatus(tile,mode,label){
    if(selected===box.id)try{await refreshMessages(true)}catch(e){statusEl.textContent='Context cleared; chat refresh failed: '+e.message}
   }catch(e){statusEl.textContent=e.message}
   finally{renderHeader()}
- };
+ }
 
  /* ---------- inspect drawer: ping / activity per box ---------- */
  const inspect=$('#inspect');
- const inspectPrototypeEnabled=true;
  let inspectOpen=false,inspectTimer,controllerPing=null;
  const heroFrame=$('#inspect-screen .inspect-screen-frame'),heroLive=$('#inspect-screen-live'),heroControls=document.createElement('div');
  let heroBox='',heroEnabled=null,heroChecking=false,heroConnected=false,heroDispose=null,heroRetry=null,heroDelay=1000,heroEpoch=0,heroFailure='';
@@ -3096,18 +3095,6 @@ function pairTileStatus(tile,mode,label){
    target.append(row);
   }
  };
- function renderPowerSummary(){
-  const summary=$('#inspect-power-summary');if(!selected||!owner)return;
-  const idle=$('#inspect-idle-policy'),budget=$('#inspect-run-budget-policy');
-  const idleBadge=idle.dataset.idleBox===selected?idle.querySelector('.idle-policy-badge'):null;
-  const budgetBadge=budget.dataset.budgetKey?.startsWith(selected+'|')?budget.querySelector('.idle-policy-badge'):null;
-  const hours=value=>{const number=Number(value);return Number.isFinite(number)?String(number):'—'};
-  const idleText=idleBadge?.textContent==='On'?'Hibernate after '+hours(idle.querySelector('input[type=number]')?.value)+' h':idleBadge?.textContent==='Off'?'Hibernate off':idleBadge?.textContent==='Unavailable'?'Hibernation unavailable':'Hibernation loading…';
-  const budgetText=budgetBadge?.textContent==='On'?'Run limit '+hours(budget.querySelector('input[type=number]')?.value)+' h':budgetBadge?.textContent==='Off'?'No run limit':budgetBadge?.textContent==='Unavailable'?'Run limit unavailable':'Run limit loading…';
-  const box=boxes.get(selected),resources=resourceSnapshot?.id===selected?resourceSnapshot.data?.resources:null;
-  const memoryGiB=Number(resources?.memoryMiB)/1024||Number(box?.memoryGiB)||0;
-  summary.textContent=[idleText,budgetText,memoryGiB?'RAM '+hours(memoryGiB)+' GB':'RAM —'].join(' · ');
- }
  function mountInspectMemory(box,force=false){
   const root=$('#inspect-memory-settings');
   if(!owner||box.provider!=='shared-worker'||box.state!=='running'){root.hidden=true;root.dataset.boxId='';root.replaceChildren();return}
@@ -3173,7 +3160,7 @@ function pairTileStatus(tile,mode,label){
   row.append(glyph,name,detail);if(!danger)row.append(chevron);row.onclick=onClick;return row;
  }
  function initInspectPrototype(){
-  if(!inspectPrototypeEnabled||inspectPrototypeReady)return;
+  if(inspectPrototypeReady)return;
   inspectPrototypeReady=true;inspect.classList.add('details-prototype');$('#inspect-prototype').hidden=false;$('#inspect-header-text').hidden=false;
   $('#inspect-prototype-identity').append($('#inspect-screen'),$('#inspect-hero'),$('#inspect-actions'));
   $('#inspect-prototype-resources').append($('#inspect-resources'));
@@ -3206,8 +3193,8 @@ function pairTileStatus(tile,mode,label){
    ['technical','settings','Technical details'],
   ])$('#ip-settings').append(inspectPrototypeRow(key,icon,title,'',()=>showInspectPrototypePage(key)));
   const dangerous=[
-   ['restart','power','Restart',()=>[...$('#inspect-config-actions').querySelectorAll('button')].find(button=>button.textContent.includes('Restart'))?.click()],
-   ['context','trash-2','Clear context',()=>$('#chat-clear-context').click()],
+   ['restart','power','Restart',()=>{const box=boxes.get(selected);if(box)void restartBox(box)}],
+   ['context','trash-2','Clear context',()=>void clearChatContext()],
    ['clear-attachments','image-off','Clear attachments',()=>$('#inspect-clear-attachments').click()],
   ];
   for(const [key,icon,title,action] of dangerous)$('#ip-danger').append(inspectPrototypeRow(key,icon,title,'',action,true));
@@ -3255,20 +3242,32 @@ function pairTileStatus(tile,mode,label){
   $('#ip-credentials-summary').textContent=profiles.length?profiles.map(importedProfileLabel).join(' · '):'No imported profiles';
   $('#ip-danger').closest('.ip-group').hidden=!owner;
   $('#ip-resync-instructions').hidden=!owner||box.state!=='running';$('[data-ip-row="restart"]').hidden=box.state!=='running';
+  $('[data-ip-row="context"]').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
   $('[data-ip-row="clear-attachments"]').disabled=$('#inspect-clear-attachments').disabled;
-  if(inspectPrototypePage==='technical')renderInspectPrototypeTechnical();
+  if(inspectPrototypePage==='technical')renderInspectPrototypeTechnical(box);
  }
- function renderInspectPrototypeTechnical(){
+ function renderInspectPrototypeTechnical(box){
   const table=$('#ip-technical-table');table.replaceChildren();
-  const skipped=new Set(['State','Agent','Profiles','Provider','Worker','Waiting for agent']);
-  for(const source of [$('#inspect-runtime-rows'),$('#inspect-activity-rows')])for(const original of source.children){
-   const label=original.querySelector('dt')?.textContent,valueNode=original.querySelector('dd');if(!label||!valueNode||skipped.has(label))continue;
-   const value=valueNode.textContent.trim();
+  const messages=box.messages||[],lastAgent=lastMessage(messages,'agent'),livePing=boxViewerMetrics.get(box.id)?.ping;
+  const sync=inspectInstructionsFor===box.id?inspectInstructions:null;
+  const rows=[
+   ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId,null,inspectWorker.serviceId]]:[]),
+   ['Slot',inspectWorker?.slot||box.slotId||'—',null,box.slotId],
+   ['Messages',messages.length+' total'],
+   ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
+   ['Box ping',livePing==null?'—':livePing+' ms'],
+   ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
+   ...inspectObservationRows(box),
+   ['Instructions synced',instructionSyncLabel(sync),null,null,{title:instructionSyncFull(sync)}],
+  ];
+  for(const [label,rawValue,,copy,meta] of rows){
+   const value=String(rawValue).trim();
    if(!value||value==='—'||value==='never'||value==='Open Desktop to measure')continue;
    const copyable=label==='Slot'||/\bID\b/.test(label);
    const row=mk(copyable?'button':'div');if(copyable)row.type='button';row.className='ip-technical-row'+(copyable?' ip-technical-copy':'')+(label==='Activity'?' ip-technical-activity':'');
-   row.append(mk('span',label),mk('span',value));
-   if(copyable){row.title='Copy '+label.toLowerCase();row.append(lucide('copy'));row.onclick=async()=>{try{await navigator.clipboard.writeText(value);toast('Copied '+label.toLowerCase())}catch{toast('Copy is unavailable here.')}}}
+   const detail=mk('span',value);if(meta?.title)detail.title=meta.title;if(meta?.note)row.dataset.detailNote=meta.note;
+   row.append(mk('span',label),detail);
+   if(copyable){row.title='Copy '+label.toLowerCase();row.append(lucide('copy'));row.onclick=async()=>{try{await navigator.clipboard.writeText(copy||value);toast('Copied '+label.toLowerCase())}catch{toast('Copy is unavailable here.')}}}
    table.append(row);
   }
  }
@@ -3278,43 +3277,10 @@ function pairTileStatus(tile,mode,label){
   if(inspectProfilesFor!==box.id)inspectProfileCache=null;
   const workerKey=box.id+'|'+(box.slotId||'');
   if(inspectWorkerKey!==workerKey){inspectWorkerKey=workerKey;inspectWorker=null;void loadInspectWorker(box,workerKey)}
-  const msgs=box.messages||[],lastAgent=lastMessage(msgs,'agent'),lastUser=lastMessage(msgs,'user');
-  const livePing=boxViewerMetrics.get(box.id)?.ping;
-  const waiting=!!lastUser&&(!lastAgent||new Date(lastUser.createdAt)>new Date(lastAgent.createdAt));
-  const agent=box.defaultAgent||'shell';
-  const workerName=inspectWorker?.name||'Loading…';
-  const workerCopy=workerName==='Unknown worker'||workerName==='Loading…'?'':workerName;
-  const stateText=box.state+((box.streaming||box.processing)?' · working':'');
-  $('#inspect-title').textContent=box.name;
-  $('#inspect-header-state').textContent=boxActivitySubtitle(box);
-  $('#inspect-header-state').className=stateClass(box.state);
   {const hero=$('#inspect-avatar'),live=hero.firstElementChild,next=reuseMessageMascot(live,box,'inspect-hero-mascot',false);if(next!==live)hero.replaceChildren(next);next.removeAttribute('aria-hidden');bindMascotTooltip(next,box)}
   renderInspectScreen(box);
   $('#inspect-name').textContent=box.name;
   $('#inspect-subtitle').textContent=boxActivitySubtitle(box);
-  const badges=$('#inspect-badges');badges.replaceChildren();
-  const badge=(text,cls)=>{const b=document.createElement('span');b.className='inspect-badge'+(cls?' '+cls:'');b.textContent=text;badges.append(b)};
-  badge(box.state,stateClass(box.state));
-  badge(agent,'agent');
-  if(box.provider)badge(box.provider);
-  fillRows($('#inspect-runtime-rows'),[
-   ['State',stateText,stateClass(box.state)],
-   ['Agent',agent],
-   ...(owner?[['Profiles',inspectProfileCache?inspectProfileCache.error||([...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))].length?[...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))]:['None']):'Loading…']]:[]),
-   ['Provider',box.provider||'—'],
-   ['Worker',workerName,workerCopy?'':'muted',workerCopy],
-   ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId,'',inspectWorker.serviceId]]:[]),
-   ['Slot',inspectWorker?.slot||'Loading…','',box.slotId],
-   ['Messages',msgs.length+' total'],
-  ]);
-  fillRows($('#inspect-activity-rows'),[
-   ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
-   ['Box ping',livePing!=null?livePing+' ms':'Open Desktop to measure',livePing!=null?'':'explain'],
-   ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
-   ...inspectObservationRows(box),
-   ['Instructions synced',instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null),'',instructionSyncFull(inspectInstructionsFor===box.id?inspectInstructions:null)],
-   ['Waiting for agent',waiting?'since '+fmtAgo(lastUser.createdAt):'no',waiting?'alert':'ok'],
-  ]);
   const attachmentRoot=$('#inspect-attachment-storage');attachmentRoot.hidden=!owner;
   if(owner){
    if(inspectAttachmentFor!==box.id)void loadInspectAttachmentStorage(box);
@@ -3327,36 +3293,14 @@ function pairTileStatus(tile,mode,label){
    $('#inspect-attachment-empty').hidden=!usage||!!usage.error||Number(usage.boxCount)>0;
    $('#inspect-clear-attachments').disabled=!usage||!!usage.error||!usage.clearableCount;
   }
-  const quick=$('#inspect-quick-actions');quick.replaceChildren();
-  const link=document.createElement('a');
-  link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open workspace';link.target='_blank';link.rel='noopener';
-  quick.append(link);
-  if(canWakeBox(box)){
-   const wake=document.createElement('button');wake.type='button';wake.textContent='Wake box';wake.disabled=wakingBoxes.has(box.id);
-   wake.title='Restore the saved workspace and check for a saved agent conversation';wake.onclick=()=>void wakeBox(box);quick.append(wake);
-  }
-  if(box.state==='running'&&agent!=='shell'){
-   const clear=document.createElement('button');clear.type='button';clear.textContent='Clear context';
-   clear.title='Start a fresh agent context for this chat';clear.onclick=()=>$('#chat-clear-context').click();quick.append(clear);
-  }
-  // Config the box keeps in sync, editable from the same place it is reported.
-  const actions=$('#inspect-config-actions');actions.replaceChildren();
-  const act=(label,title,icon,fn,danger=false)=>{const b=document.createElement('button');b.type='button';b.className='inspect-config-action'+(danger?' danger':'');b.title=title;b.append(lucide(icon),Object.assign(document.createElement('span'),{textContent:label}),lucide('chevron-right'));b.onclick=fn;actions.append(b)};
-  act('Instructions…','Edit the Markdown instructions synced into this box','file-text',()=>void openBoxInstructions(box));
-  if(owner)act('Credentials…','Replace the login profiles imported into this box','key',()=>void openBoxCredentials(box));
-  if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box','refresh-cw',()=>void resyncBox(box));
-  if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end','power',()=>void restartBox(box),true);
   renderResourceCard();
-  const power=$('#inspect-power');power.hidden=!owner;
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
-  if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,compact:inspectPrototypeEnabled,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
+  if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,compact:true,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
-  if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,state:box.state,assignmentGeneration:box.assignmentGeneration,compact:inspectPrototypeEnabled,
+  if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,state:box.state,assignmentGeneration:box.assignmentGeneration,compact:true,
    request:seconds=>api(boxPath(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds}),
    adjust:(action,seconds,expectedDeadlineAt)=>api(boxPath(box.id)+'/run-budget-policy/adjust','POST',{},{action,seconds,expectedDeadlineAt}),
-   onPolicy:inspectPrototypeEnabled?()=>queueMicrotask(()=>{if(inspectOpen&&selected===box.id)renderInspectPrototype(box)}):undefined});
-  if(owner&&power.open&&!document.hidden)mountInspectMemory(box);
-  renderPowerSummary();
+   onPolicy:()=>queueMicrotask(()=>{if(inspectOpen&&selected===box.id)renderInspectPrototype(box)})});
   const limitRoot=$('#inspect-create-limit');
   if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
   else limitRoot.hidden=true;
@@ -3409,17 +3353,8 @@ function pairTileStatus(tile,mode,label){
    if(inspectOpen&&selected===box.id){await loadInspectAttachmentStorage(box);storageStatus.textContent='Removed '+result.removedReferences+' attachment references; freed '+storageSize(result.freedBytes)+'.'}
   }catch(e){storageStatus.textContent=e.message;button.disabled=false}
  };
- // Collapsible details sections, remembered per browser.
- const foldKey='vmbox.inspectFold';
- let foldState={};try{foldState=JSON.parse(localStorage.getItem(foldKey)||'{}')}catch{}
- document.querySelectorAll('#inspect-summary .inspect-fold').forEach(node=>{
-  const key=node.dataset.fold;
-  if(key in foldState)node.open=!!foldState[key];
-  node.addEventListener('toggle',()=>{foldState[key]=node.open;try{localStorage.setItem(foldKey,JSON.stringify(foldState))}catch{}});
- });
- $('#inspect-power').addEventListener('toggle',()=>{if($('#inspect-power').open&&inspectOpen&&selected&&!document.hidden)mountInspectMemory(boxes.get(selected))});
  const powerObserver=new MutationObserver(records=>{
-  if(records.some(record=>record.target===record.target.closest?.('#inspect-idle-policy,#inspect-run-budget-policy')||record.target.parentElement?.closest?.('.idle-policy-badge,.idle-policy-status')||record.target.closest?.('.idle-policy-badge,.idle-policy-status')))renderPowerSummary();
+  if(inspectOpen&&selected&&records.some(record=>record.target.closest?.('.idle-policy-badge,.idle-policy-status,.run-budget-remaining')))renderInspectPrototype(boxes.get(selected));
  });
  for(const id of ['#inspect-idle-policy','#inspect-run-budget-policy'])powerObserver.observe($(id),{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['data-enabled']});
 
@@ -4206,12 +4141,10 @@ function pairTileStatus(tile,mode,label){
    track.className='inspect-resource-track';fill.style.width=(metric.ratio===null?0:Math.max(0,Math.min(100,metric.ratio*100)))+'%';track.append(fill);
    row.classList.toggle('resource-warning',metric.ratio!==null&&metric.ratio>=.85&&(kind==='disk'&&data?.diskEnforced===false||metric.ratio<.95));
    row.classList.toggle('resource-danger',metric.ratio!==null&&metric.ratio>=.95&&!(kind==='disk'&&data?.diskEnforced===false));
-   if(kind==='ram'){const name=mk('span');name.className='inspect-resource-name';name.append(label,adjust);row.append(name,value,track)}
-   else row.append(label,value,track);
+   row.append(label,value,track);
    if(kind==='disk'&&data?.diskEnforced===false)row.append(Object.assign(mk('small','Limit not enforced on this shared worker'),{className:'inspect-resource-note'}));
    rows.append(row);
   }
-  if(inspectPrototypeReady)$('#inspect-resources .inspect-resources-heading').append(adjust);
   const context=$('#inspect-resources-context');const host=Number.isFinite(data?.hostDiskUsedBytes)&&Number.isFinite(data?.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0?'Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'%':'';
   context.textContent=[host,data?.diskPartial?'Disk scan partial':null,data?.diskUnavailableReason||null].filter(Boolean).join(' · ');context.hidden=!context.textContent;
   const observed=[data?.observedAt,data?.diskObservedAt].filter(value=>value&&Number.isFinite(Date.parse(value))).sort().at(-1);
@@ -4219,9 +4152,7 @@ function pairTileStatus(tile,mode,label){
   adjust.hidden=box.provider!=='shared-worker'||box.state!=='running';
  }
  $('#inspect-resources-adjust').onclick=()=>{
-  const box=boxes.get(selected);if(!box)return;
-  const fold=$('#inspect-power');fold.open=true;mountInspectMemory(box);
-  requestAnimationFrame(()=>{memoryRoot.scrollIntoView({block:'nearest'});memoryRoot.focus({preventScroll:true})});
+  showInspectPrototypePage('resources');
  };
  async function refreshBoxResources(){
   const box=boxes.get(selected);
@@ -4230,9 +4161,9 @@ function pairTileStatus(tile,mode,label){
   try{
    const data=await api(boxPath(id)+'/resources');
    if(request!==resourceRequest||selected!==id||!inspectOpen||document.hidden||!owner)return;
-   resourceSnapshot={id,data};renderResourceCard();renderPowerSummary();
+   resourceSnapshot={id,data};renderResourceCard();
   }catch{
-   if(request===resourceRequest&&selected===id){resourceSnapshot=null;renderResourceCard();renderPowerSummary()}
+   if(request===resourceRequest&&selected===id){resourceSnapshot=null;renderResourceCard()}
   }
  }
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
