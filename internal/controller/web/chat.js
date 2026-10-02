@@ -3378,7 +3378,9 @@ function pairTileStatus(tile,mode,label){
    if(pool?.provider==='shared-worker')applyWorkerBoxBounds(pool);
    const agent=createForm.elements.defaultAgent.selectedOptions[0]?.textContent||createForm.elements.defaultAgent.value;
    const placement=pool?.provider?pool.provider+(pool.providerCredential?'/'+pool.providerCredential:''):createForm.dataset.provider?(createForm.dataset.provider+(createForm.dataset.providerCredential?'/'+createForm.dataset.providerCredential:'')):'Automatic pool';
-   const summary=$('#new-box-summary');summary.textContent=(createForm.elements.name.value.trim()||'my-agent-box')+' · '+agent+' · '+placement;summary.title=summary.textContent;
+   const name=createForm.elements.name.value.trim()||'my-agent-box';
+   const summary=$('#new-box-summary');summary.textContent=name+' · '+agent+' · '+placement;summary.title=summary.textContent;
+   $('#create-preview-name').textContent=name;
    if(!previewCard)return;
    previewCard.replaceChildren();
    for(const [key,value] of previewRows()){

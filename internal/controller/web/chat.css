@@ -478,6 +478,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize;user-select:none}
 #create-box .custom-tools summary{cursor:pointer;font-size:var(--vb-type-rem-0-85);color:var(--ink-soft)}
 #create-instructions-editor{margin:0 0 .5rem}
 #create-instructions-editor summary{cursor:pointer;font-size:var(--vb-type-rem-0-85);color:var(--ink-soft)}
+#create-instructions-editor>.ai-field,#create-instructions-editor>textarea{margin-top:.55rem}
 #create-box input[type=checkbox]{display:inline-block;width:auto;margin:0}
 #create-box .profiles{display:flex;flex:1 1 100%;flex-direction:column;gap:.4rem;min-width:0;margin-bottom:.5rem}
 #create-box .profile-field{display:flex;flex-direction:column;font-size:var(--vb-type-rem-0-8);color:var(--ink-soft)}
