@@ -69,7 +69,7 @@
  let pendingKey='',pendingFingerprint='',replyingTo=null;
  let instructionPresets={defaultName:'',presets:[]},chatCommands=[];
  const presetBodyCache=new Map();
- let boxInstructionTarget=null,boxCredentialTarget=null,createInstructionSource='';
+ let boxInstructionTarget=null,boxCredentialTarget=null,boxCredentialRequest=0,createInstructionSource='';
  const seen=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatSeen')||'{}')}catch{return{}}})();
  const saveSeen=()=>{try{localStorage.setItem('vmboxChatSeen',JSON.stringify(seen))}catch{}};
  const seenPairs=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatPairSeen')||'{}')}catch{return{}}})();
@@ -4546,22 +4546,40 @@ let usagePending=null,usageGeneration=0;
  async function openBoxCredentials(box){
   closeSheets();
   boxCredentialTarget=box;
+  const request=++boxCredentialRequest;
   const status=$('#box-credentials-status');status.textContent='Loading…';
   $('#box-credentials-title').textContent='Imported profiles · '+box.name;
+  $('#box-credentials-form').replaceChildren();
+  $('#box-credentials-current').textContent='';
+  $('#box-credentials-apply').disabled=true;
+  $('#box-credentials-retry').hidden=true;
+  $('#box-credentials-modal').hidden=false;
+  const [stateResult,profilesResult]=await Promise.allSettled([api(boxPath(box.id)+'/imported-credentials'),api('/v1/login-profiles')]);
+  if(request!==boxCredentialRequest)return;
+  const state=stateResult.status==='fulfilled'?stateResult.value:null;
+  if(state){
+   const parts=[(state.profiles||[]).length?'Imported: '+(state.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', '):'No imported login profiles recorded'];
+   if((state.pending||[]).length)parts.push('Queued for next start: '+(state.pending||[]).map(ref=>ref.application+' · '+ref.name).join(', '));
+   $('#box-credentials-current').textContent=parts.join(' · ')+'.';
+  }else $('#box-credentials-current').textContent='Current imported profile unknown: '+stateResult.reason.message+'.';
+  if(profilesResult.status==='rejected'){
+   status.textContent='Could not load available profiles: '+profilesResult.reason.message;
+   $('#box-credentials-retry').hidden=false;
+   return;
+  }
   try{
-   const [state,profiles]=await Promise.all([api(boxPath(box.id)+'/imported-credentials'),api('/v1/login-profiles')]);
+   const profiles=profilesResult.value;
    const byApplication={};for(const profile of profiles)(byApplication[profile.application]??=[]).push(profile.name);
-   const current=(state.profiles||[])[0];
+   const current=(state?.profiles||[])[0];
    const wrap=$('#box-credentials-form');wrap.replaceChildren();
    const label=mk('label','Login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=mk('option','None');empty.value='';select.append(empty);
    for(const application of ['claude','codex','opencode']){const names=(byApplication[application]||[]).slice().sort();if(!names.length)continue;const group=document.createElement('optgroup');group.label=application;for(const name of names){const option=mk('option',name);option.value=JSON.stringify({application,name});group.append(option)}select.append(group)}
    const currentValue=current&&JSON.stringify({application:current.application,name:current.name});if(currentValue&&[...select.options].some(option=>option.value===currentValue))select.value=currentValue;label.append(select);wrap.append(label);
-   const parts=[(state.profiles||[]).length?'Imported: '+(state.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', '):'No imported login profiles recorded'];
-   if((state.pending||[]).length)parts.push('Queued for next start: '+(state.pending||[]).map(ref=>ref.application+' · '+ref.name).join(', '));
-   $('#box-credentials-current').textContent=parts.join(' · ')+'.';
-   status.textContent='';$('#box-credentials-modal').hidden=false;
+   status.textContent=state?'':'Current imported profile unknown. You can still choose and apply a profile.';
+   $('#box-credentials-apply').disabled=false;
   }catch(e){status.textContent=e.message}
  }
+ $('#box-credentials-retry').onclick=()=>{if(boxCredentialTarget)void openBoxCredentials(boxCredentialTarget)};
  $('#box-credentials-apply').onclick=async()=>{
   if(!boxCredentialTarget)return;
   const status=$('#box-credentials-status'),profile=$('#box-credentials-form select')?.value,profiles=profile?[JSON.parse(profile)]:[];
