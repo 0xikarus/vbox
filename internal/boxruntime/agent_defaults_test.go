@@ -31,6 +31,9 @@ func TestEnsureClaudeDefaultsGrantsPermissionsAndTrust(t *testing.T) {
 	if entry["hasTrustDialogAccepted"] != true {
 		t.Fatalf("trust dialog not accepted: %v", entry)
 	}
+	if state["hasCompletedOnboarding"] != true {
+		t.Fatalf("first-run setup would block the terminal: %v", state)
+	}
 }
 
 // An imported login profile brings its own settings; the box's permissions are
