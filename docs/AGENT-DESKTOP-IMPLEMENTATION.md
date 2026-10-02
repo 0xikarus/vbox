@@ -9,8 +9,16 @@ keys. No Chief of Staff or separate messaging deployment is required.
 Desktop-enabled workers start X11 and a visible xterm attached to the same managed
 tmux session used by the UI. Codex, Claude, OpenCode and shell have launch paths;
 OpenCode is also supported by saved login profiles. Reopening a viewer
-reuses the managed session. Closing a viewer leaves processes running. Wake restores
-files/layout with a fresh agent conversation, without replaying old prompts.
+reuses the managed session. Closing a viewer leaves processes running. Wake
+restores the persistent workspace and launches the current managed agent harness.
+For Codex, Claude and OpenCode, Chat checks for a saved conversation after wake
+and offers **Restore session** or **Start fresh** before sending a new message.
+Restore replaces the visible managed conversation with the saved context; fresh
+keeps the new conversation. The delegated `wake_agent_box` tool can pass the same
+`sessionChoice` (`restore` or `fresh`) with its wake request. That choice survives
+queued allocation and controller restarts and is applied when the box is running.
+If a new chat message was sent after the saved snapshot, the old conversation
+cannot replace it.
 
 Direct per-agent messages use the current controller messaging backend. A steer
 sends Escape before pasting to a managed agent. `/silent` saves a note without
@@ -55,6 +63,18 @@ Registration uses the clients' MCP CLI for Codex/Claude and merges OpenCode JSON
 configuration while preserving existing entries. Existing OpenCode JSONC files are
 left untouched with an actionable registration error; automatic JSONC editing is
 not supported. `vmbox-runtime desktop-register AGENT` allows explicit registration.
+Call each MCP tool by its exact name. The desktop MCP has no batch-call tool.
+
+The managed box-side MCP process samples the current native agent transcript
+every 10 seconds while a conversation is active. It sends a bounded, changed
+text sample through the assignment-scoped route for controller-side mood and
+activity classification. The controller stores derived state and a digest, not
+the transcript sample. A busy box with no reliable phrase shows Working;
+unchanged samples for 90 seconds show Idle, and a missing observation heartbeat
+for 40 seconds makes activity Unknown. This observation loop is separate from
+the optional `heartbeat` MCP tool: that tool schedules local prompts at intervals
+of at least five minutes, persists its timer on the box volume, and resumes due
+ticks after an external wake. It never wakes a hibernated box itself.
 
 ## Chromium and private state
 
