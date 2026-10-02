@@ -225,7 +225,7 @@
     </fieldset>
     <fieldset class="nb-step"><legend>2 · Logins</legend><div id="profile-choices" class="profiles"></div></fieldset>
     <fieldset class="nb-step"><legend>3 · Tools</legend><fieldset id="create-tools" class="tools"></fieldset><details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label><p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details></fieldset>
-    <fieldset class="nb-step"><legend>4 · Instructions</legend><label>Instructions <select id="create-instructions"><option value="auto">Account default / none</option></select></label><details id="create-instructions-editor" hidden><summary>Customize Markdown</summary><label>Markdown <textarea id="create-instructions-custom" rows="5" maxlength="65536"></textarea></label><div id="create-instructions-preview" class="md-preview" hidden></div></details></fieldset>
+    <fieldset class="nb-step"><legend>4 · Instructions</legend><label>Instructions <select id="create-instructions"><option value="auto">Account default / none</option></select></label><details id="create-instructions-editor" hidden><summary>Customize Markdown</summary><textarea id="create-instructions-custom" rows="5" maxlength="65536" aria-label="Custom instructions Markdown"></textarea><div id="create-instructions-preview" class="md-preview" hidden></div></details></fieldset>
    </form>
    <aside id="create-preview" aria-label="Launch preview">
     <div class="preview-card">
