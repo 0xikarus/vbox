@@ -70,6 +70,7 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   try{await page.waitForFunction(()=>document.querySelectorAll('.pair-hero .pair-tile').length===2&&document.querySelectorAll('.pair-tile[data-mode="desktop"],.pair-tile[data-mode="tmux"]').length===2,{timeout:7000})}
   catch(error){console.log(await page.evaluate(()=>({text:document.querySelector('#chat-status')?.textContent,tiles:[...document.querySelectorAll('.pair-tile')].map(node=>({mode:node.dataset.mode,label:node.textContent})),desktop:window.fakeDesktop?.length,terminal:window.fakeTerminal?.length,body:document.body.textContent.slice(0,400)})));throw error}
   assert.deepEqual(await page.$$eval('.pair-tile',nodes=>nodes.map(node=>node.dataset.mode)),['desktop','tmux']);
+  assert.equal(await page.$eval('#chat-status',node=>node.textContent),'Read only · 3 messages','pair footer keeps its message count after opening');
   assert.deepEqual(await page.evaluate(()=>[window.fakeDesktop[0].viewOnly,window.fakeTerminal[0].viewOnly]),[true,true]);
   await page.waitForFunction(()=>window.terminalSockets.length===1&&window.terminalSockets[0].readyState===1);
   const pairMood=()=>page.evaluate(id=>{

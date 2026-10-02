@@ -2288,7 +2288,7 @@ function pairTileStatus(tile,mode,label){
   $('#chat-header-state').textContent='Direct messages between boxes · read only';
   {const avatar=pairAvatarNode(pair);avatar.removeAttribute('aria-hidden');avatar.setAttribute('role','img');avatar.setAttribute('aria-label',pair.boxAName+' and '+pair.boxBName);$('#chat-header-avatar').replaceChildren(avatar)}headerAvatarKey='';
   renderPairMessages(pair);lastSignature=pair.messages.map(message=>message.id+message.updatedAt+message.state).join('|');
-  setBanner('');statusEl.textContent='';renderRows();doodle('');
+  setBanner('');renderRows();doodle('');
   const loadingKey='#pair='+encodeURIComponent(key);historyLoadingFor=loadingKey;
   void refreshPairMessages().catch(e=>{if(selectedPair===key)statusEl.textContent=e.message}).finally(()=>{if(historyLoadingFor===loadingKey)historyLoadingFor=''});
   const finish=()=>{
