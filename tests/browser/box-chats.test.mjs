@@ -218,8 +218,10 @@ test('box conversations open at the latest message on desktop and mobile',async(
   await desktop.click('[data-pair-key] .chat-meta');
   await desktop.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===37);
   await new Promise(resolve=>setTimeout(resolve,200));
-  assert.ok(await desktop.$eval('#chat-messages',bottom)<3,'returning to a box conversation starts at its newest message');
-  assert.equal(await desktop.$eval('[data-pair-key] .unread',badge=>badge.hidden),true,'opening the newest pair message clears its left-list badge');
+  assert.ok(await desktop.$eval('#chat-messages',element=>element.scrollTop)<3,'returning to a box conversation restores its scroll position');
+  assert.equal(await desktop.$eval('[data-pair-key] .unread',badge=>badge.hidden),false,'a new reply stays unread while the transcript is scrolled up');
+  await desktop.$eval('#chat-messages',element=>{element.scrollTop=element.scrollHeight});
+  await desktop.waitForFunction(()=>document.querySelector('[data-pair-key] .unread')?.hidden===true);
 
   const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
   await mobile.goto(base+'/chat#pair='+encodeURIComponent(pairKey));

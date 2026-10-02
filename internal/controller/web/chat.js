@@ -9,6 +9,43 @@
  let usageProfiles=[],usageLoaded=false,selectedUsageProfile=null,chatUsageRequest=0,usageScope=null;
  const providersNav=window.VMBoxWorkspaceNav?.initProviders('chat-providers');
  const scrollMemory=new Map(),followMemory=new Map();
+ const historyCache=new Map(),historyPending=new Map(),prefetchQueue=[];
+ const openedOrder=(()=>{try{const saved=JSON.parse(localStorage.getItem('vmboxChatOpenOrder')||'[]');return Array.isArray(saved)?saved.filter(key=>typeof key==='string'&&/^(box|pair):/.test(key)).slice(0,20):[]}catch{return[]}})();
+ let prefetchRunning=0,prefetchIdle=0,prefetchSequence=0,openIntent=0,openingSelection='',cacheGeneration=0;
+ const historyAllowed=()=>!document.hidden&&!navigator.connection?.saveData;
+ const cachedHistory=key=>historyCache.get(key);
+ function rememberHistory(key,messages,extra={}){
+  const old=historyCache.get(key);historyCache.set(key,{...old,messages:(messages||[]).slice(-100),prefetchedAt:old?.prefetchedAt||++prefetchSequence,...extra});
+  while(historyCache.size>10){
+   const current=selected?'box:'+selected:selectedPair?'pair:'+selectedPair:'';
+   const candidates=[...historyCache.keys()].filter(candidate=>candidate!==current&&candidate!==openingSelection);
+   const prefetched=candidates.filter(candidate=>!openedOrder.includes(candidate));
+   const victim=prefetched.sort((a,b)=>historyCache.get(a).prefetchedAt-historyCache.get(b).prefetchedAt)[0]||[...openedOrder].reverse().find(candidate=>candidates.includes(candidate))||candidates[0];
+   if(!victim)break;historyCache.delete(victim);
+  }
+ }
+ function rememberOpened(key){const index=openedOrder.indexOf(key);if(index>=0)openedOrder.splice(index,1);openedOrder.unshift(key);openedOrder.length=Math.min(openedOrder.length,20);try{localStorage.setItem('vmboxChatOpenOrder',JSON.stringify(openedOrder))}catch{}}
+ async function fetchHistoryIntoCache(key){
+  if(historyPending.has(key))return historyPending.get(key);
+  const generation=cacheGeneration;
+  const pending=(async()=>{
+   if(key.startsWith('box:')){const history=await chatHistory(boxPath(key.slice(4))+'/messages?limit=100');if(generation!==cacheGeneration)return null;const {messages,...activity}=history;rememberHistory(key,messages,{hasOlder:(messages||[]).length===100,activity});return historyCache.get(key)}
+   const pair=pairs.get(key.slice(5));if(!pair)return null;
+   const messages=await api('/v1/box-conversations/'+encodeURIComponent(pair.boxAId)+'/'+encodeURIComponent(pair.boxBId)+'/messages');if(generation!==cacheGeneration)return null;rememberHistory(key,messages,{hasOlder:false});return historyCache.get(key);
+  })().finally(()=>{if(historyPending.get(key)===pending)historyPending.delete(key)});historyPending.set(key,pending);return pending;
+ }
+ function pumpPrefetch(){
+  prefetchIdle=0;if(!historyAllowed())return;
+  while(prefetchRunning<2&&prefetchQueue.length){const key=prefetchQueue.shift();if(historyCache.has(key)||historyPending.has(key))continue;
+   prefetchRunning++;void fetchHistoryIntoCache(key).catch(()=>{}).finally(()=>{prefetchRunning--;schedulePrefetch()});
+  }
+ }
+ function schedulePrefetch(){if(prefetchIdle||!prefetchQueue.length||!historyAllowed())return;prefetchIdle=typeof requestIdleCallback==='function'?requestIdleCallback(pumpPrefetch,{timeout:1200}):setTimeout(pumpPrefetch,150)}
+ function queueChatPrefetch(key){if(!historyAllowed()||historyCache.has(key)||historyPending.has(key)||prefetchQueue.includes(key))return;prefetchQueue.push(key);schedulePrefetch()}
+ function bindHistoryPrefetch(row,key){
+  row.addEventListener('pointerdown',()=>queueChatPrefetch(key),{passive:true});row.addEventListener('touchstart',()=>queueChatPrefetch(key),{passive:true});
+  let hover=0;row.addEventListener('mouseenter',()=>{hover=setTimeout(()=>queueChatPrefetch(key),150)});row.addEventListener('mouseleave',()=>clearTimeout(hover));
+ }
  let restoringTranscript=false;
  // Polling may update data during a touch gesture, but replacing rows while a
  // finger is moving interrupts compositor transforms. Paint once after release.
@@ -1254,6 +1291,7 @@
    let row=rows.get(box.id);
    if(!row){
     row=document.createElement('li');row.dataset.boxId=box.id;
+    bindHistoryPrefetch(row,'box:'+box.id);
     bindChatDrag(row,pinKey('box',box.id));
     bindPressFeedback(row);
     bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{x,y})});
@@ -1294,6 +1332,7 @@
    const key=pairKey(pair);let row=pairRows.get(key);
    if(!row){
     row=document.createElement('li');row.dataset.pairKey=key;
+    bindHistoryPrefetch(row,'pair:'+key);
     bindChatDrag(row,pinKey('pair',key));
     bindPressFeedback(row);
     bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({pair},{x,y})});
@@ -1360,6 +1399,15 @@
   const otherUnread=[...boxes.values()].reduce((count,box)=>count+(box.id===selected||isChatMuted(pinKey('box',box.id))?0:box.unread||0),0);
   const backCount=$('#chat-back-count');backCount.hidden=!otherUnread;backCount.textContent=unreadLabel(otherUnread);
   $('#chat-back').setAttribute('aria-label','Back to chat list'+(otherUnread?' · '+otherUnread+' unread in other chats':''));
+ }
+ function scheduleListPrefetch(){
+  if(!historyAllowed()||(appEl.classList.contains('in-chat')&&innerWidth<900))return;
+  // Refill recent opens first after a reload. Prefetch never changes this order.
+  for(const key of openedOrder.slice(0,3))if(key.startsWith('box:')?boxes.has(key.slice(4)):pairs.has(key.slice(5)))queueChatPrefetch(key);
+  const bounds=listEl.getBoundingClientRect(),visible=[...listEl.querySelectorAll('li[data-box-id],li[data-pair-key]')].filter(row=>{const rect=row.getBoundingClientRect();return rect.bottom>bounds.top&&rect.top<bounds.bottom});
+  const keys=new Set(visible.slice(0,6).map(row=>row.dataset.boxId?'box:'+row.dataset.boxId:'pair:'+row.dataset.pairKey));
+  for(const row of listEl.querySelectorAll('li[data-box-id],li[data-pair-key]'))if(row.dataset.boxId?boxes.get(row.dataset.boxId)?.unread:pairUnreadCount(pairs.get(row.dataset.pairKey)))keys.add(row.dataset.boxId?'box:'+row.dataset.boxId:'pair:'+row.dataset.pairKey);
+  for(const key of keys)queueChatPrefetch(key);
  }
 
  /* ---------- messages ---------- */
@@ -1752,10 +1800,10 @@
  const paintedMessages=new Map();
  function messageKey(message){return message.id||[message.direction,message.createdAt,message.text].join('|')}
  function renderMessages(box){
-  if(activeHorizontalGestures&&!(forwardPreview?.target?.box===box?.id)){pendingMessages=box;return}
+  if(activeHorizontalGestures){pendingMessages=box;return}
   if(!box||box.id!==selected)return;
   if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
-  const follow=stickToBottom;
+  const follow=stickToBottom,previousScroll=messagesEl.scrollTop;
   const painted=messagesEl.dataset.box===box.id?paintedMessages.get(box.id):null,nextPainted=new Set(),liveAvatars=new Map();
   const liveProcessingButton=messagesEl.dataset.box===box.id?messagesEl.querySelector('.msg.processing .tv-button'):null;
   if(painted)for(const row of messagesEl.querySelectorAll('.msg[data-key]')){const avatar=row.querySelector(':scope > .msg-avatar');if(avatar)liveAvatars.set(row.dataset.key,avatar)}
@@ -1828,7 +1876,7 @@
    // Late layout and image decoding grow the transcript after the first pass.
    for(const image of messagesEl.querySelectorAll('img'))if(!image.complete)image.addEventListener('load',()=>{if(stickToBottom)scrollMessagesToBottom()},{once:true});
    setTimeout(()=>{if(stickToBottom)scrollMessagesToBottom()},150);
-  }
+  }else messagesEl.scrollTop=previousScroll;
  }
 
  /* ---------- forwarding ---------- */
@@ -1888,6 +1936,7 @@
   if(owner)try{await loadPairs()}catch(e){if(selectedPair)statusEl.textContent='Could not refresh box conversations: '+e.message}
   if(selected)applySeen(selected);
   renderRows();
+  scheduleListPrefetch();
   if(selectedPair&&pairHero){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}
   if(selected){renderHeader();renderInspect();if(owner)void loadChatUsageProfile(selected)}
  }
@@ -2055,10 +2104,11 @@
    for(const message of latest)merged.set(message.id,message);
    box.messages=[...merged.values()].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)||a.id.localeCompare(b.id));
   }else{box.messages=latest;box.historyLoaded=true;box.hasOlder=latest.length===50}
+  rememberHistory('box:'+id,box.messages,{hasOlder:box.hasOlder});
   previewFetched.set(box.id,Date.now());
   // The processing bubble must use the state of this response, not the
   // previous poll's state (which can leave it beneath an agent reply).
-  if(!forwardPreview)applySeen(selected);
+  applySeen(selected);
   const signature=box.messages.map(m=>m.id+m.updatedAt+m.state).join('|')+'|'+box.processing+'|'+box.streaming;
   renderHeader();
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
@@ -2169,8 +2219,8 @@ function pairTileStatus(tile,mode,label){
   }
  }
  function renderPairMessages(pair){
-  if(activeHorizontalGestures&&!(forwardPreview?.target?.pair===pairKey(pair))){pendingPair=pair;return}
-  const follow=stickToBottom;
+  if(activeHorizontalGestures){pendingPair=pair;return}
+  const follow=stickToBottom,previousScroll=messagesEl.scrollTop;
   const key=pairKey(pair),painted=messagesEl.dataset.pair===key?paintedPairMessages.get(key):null,nextPainted=new Set(),liveAvatars=new Map();
   if(painted)for(const row of messagesEl.querySelectorAll('.pair-msg[data-key]')){const avatar=row.querySelector(':scope > .msg-avatar');if(avatar)liveAvatars.set(row.dataset.key,avatar)}
   const hero=startPairHero(pair);
@@ -2193,7 +2243,7 @@ function pairTileStatus(tile,mode,label){
   if(!(pair.messages||[]).length){const empty=mk('p','No direct messages between these boxes yet.');empty.className='day-sep';messagesEl.append(empty)}
   paintedPairMessages.set(key,nextPainted);
   statusEl.textContent='Read only · '+(pair.messages||[]).length+' messages'+((pair.messages||[]).length===500?' (latest 500)':'');
-  if(follow)scrollMessagesToBottom();
+  if(follow)scrollMessagesToBottom();else messagesEl.scrollTop=previousScroll;
  }
  async function refreshPairMessages(force=false){
   const key=selectedPair,pair=pairs.get(key);if(!pair)return;
@@ -2202,6 +2252,7 @@ function pairTileStatus(tile,mode,label){
   if(epoch!==viewEpoch||selectedPair!==key||pairs.get(key)!==pair)return;
   const known=new Set((pair.messages||[]).map(message=>message.id));
   pair.messages=Array.isArray(messages)?messages:[];
+  rememberHistory('pair:'+key,pair.messages);
   const last=pair.messages.at(-1);
   if(last){pair.lastAt=last.createdAt;pair.lastText=last.text}
   pair.countMessages=pair.messages;pair.countedAt=pair.lastAt;
@@ -2214,27 +2265,36 @@ function pairTileStatus(tile,mode,label){
  async function openPair(key,preview=false){
   navSettleEnd?.();
   const pair=pairs.get(key);if(!pair)return;
+  const intent=++openIntent,cacheKey='pair:'+key;
+  openingSelection=cacheKey;
+  if(!cachedHistory(cacheKey)){
+   try{await fetchHistoryIntoCache(cacheKey)}catch(e){statusEl.textContent=e.message}
+   if(intent!==openIntent)return;
+  }
+  openingSelection='';rememberOpened(cacheKey);
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
   selected='';selectedPair=key;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);clearInspectMemory();renderResourceCard();selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();hideTvPreview();closeTakeover();stopPairHero();
   $('#chat-composer').classList.remove('is-processing');$('#chat-interrupt').disabled=true;
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
-  // Box-to-box chats are read-only activity logs: opening one starts at its
-  // latest message, even if the reader scrolled up on an earlier visit.
-  scrollMemory.delete('pair:'+key);followMemory.set('pair:'+key,true);stickToBottom=true;
+  // Direct links start at the latest message; switching back keeps the
+  // reader's last scroll position, like an owner chat.
+  const savedScroll=scrollMemory.get(cacheKey);stickToBottom=savedScroll==null||followMemory.get(cacheKey)!==false;
+  pair.messages=cachedHistory(cacheKey)?.messages||pair.messages||[];
   $('#chat-conversation').classList.add('pair-view');
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;if(!preview)appEl.classList.add('in-chat');
   $('#chat-header-name').textContent=pair.boxAName+' ↔ '+pair.boxBName;
   $('#chat-header-state').textContent='Direct messages between boxes · read only';
   {const avatar=pairAvatarNode(pair);avatar.removeAttribute('aria-hidden');avatar.setAttribute('role','img');avatar.setAttribute('aria-label',pair.boxAName+' and '+pair.boxBName);$('#chat-header-avatar').replaceChildren(avatar)}headerAvatarKey='';
-  messagesEl.append(startPairHero(pair));
-  setBanner('');statusEl.textContent='';renderRows();doodle('Loading messages…');
-  try{await refreshPairMessages(true)}catch(e){if(selectedPair===key)statusEl.textContent=e.message}finally{if(selectedPair===key)doodle('')}
+  renderPairMessages(pair);lastSignature=pair.messages.map(message=>message.id+message.updatedAt+message.state).join('|');
+  setBanner('');statusEl.textContent='';renderRows();doodle('');
+  const loadingKey='#pair='+encodeURIComponent(key);historyLoadingFor=loadingKey;
+  void refreshPairMessages().catch(e=>{if(selectedPair===key)statusEl.textContent=e.message}).finally(()=>{if(historyLoadingFor===loadingKey)historyLoadingFor=''});
   const finish=()=>{
    if(epoch!==viewEpoch||selectedPair!==key)return;
-   scrollMessagesToBottom();
-   if(!preview)applyPairSeen(pair,true);
+   if(stickToBottom)scrollMessagesToBottom();else if(savedScroll!=null)messagesEl.scrollTop=savedScroll;
+   if(!preview)applyPairSeen(pair);
    renderRows();
    restoringTranscript=false;
   };
@@ -2288,6 +2348,13 @@ function pairTileStatus(tile,mode,label){
  async function openBox(id,preview=false){
   navSettleEnd?.();
   if(!boxes.has(id))return;
+  const intent=++openIntent,cacheKey='box:'+id;
+  openingSelection=cacheKey;
+  if(!cachedHistory(cacheKey)){
+   try{await fetchHistoryIntoCache(cacheKey)}catch(e){statusEl.textContent=e.message}
+   if(intent!==openIntent)return;
+  }
+  openingSelection='';rememberOpened(cacheKey);
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
   stopPairHero();selectedPair='';$('#chat-conversation').classList.remove('pair-view');
@@ -2300,18 +2367,22 @@ function pairTileStatus(tile,mode,label){
   // first-time opens (no memory) start at the newest message.
   const savedScroll=scrollMemory.get(id);
   stickToBottom=savedScroll==null||followMemory.get(id)!==false;
+  const cached=cachedHistory(cacheKey),box=boxes.get(id);
+  if(cached){box.messages=cached.messages;box.historyLoaded=true;box.hasOlder=cached.hasOlder;if(cached.activity)applyBusyState(box,cached.activity)}
   const restoredDraft=inputDrafts[id]||'';
   if(inputEl.value!==restoredDraft){inputEl.value=restoredDraft;grow()}
   renderDrafts();
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;scheduleResources(0);
   if(!preview)appEl.classList.add('in-chat');
+  applySeen(id);
   renderHeader();
   statusEl.textContent='';
   closeForwardMenu();
   closeTakeover();
   renderInspect();
-  if(!(boxes.get(id).messages||[]).length)doodle('Loading messages…');
-  try{await refreshMessages(true)}catch(e){statusEl.textContent=e.message}finally{doodle('')}
+  renderMessages(box);lastSignature=box.messages.map(m=>m.id+m.updatedAt+m.state).join('|')+'|'+box.processing+'|'+box.streaming;doodle('');
+  const loadingKey='#box='+encodeURIComponent(id);historyLoadingFor=loadingKey;
+  void refreshMessages().catch(e=>{if(selected===id)statusEl.textContent=e.message}).finally(()=>{if(historyLoadingFor===loadingKey)historyLoadingFor=''});
   const finish=()=>{
    if(epoch!==viewEpoch||selected!==id)return;
    if(stickToBottom)scrollMessagesToBottom();else if(savedScroll!=null)messagesEl.scrollTop=savedScroll;
@@ -2564,10 +2635,10 @@ function pairTileStatus(tile,mode,label){
    updateSendState();
   }
  };
- $('#chat-back').onclick=()=>{void flushReadMarkers();appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
+ $('#chat-back').onclick=()=>{void flushReadMarkers();appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname);void prefetchActiveChat();scheduleListPrefetch()};
  // Both directions share one drag and settle path. The list moves at 30% of
  // the chat's distance, so it is visible beneath the page while dragging.
- let navSwipe=null,forwardPreview=null,navSettleTimer=0,navSettleEnd=null,navFrame=0,suppressNavClickUntil=0;
+ let navSwipe=null,navSettleTimer=0,navSettleEnd=null,navFrame=0,suppressNavClickUntil=0,historyLoadingFor='';
  const navMain=$('#chat-main'),navList=$('#chat-list');
  const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
  function paintNavSwipe(){
@@ -2582,30 +2653,20 @@ function pairTileStatus(tile,mode,label){
   if(selected&&boxes.has(selected))return '#box='+encodeURIComponent(selected);
   return '';
  }
- function swipeTarget(row){
-  if(row?.dataset.boxId&&boxes.has(row.dataset.boxId))return {box:row.dataset.boxId,pair:''};
-  if(row?.dataset.pairKey&&pairs.has(row.dataset.pairKey))return {box:'',pair:row.dataset.pairKey};
-  return null;
- }
- function showSwipeTarget(gesture){
-  const target=gesture.target;
-  if(!target||target.box&&target.box===selected&&!selectedPair||target.pair&&target.pair===selectedPair&&!selected){
-   if(stickToBottom)messagesEl.scrollTop=messagesEl.scrollHeight;
-   return;
+ async function prefetchActiveChat(){
+  const key=selectedChatHash();if(!key||historyLoadingFor===key)return;
+  const rendered=selected?messagesEl.dataset.box===selected&&messagesEl.childElementCount>0:messagesEl.dataset.pair===selectedPair&&messagesEl.childElementCount>0;
+  if(rendered)return;
+  if(selected){
+   const box=boxes.get(selected);if(!box)return;
+   if(box.historyLoaded)renderMessages(box);
+   else{historyLoadingFor=key;try{await refreshMessages(true)}catch(e){statusEl.textContent=e.message}finally{if(historyLoadingFor===key)historyLoadingFor=''}}
+  }else if(selectedPair){
+   const pair=pairs.get(selectedPair);if(!pair)return;
+   if(pair.messages?.length)renderPairMessages(pair);
+   else{historyLoadingFor=key;try{await refreshPairMessages(true)}catch(e){statusEl.textContent=e.message}finally{if(historyLoadingFor===key)historyLoadingFor=''}}
   }
-  forwardPreview=gesture;navMain.classList.add('nav-preview-loading');
-  const load=target.pair?openPair(target.pair,true):openBox(target.box,true);
-  void load.then(()=>requestAnimationFrame(()=>{
-   if(forwardPreview!==gesture)return;
-   if(stickToBottom)messagesEl.scrollTop=messagesEl.scrollHeight;
-   requestAnimationFrame(()=>{if(forwardPreview===gesture){navMain.classList.remove('nav-preview-loading');if(!navSwipe){forwardPreview=null;if(selected)applySeen(selected);else if(selectedPair)applyPairSeen(pairs.get(selectedPair),true)}}});
-  }));
- }
- function restoreSwipeSelection(target){
-  if(target?.pair&&pairs.has(target.pair)){void openPair(target.pair,true);return}
-  if(target?.box&&boxes.has(target.box)){void openBox(target.box,true);return}
-  selected='';selectedPair='';viewEpoch++;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);renderResourceCard();
-  $('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;renderRows();
+  requestAnimationFrame(()=>{if(appEl.classList.contains('in-chat')||selectedChatHash()!==key)return;if(stickToBottom)scrollMessagesToBottom();else messagesEl.scrollTop=scrollMemory.get(selected||'pair:'+selectedPair)||0});
  }
  function finishNavSwipe(event){
   if(!navSwipe)return;
@@ -2616,13 +2677,11 @@ function pairTileStatus(tile,mode,label){
   const elapsed=Math.max(1,performance.now()-gesture.started);
   const completed=event.type==='touchend'&&(distance>=gesture.width*.35||gesture.fastFlick||(distance>50&&distance/elapsed>.65));
   suppressNavClickUntil=Date.now()+500;
-  gesture.row?.classList.remove('pressing');
   appEl.classList.remove('nav-swiping');
   if(gesture.reduced){
    if(gesture.direction==='back'){if(completed)$('#chat-back').click()}
    else if(completed){appEl.classList.add('in-chat');history.replaceState(null,'',location.pathname+selectedChatHash())}
-   else{forwardPreview=null;restoreSwipeSelection(gesture.previous)}
-   if(gesture.direction==='forward'){appEl.classList.remove('nav-forward');navMain.classList.remove('nav-preview-loading')}
+   if(gesture.direction==='forward')appEl.classList.remove('nav-forward');
    navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
    endHorizontalGesture();return;
   }
@@ -2638,8 +2697,7 @@ function pairTileStatus(tile,mode,label){
    clearTimeout(navSettleTimer);navMain.removeEventListener('transitionend',onSettled);
    if(navSettleEnd===settle)navSettleEnd=null;
    if(gesture.direction==='forward'){
-    if(completed){appEl.classList.add('in-chat');if(!navMain.classList.contains('nav-preview-loading'))forwardPreview=null;if(selected)applySeen(selected);else if(selectedPair)applyPairSeen(pairs.get(selectedPair),true)}
-    else{forwardPreview=null;restoreSwipeSelection(gesture.previous);navMain.classList.remove('nav-preview-loading')}
+    if(completed){appEl.classList.add('in-chat');if(selected)applySeen(selected);else if(selectedPair)applyPairSeen(pairs.get(selectedPair))}
     appEl.classList.remove('nav-forward');
    }
    appEl.classList.remove('nav-returning','nav-completing');
@@ -2662,13 +2720,10 @@ function pairTileStatus(tile,mode,label){
  }
  function startNavSwipe(event,direction){
   const root=direction==='back'?messagesEl:navList;
-  const row=direction==='forward'?event.target.closest?.('li[data-box-id],li[data-pair-key]'):null;
-  const target=swipeTarget(row);
-  if(event.touches.length!==1||innerWidth>600||direction==='back'&&!appEl.classList.contains('in-chat')||direction==='forward'&&(appEl.classList.contains('in-chat')||!target&&!selectedChatHash())||!canStartNavSwipe(event.target,root,direction))return;
+  if(event.touches.length!==1||innerWidth>600||direction==='back'&&!appEl.classList.contains('in-chat')||direction==='forward'&&(appEl.classList.contains('in-chat')||!selectedChatHash())||!canStartNavSwipe(event.target,root,direction))return;
   const touch=event.touches[0];
-  if(direction==='forward'&&!row&&touch.clientX<innerWidth-24)return;
   navSettleEnd?.();appEl.classList.remove('nav-returning','nav-completing');navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
-  navSwipe={direction,x:touch.clientX,y:touch.clientY,width:appEl.clientWidth,travel:0,reduced:reducedMotion(),axis:'',started:performance.now(),row,target,previous:{box:selected,pair:selectedPair}};
+  navSwipe={direction,x:touch.clientX,y:touch.clientY,width:appEl.clientWidth,travel:0,reduced:reducedMotion(),axis:'',started:performance.now()};
  }
  function moveNavSwipe(event,direction){
   if(!navSwipe||navSwipe.direction!==direction||event.touches.length!==1)return;
@@ -2683,7 +2738,6 @@ function pairTileStatus(tile,mode,label){
      appEl.classList.add('nav-forward');
     }
     appEl.classList.add('nav-swiping');beginHorizontalGesture();
-    if(direction==='forward')showSwipeTarget(navSwipe);
    }
    else if(Math.abs(dy)>10||dx< -10){navSwipe=null;return}
    else return;
@@ -2704,8 +2758,8 @@ function pairTileStatus(tile,mode,label){
  navList.addEventListener('click',event=>{if(Date.now()<suppressNavClickUntil&&(event.pointerType==='touch'||event.sourceCapabilities?.firesTouchEvents)){event.preventDefault();event.stopPropagation()}},true);
  addEventListener('hashchange',()=>{
   const params=new URLSearchParams(location.hash.slice(1)),pair=params.get('pair');
-  if(pair){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match&&match!==selectedPair)void openPair(match);return}
-  const id=params.get('box');if(id&&id!==selected&&boxes.has(id))void openBox(id);
+  if(pair){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match&&match!==selectedPair&&openingSelection!=='pair:'+match)void openPair(match);return}
+  const id=params.get('box');if(id&&id!==selected&&boxes.has(id)&&openingSelection!=='box:'+id)void openBox(id);
  });
 
  /* ---------- takeover popup: VNC/TMUX control ---------- */
@@ -3839,7 +3893,7 @@ function pairTileStatus(tile,mode,label){
  async function tickResources(){await refreshBoxResources();scheduleResources()}
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
  async function tickMessages(){try{if(!document.hidden){if(selected)await refreshMessages();if(selectedPair)await refreshPairMessages()}reconnecting=false}catch(e){reconnecting=!!(selected||selectedPair);if(selectedPair)statusEl.textContent=e.message}if(selected)updateBanner();msgTimer=setTimeout(tickMessages,3000)}
- document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(activityTimer);clearTimeout(resourceTimer);clearInspectMemory();stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();void tickActivity();scheduleResources(0);if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(activityTimer);clearTimeout(resourceTimer);clearInspectMemory();stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();void tickActivity();scheduleResources(0);schedulePrefetch();scheduleListPrefetch();if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);await refreshBoxActivity();if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
@@ -3869,6 +3923,7 @@ function pairTileStatus(tile,mode,label){
   for(const drafts of threadAttachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url);
   attachmentDrafts.clear();threadAttachmentDrafts.clear();renderDrafts();renderThreadDrafts();pendingKey='';pendingFingerprint='';
   boxes.clear();rows.clear();pairs.clear();pairRows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;delete messagesEl.dataset.pair;
+  cacheGeneration++;historyCache.clear();historyPending.clear();prefetchQueue.length=0;openIntent++;openingSelection='';
   owner=false;providersNav?.setOwner(false);extrasLoaded=false;chatCommands=[];mentionCache.clear();hideComposerPicker();closeSheets();
   selected='';selectedPair='';restoringTranscript=false;newMessagesBtn.hidden=true;scrollMemory.clear();followMemory.clear();lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').classList.remove('pair-view');
   $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;showLogin();
