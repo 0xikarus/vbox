@@ -62,8 +62,8 @@ test('Details resources show usage, reuse RAM settings, and poll only while open
   assert.match(await page.$eval('#inspect-resources-updated',node=>node.textContent),/^Updated /);
   assert.match(await page.$eval('#inspect-resource-rows [data-kind="disk"]',node=>node.textContent),/Limit not enforced/);
   await page.click('#inspect-resources-adjust');
-  await page.waitForFunction(()=>document.querySelector('#inspect-power').open&&!document.querySelector('#inspect-memory-settings form').hidden&&document.activeElement===document.querySelector('#inspect-memory-settings'));
-  assert.equal(await page.$eval('#inspect-memory-settings',node=>document.activeElement===node),true,'Adjust focuses the RAM block');
+  await page.waitForFunction(()=>!document.querySelector('[data-ip-page="resources"]').hidden&&!document.querySelector('#inspect-memory-settings form').hidden);
+  assert.equal(await page.$eval('#inspect-title',node=>node.textContent),'Adjust resources');
   assert.ok(await page.evaluate(()=>{const block=document.querySelector('#inspect-memory-settings').getBoundingClientRect(),drawer=document.querySelector('#inspect').getBoundingClientRect();return block.top<drawer.bottom&&block.bottom>drawer.top}),'Adjust scrolls the RAM block into view');
   assert.equal(await page.$eval('#inspect-memory-settings [name="memory"]',node=>node.value),'2');
   await page.$eval('#inspect-memory-settings [name="memory"]',node=>{node.value='1';node.dispatchEvent(new Event('input',{bubbles:true}))});

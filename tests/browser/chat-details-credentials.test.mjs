@@ -62,11 +62,11 @@ test('Details Credentials opens above drawer, applies selection, and shows reque
     await page.goto(`http://127.0.0.1:${server.address().port}/chat#box=builder`);
     await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
     await page.$eval('#chat-info',button=>button.click());
-    await page.click('.inspect-technical > summary');
-    await page.waitForFunction(()=>[...document.querySelectorAll('#inspect-config-actions button')].some(button=>button.textContent.includes('Credentials')));
-    await page.evaluate(()=>{window.credentialsClicks=0;document.querySelector('#inspect-config-actions').addEventListener('click',event=>{if(event.target.closest('button')?.textContent.includes('Credentials'))window.credentialsClicks++})});
+    await page.click('[data-ip-row="credentials"]');
+    await page.waitForFunction(()=>!document.querySelector('.ip-page[data-ip-page="credentials"]').hidden);
+    await page.evaluate(()=>{window.credentialsClicks=0;document.querySelector('.ip-page[data-ip-page="credentials"] .ip-page-action').addEventListener('click',()=>window.credentialsClicks++)});
     const point=await page.evaluate(()=>{
-     const button=document.querySelector('#inspect-config-actions button:nth-child(2)');
+     const button=document.querySelector('.ip-page[data-ip-page="credentials"] .ip-page-action');
      button.scrollIntoView({block:'center'});
      const rect=button.getBoundingClientRect();
      return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};

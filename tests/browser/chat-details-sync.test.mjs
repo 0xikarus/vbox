@@ -28,14 +28,16 @@ test('chat details shows the last applied instruction time and pending edits',as
   const page=await browser.newPage();await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
   await page.$eval('#chat-info',button=>button.click());
-  await page.waitForFunction(()=>document.querySelector('#inspect-activity-rows')?.textContent.includes('changes pending'));
-  assert.match(await page.$eval('#inspect-activity-rows',el=>el.textContent),/Instructions synced.*\d+ d ago.*changes pending/);
-  assert.match(await page.$eval('#inspect-activity-rows',el=>el.querySelector('[aria-label="Copy full instructions synced"]')?.title||''),/2026/);
+  await page.$eval('[data-ip-row="technical"]',button=>button.click());
+  await page.waitForFunction(()=>document.querySelector('#ip-technical-table')?.textContent.includes('changes pending'));
+  assert.match(await page.$eval('#ip-technical-table',el=>el.textContent),/Instructions synced.*\d+ d ago.*changes pending/);
+  assert.match(await page.$eval('#ip-technical-table .ip-technical-row:last-child span:nth-child(2)',el=>el.title),/2026/);
   await page.$eval('#inspect-close',button=>button.click());
   instructions={instructions:{},pending:true};
   await page.$eval('#chat-info',button=>button.click());
-  await page.waitForFunction(()=>document.querySelector('#inspect-activity-rows')?.textContent.includes('Never · changes pending'));
-  assert.match(await page.$eval('#inspect-activity-rows',el=>el.textContent),/Instructions syncedNever · changes pending/);
+  await page.$eval('[data-ip-row="technical"]',button=>button.click());
+  await page.waitForFunction(()=>document.querySelector('#ip-technical-table')?.textContent.includes('Never · changes pending'));
+  assert.match(await page.$eval('#ip-technical-table',el=>el.textContent),/Instructions syncedNever · changes pending/);
   await page.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });
@@ -78,8 +80,8 @@ test('existing Instructions editor saves custom Markdown and can clear it',async
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Reviewer'&&document.querySelector('#chat-messages').dataset.box==='reviewer'&&document.querySelector('#chat-loading').hidden);
   await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#inspect').hidden);
-  await page.waitForFunction(()=>[...document.querySelectorAll('#inspect-config-actions button')].some(button=>button.textContent==='Instructions…'));
-  await page.$$eval('#inspect-config-actions button',buttons=>buttons.find(button=>button.textContent==='Instructions…').click());
+  await page.$eval('[data-ip-row="instructions"]',button=>button.click());
+  await page.$eval('.ip-page[data-ip-page="instructions"] .ip-page-action',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#box-instructions-effective')?.textContent.includes('Managed instructions for reviewer'));
   await page.select('#box-instructions-preset','custom');
   await page.type('#box-instructions-markdown','Use short answers.');
