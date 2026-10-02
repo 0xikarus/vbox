@@ -85,12 +85,11 @@
 <div id="box-credentials-modal" class="modal" data-owner hidden>
 <div class="backdrop" data-close="box-credentials-modal"></div>
 <section class="card" role="dialog" aria-modal="true">
-<header><strong id="box-credentials-title">Agent profile</strong><button type="button" class="linkbtn" data-close="box-credentials-modal" aria-label="Close">×</button></header>
-<p class="hint">Choose the box's single agent profile. Its application becomes the active harness, credentials from other harnesses are removed, and stale agent conversations are closed. Credentials use the verified creation channel and are never displayed. A stopped box applies the selection on its next start.</p>
-<p id="box-credentials-current" class="hint"></p>
-<div id="box-credentials-form"></div>
-<div class="form-actions"><button type="button" class="primary" id="box-credentials-apply">apply to box</button><button type="button" class="linkbtn" data-close="box-credentials-modal">cancel</button></div>
+<header><strong id="box-credentials-title">Credentials</strong><button type="button" class="linkbtn" data-close="box-credentials-modal" aria-label="Close">×</button></header>
+<p class="hint">Choose the saved account for each credential. Changing one keeps the other. A stopped box applies changes on its next start.</p>
+<div id="box-credentials-form" class="credential-slots" aria-label="Box credential slots"></div>
 <p id="box-credentials-status" role="status"></p>
+<button type="button" id="box-credentials-retry" class="credential-retry" hidden>Retry</button>
 </section></div>
 <div id="role-editor-modal" class="modal role-editor-modal" data-owner hidden>
 <div class="backdrop" data-close="role-editor-modal"></div>

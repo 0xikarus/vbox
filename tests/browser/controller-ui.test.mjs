@@ -956,11 +956,21 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  // Editing imported profiles is an explicit, verified selection.
  await page.evaluate(()=>{const row=document.querySelector('[data-box-id="box-1"]');[...row.querySelectorAll('button')].find(button=>button.textContent.includes('Credentials')).click()});
  await page.waitForFunction(()=>!document.querySelector('#box-credentials-modal').hidden);
- await page.select('#box-credentials-form select',JSON.stringify({application:'claude',name:'personal'}));
- await page.click('#box-credentials-apply');
+ await page.waitForSelector('[data-slot="agent"] .credential-slot-change');
+ await page.click('[data-slot="agent"] .credential-slot-change');
+ await page.select('[data-slot="agent"] select',JSON.stringify({application:'claude',name:'personal'}));
+ await page.click('[data-slot="agent"] .credential-slot-save');
  await page.waitForFunction(()=>document.querySelector('#box-credentials-status').textContent.includes('fixture applied'));
  assert.deepEqual(requests.findLast(request=>request.method==='PUT'&&request.path==='/v1/logical-boxes/box-1/login-profiles').body,{profiles:[{application:'claude',name:'personal'}]});
- await page.click('#box-credentials-modal .form-actions .linkbtn');
+ await page.click('[data-slot="github"] .credential-slot-change');
+ await page.select('[data-slot="github"] select',JSON.stringify({application:'github',name:'gh-work'}));
+ await page.click('[data-slot="github"] .credential-slot-save');
+ await page.waitForFunction(()=>document.querySelector('[data-slot="github"] .credential-slot-account').textContent.includes('gh-work'));
+ assert.deepEqual(requests.findLast(request=>request.method==='PUT'&&request.path==='/v1/logical-boxes/box-1/login-profiles').body,{profiles:[{application:'claude',name:'personal'},{application:'github',name:'gh-work'}]});
+ await page.click('[data-slot="github"] .credential-slot-remove');
+ await page.waitForFunction(()=>document.querySelector('[data-slot="github"] .credential-slot-account').textContent==='None');
+ assert.deepEqual(requests.findLast(request=>request.method==='PUT'&&request.path==='/v1/logical-boxes/box-1/login-profiles').body,{profiles:[{application:'claude',name:'personal'}]});
+ await page.click('#box-credentials-modal header .linkbtn');
  await page.waitForFunction(()=>document.querySelector('#box-credentials-modal').hidden);
  // Oversized preset Markdown is rejected before any request is made.
  await page.evaluate(()=>{document.querySelector('#instruction-editor').open=true});

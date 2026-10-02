@@ -10,7 +10,7 @@ const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg
 const box={id:'builder',name:'Builder',state:'running',defaultAgent:'claude',provider:'shared-worker',providerCredential:'pool',slotId:'slot-1',assignmentGeneration:3,processing:true};
 const gib=1024**3;
 
-test('Details drawer uses grouped rows, subpages and the credentials sheet',async()=>{
+test('Details drawer uses grouped rows, subpages and credential slots',async()=>{
  let runSeconds=28800,contextClears=0;
  const server=http.createServer(async(request,response)=>{
   const path=new URL(request.url,'http://localhost').pathname;
@@ -106,9 +106,9 @@ test('Details drawer uses grouped rows, subpages and the credentials sheet',asyn
    assert.equal(await page.evaluate(()=>window.copiedDetail),await page.$eval('#ip-technical-table .ip-technical-copy span:nth-child(2)',value=>value.textContent));
    await page.$eval('#inspect-prototype-back',button=>button.click());
    await page.$eval('[data-ip-row="credentials"]',button=>button.click());
-   await page.$eval('.ip-page[data-ip-page="credentials"] .ip-page-action',button=>button.click());
-   await page.waitForFunction(()=>!document.querySelector('#box-credentials-modal').hidden&&!!document.querySelector('#box-credentials-form select'));
-   assert.equal(await page.$eval('#box-credentials-form select',select=>select.value),JSON.stringify({application:'claude',name:'Studio profile'}));
+   await page.waitForFunction(()=>!document.querySelector('.ip-page[data-ip-page="credentials"]').hidden&&!!document.querySelector('[data-slot="agent"] .credential-slot-change'));
+   assert.match(await page.$eval('[data-slot="agent"] .credential-slot-account',account=>account.textContent),/Claude · Studio profile/);
+   assert.equal(await page.$eval('[data-slot="github"] .credential-slot-account',account=>account.textContent),'None');
    await page.close();
   }
   const normal=await browser.newPage();await normal.goto(base+'/chat#box=builder');

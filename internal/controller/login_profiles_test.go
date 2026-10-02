@@ -312,6 +312,7 @@ type profileTestTransport struct {
 	volumeChecks int
 	writes       int
 	files        []boxruntime.SyncFile
+	removes      []string
 }
 
 func (p *profileTestTransport) AttachedStorage(context.Context, string) (*provider.Storage, error) {
@@ -327,6 +328,12 @@ func (p *profileTestTransport) AttachedStorage(context.Context, string) (*provid
 	return &provider.Storage{ID: volume}, nil
 }
 func (p *profileTestTransport) Exec(ctx context.Context, _ string, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	if len(argv) >= 2 && argv[0] == "gh" && argv[1] == "api" {
+		return provider.ExecResult{Stdout: "synthetic\n"}, nil
+	}
+	if len(argv) >= 3 && argv[0] == "gh" && argv[1] == "auth" && argv[2] == "setup-git" {
+		return provider.ExecResult{}, nil
+	}
 	if strings.Join(argv, " ") == "opencode auth list" || (len(argv) > 1 && argv[0] == "opencode" && argv[1] == "run") || strings.Join(argv, " ") == "codex login status" || (len(argv) > 1 && argv[0] == "codex" && argv[1] == "exec") {
 		return provider.ExecResult{}, nil
 	}
@@ -349,6 +356,7 @@ func (p *profileTestTransport) Exec(ctx context.Context, _ string, argv []string
 		return provider.ExecResult{}, err
 	}
 	p.writes++
+	p.removes = append(p.removes, req.Remove...)
 	if container := os.Getenv("VMBOX_TEST_WORKER_CONTAINER"); container != "" {
 		result, err := runProfileWorker(ctx, container, argv, bytes.NewReader(data))
 		if err != nil || result.ExitCode != 0 {

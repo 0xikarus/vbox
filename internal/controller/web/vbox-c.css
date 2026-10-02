@@ -2979,6 +2979,29 @@ dialog:not([open]){display:none}
 #inspect.details-prototype .ip-page #inspect-contacts,
 #inspect.details-prototype .ip-page #inspect-access,
 #inspect.details-prototype .ip-page #inspect-attachment-storage{box-shadow:var(--vb-shadow)}
+
+/* Both Credentials views edit each imported account independently. */
+#box-credentials-modal :is(.sheet-card,.card){width:min(30rem,100%)}
+#box-credentials-modal :is(.sheet-card,.card)>header button{min-width:40px;min-height:40px}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slots{margin-top:15px;border:1px solid var(--vb-line);border-radius:var(--vb-radius-16);overflow:hidden;background:var(--vb-surface)}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot{padding:14px 15px;border-bottom:1px solid var(--vb-line)}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot:last-child{border-bottom:0}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot-heading{display:flex;align-items:center;justify-content:space-between;color:var(--vb-ink);font-size:var(--vb-type-px-14)}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot-account{margin-top:5px;color:var(--vb-ink);font-size:var(--vb-type-px-13);overflow-wrap:anywhere}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot-note{margin:5px 0 0;color:var(--vb-ink-soft);font-size:var(--vb-type-px-12)}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot-actions,:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-picker-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot button,:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-retry{min-height:40px;padding:8px 15px;border:1px solid var(--vb-line-strong);border-radius:var(--vb-radius-10);background:var(--vb-surface);color:var(--vb-ink);font:650 var(--vb-type-px-13) var(--vb-font);cursor:pointer}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot button:disabled{opacity:.5;cursor:default}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot .credential-slot-save{background:var(--vb-ink);border-color:var(--vb-ink);color:var(--vb-bg)}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot .credential-slot-remove{color:var(--vb-danger-text)}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot-picker{margin-top:12px;padding-top:12px;border-top:1px solid var(--vb-line)}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot-picker[hidden]{display:none}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot-picker label{margin:0}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-slot-picker select{min-height:40px}
+:is(#box-credentials-modal,#inspect.details-prototype .ip-page[data-ip-page="credentials"]) .credential-retry[hidden]{display:none}
+#inspect.details-prototype .ip-page[data-ip-page="credentials"] .credential-slots:empty{display:none}
+#inspect.details-prototype .ip-page[data-ip-page="credentials"] #box-credentials-status{margin:0 2px;color:var(--vb-ink-soft);font-size:var(--vb-type-px-12)}
+#inspect.details-prototype .ip-page[data-ip-page="credentials"] #box-credentials-status:empty{display:none}
 #inspect.details-prototype .ip-page .inspect-contact-body,
 #inspect.details-prototype .ip-page .inspect-access-rows{padding:0}
 #inspect.details-prototype .ip-page .inspect-contact-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:12px 14px;border-bottom:1px solid var(--vb-line)}

@@ -4,15 +4,18 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"regexp"
+	"strings"
+	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/loginprofile"
-	"time"
 )
 
 var loginProfileName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9@+_.:() -]{0,127}$`)
@@ -50,6 +53,62 @@ func profileEncryptionScope(account, application, name string) string {
 	return account + ":login-profile:" + application + ":" + name
 }
 
+// Only account identity, never tokens or other credential fields, is exposed
+// with a saved profile so the owner can distinguish accounts in the picker.
+func profilePublicMetadata(value *v1.LoginProfile, files map[string][]byte) {
+	switch value.Application {
+	case "github":
+		var account struct {
+			Host string `json:"host"`
+			User string `json:"user"`
+		}
+		if json.Unmarshal(files["credential.json"], &account) == nil {
+			value.Host, value.User = account.Host, account.User
+		}
+	case "claude":
+		var state struct {
+			OAuthAccount struct {
+				Email string `json:"emailAddress"`
+			} `json:"oauthAccount"`
+		}
+		if json.Unmarshal(files[".claude.json"], &state) == nil {
+			value.Email = validProfileEmail(state.OAuthAccount.Email)
+		}
+	case "codex":
+		var auth struct {
+			Tokens struct {
+				ID string `json:"id_token"`
+			} `json:"tokens"`
+		}
+		if json.Unmarshal(files["auth.json"], &auth) != nil {
+			return
+		}
+		parts := strings.Split(auth.Tokens.ID, ".")
+		if len(parts) != 3 {
+			return
+		}
+		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return
+		}
+		defer clear(payload)
+		var claims struct {
+			Email string `json:"email"`
+		}
+		if json.Unmarshal(payload, &claims) == nil {
+			value.Email = validProfileEmail(claims.Email)
+		}
+	}
+}
+
+func validProfileEmail(value string) string {
+	parsed, err := mail.ParseAddress(value)
+	if err != nil || parsed.Address != value {
+		return ""
+	}
+	return value
+}
+
 func (s *Store) SaveLoginProfile(ctx context.Context, p Principal, application, name string, req v1.SaveLoginProfileRequest) (v1.LoginProfile, error) {
 	value := v1.LoginProfile{Application: application, Name: name, Model: loginprofile.Model(application, req.Files)}
 	replaceExisting := req.ReplaceExisting
@@ -62,6 +121,7 @@ func (s *Store) SaveLoginProfile(ctx context.Context, p Principal, application, 
 	if err := loginprofile.Validate(application, req.Files, time.Now()); err != nil {
 		return value, err
 	}
+	profilePublicMetadata(&value, req.Files)
 	if s.Envelope == nil {
 		return value, fmt.Errorf("credential encryption unavailable")
 	}
@@ -157,6 +217,7 @@ func (s *Store) ListLoginProfiles(ctx context.Context, p Principal) ([]v1.LoginP
 		var profile v1.SaveLoginProfileRequest
 		if json.Unmarshal(plain, &profile) == nil {
 			v.Model = loginprofile.Model(v.Application, profile.Files)
+			profilePublicMetadata(&v, profile.Files)
 		}
 		for _, data := range profile.Files {
 			clear(data)

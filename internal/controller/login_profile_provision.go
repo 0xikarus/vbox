@@ -83,9 +83,32 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 // login profiles. It returns the GitHub host/user so the caller can verify the
 // GitHub login after the transfer.
 func (s *Server) profileSyncRequest(ctx context.Context, tx *sql.Tx, accountID string, refs []v1.LoginProfileRef) (boxruntime.SyncRequest, string, string, error) {
+	return s.profileSyncRequestForSlots(ctx, tx, accountID, refs, nil)
+}
+
+func profileRefSlot(ref v1.LoginProfileRef) string {
+	if ref.Application == "github" {
+		return "github"
+	}
+	return "agent"
+}
+
+func profilePathSlot(path string) string {
+	if path == "/data/home/.config/gh/hosts.yml" {
+		return "github"
+	}
+	return "agent"
+}
+
+// A running box can replace one slot without rereading, verifying, or writing
+// the other slot's saved profile. A nil slots map provisions every slot.
+func (s *Server) profileSyncRequestForSlots(ctx context.Context, tx *sql.Tx, accountID string, refs []v1.LoginProfileRef, slots map[string]bool) (boxruntime.SyncRequest, string, string, error) {
 	request := boxruntime.SyncRequest{}
 	var githubHost, githubUser string
 	for _, ref := range refs {
+		if slots != nil && !slots[profileRefSlot(ref)] {
+			continue
+		}
 		profile, err := s.Store.loadLoginProfile(ctx, tx, Principal{AccountID: accountID}, ref.Application, ref.Name)
 		if err != nil {
 			return boxruntime.SyncRequest{}, "", "", fmt.Errorf("selected login profile unavailable; no credentials provisioned")
@@ -154,6 +177,9 @@ func (s *Server) profileSyncRequest(ctx context.Context, tx *sql.Tx, accountID s
 	removed := profileRemovalPaths(written)
 	request.Remove = make([]string, 0, len(removed))
 	for path := range removed {
+		if slots != nil && !slots[profilePathSlot(path)] {
+			continue
+		}
 		request.Remove = append(request.Remove, path)
 	}
 	sort.Strings(request.Remove)
@@ -166,7 +192,11 @@ func (s *Server) profileSyncRequest(ctx context.Context, tx *sql.Tx, accountID s
 // transaction and must hold the assignment lock. Instruction and workspace
 // files are outside this protocol.
 func (s *Server) transferProfileFiles(ctx context.Context, tx *sql.Tx, prov provider.Provider, accountID, boxID, serviceID, volumeID string, refs []v1.LoginProfileRef, defaultAgent string) error {
-	request, githubHost, githubUser, err := s.profileSyncRequest(ctx, tx, accountID, refs)
+	return s.transferProfileFilesForSlots(ctx, tx, prov, accountID, boxID, serviceID, volumeID, refs, defaultAgent, nil)
+}
+
+func (s *Server) transferProfileFilesForSlots(ctx context.Context, tx *sql.Tx, prov provider.Provider, accountID, boxID, serviceID, volumeID string, refs []v1.LoginProfileRef, defaultAgent string, slots map[string]bool) error {
+	request, githubHost, githubUser, err := s.profileSyncRequestForSlots(ctx, tx, accountID, refs, slots)
 	if err != nil {
 		return err
 	}
@@ -188,6 +218,9 @@ func (s *Server) transferProfileFiles(ctx context.Context, tx *sql.Tx, prov prov
 		return fmt.Errorf("selected credential transfer failed integrity verification")
 	}
 	for _, ref := range refs {
+		if slots != nil && !slots[profileRefSlot(ref)] {
+			continue
+		}
 		if err := verifyProvisionedLogin(ctx, prov, serviceID, ref.Application, githubHost, githubUser); err != nil {
 			return err
 		}
@@ -196,7 +229,7 @@ func (s *Server) transferProfileFiles(ctx context.Context, tx *sql.Tx, prov prov
 	if err != nil {
 		return fmt.Errorf("could not record imported credential references")
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET default_agent=$4,metadata=jsonb_set(jsonb_set(metadata,'{importedLoginProfiles}',$3::jsonb),'{pendingLoginProfiles}','[]'::jsonb),updated_at=now() WHERE account_id=$1 AND id=$2`, accountID, boxID, encoded, defaultAgent); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET default_agent=$4,metadata=jsonb_set(jsonb_set(jsonb_set(metadata,'{importedLoginProfiles}',$3::jsonb),'{pendingLoginProfiles}','[]'::jsonb),'{pendingLoginProfilesSet}','false'::jsonb),updated_at=now() WHERE account_id=$1 AND id=$2`, accountID, boxID, encoded, defaultAgent); err != nil {
 		return fmt.Errorf("could not record imported credential references")
 	}
 	return nil
