@@ -23,7 +23,8 @@ window.VMBoxCreateLimit = (() => {
   function render(policy){
    const cap=policy.capabilities||{},grant=cap.createAgentBox||{};
    const allowed=!!grant.enabled&&!!cap.mcpTools?.enabled&&(cap.mcpTools.allowedTools||[]).includes('create_agent_box');
-   root.hidden=!allowed;
+   // The Access page must explain disabled creation as well as enabled quotas.
+   root.hidden=false;
    count.value=String(grant.maxBoxes||1);count.disabled=!allowed;save.disabled=!allowed;
    badge.textContent=allowed?String(grant.maxBoxes)+' total':'Off';badge.dataset.enabled=String(allowed);
    status.textContent=allowed?'This box may create up to '+grant.maxBoxes+' boxes total.':'Box creation is off. Enable it in Permissions to edit this limit.';

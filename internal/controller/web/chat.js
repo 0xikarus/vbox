@@ -3404,6 +3404,7 @@ function pairTileStatus(tile,mode,label){
    $('#inspect-toggle-protection').setAttribute('aria-checked',String(inspectProtected));
    $('#inspect-toggle-protection').setAttribute('aria-label',inspectProtected?'Remove protection':'Protect box');
    renderInspectContacts(box);
+   if(inspectPrototypeReady)renderInspectPrototype(box);
    status.textContent='';
   }catch(e){status.textContent=e.message}
  }
