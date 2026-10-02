@@ -294,6 +294,10 @@ ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS mascot_observed_at timestamptz;
 -- An activity summary only; the source transcript is never stored.
 ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS mascot_phrase text;
 ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS mascot_phrase_at timestamptz;
+-- A digest distinguishes new agent evidence from repeated keepalive uploads.
+-- The transcript itself is never persisted by the controller.
+ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS mascot_evidence_hash text;
+ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS mascot_evidence_changed_at timestamptz;
 UPDATE box_tasks SET mascot_phrase_at=mascot_observed_at
   WHERE mascot_phrase_at IS NULL AND mascot_phrase IS NOT NULL AND mascot_phrase<>'' AND mascot_observed_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS box_tasks_reconcile_idx
