@@ -1459,6 +1459,8 @@
   'chevron-down':[['path',{d:'m6 9 6 6 6-6'}]],
   'bell-off':[['path',{d:'M10.6 3.2A6 6 0 0 1 18 9v4l2 3H7'}],['path',{d:'M4.9 4.9A6 6 0 0 0 6 9v4l-2 3h12'}],['path',{d:'M10 20h4'}],['path',{d:'M2 2l20 20'}]],
   'message-square':[['path',{d:'M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'}]],
+  mail:[['rect',{x:'2',y:'4',width:'20',height:'16',rx:'2'}],['path',{d:'m2 7 10 7 10-7'}]],
+  send:[['path',{d:'m22 2-7 20-4-9-9-4Z'}],['path',{d:'M22 2 11 13'}]],
   camera:[['path',{d:'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z'}],['circle',{cx:'12',cy:'13',r:'3'}]],
   users:[['path',{d:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'}],['circle',{cx:'9',cy:'7',r:'4'}],['path',{d:'M22 21v-2a4 4 0 0 0-3-3.87'}],['path',{d:'M16 3.13a4 4 0 0 1 0 7.75'}]],
   activity:[['path',{d:'M22 12h-4l-3 9L9 3l-3 9H2'}]],
@@ -3151,9 +3153,9 @@ function pairTileStatus(tile,mode,label){
    finally{form.querySelector('button').disabled=false;updateWarning()}
   };
  }
- const inspectPrototypeTitles={power:'Hibernation & limits',instructions:'Instructions',credentials:'Credentials',contacts:'Contacts',access:'Access & permissions',attachments:'Attachments',technical:'Technical details',resources:'Adjust resources'};
+ const inspectPrototypeTitles={power:'Hibernation & limits',instructions:'Instructions',credentials:'Credentials',contacts:'Contacts',access:'Access & permissions',attachments:'Attachments',technical:'Technical details',resources:'Adjust resources',mail:'Mail',mailDetail:'Email'};
  const inspectPrototypePages=new Map();
- let inspectPrototypeReady=false,inspectPrototypePage='',inspectPrototypeReturnFocus=null;
+ let inspectPrototypeReady=false,inspectPrototypePage='',inspectPrototypeReturnFocus=null,inspectMailMockup=null;
  function inspectPrototypeRow(key,icon,title,value,onClick,danger=false){
   const row=document.createElement('button');row.type='button';row.className='ip-row'+(danger?' ip-row-danger':'');row.dataset.ipRow=key;
   const glyph=lucide(icon),name=mk('span',title),detail=mk('span',value),chevron=lucide('chevron-right');
@@ -3196,18 +3198,19 @@ function pairTileStatus(tile,mode,label){
    ['contacts','users','Contacts'],['access','shield-check','Access & permissions'],['attachments','paperclip','Attachments'],
    ['technical','settings','Technical details'],
   ])$('#ip-settings').append(inspectPrototypeRow(key,icon,title,'',()=>showInspectPrototypePage(key)));
+  if(window.VBoxMailMockup?.enabled)inspectMailMockup=window.VBoxMailMockup.mount({page,row:inspectPrototypeRow,navigate:showInspectPrototypePage,getBox:()=>boxes.get(selected),isOwner:()=>owner});
   const dangerous=[
    ['restart','power','Restart',()=>{const box=boxes.get(selected);if(box)void restartBox(box)}],
    ['context','trash-2','Clear context',()=>void clearChatContext()],
    ['clear-attachments','image-off','Clear attachments',()=>$('#inspect-clear-attachments').click()],
   ];
   for(const [key,icon,title,action] of dangerous)$('#ip-danger').append(inspectPrototypeRow(key,icon,title,'',action,true));
-  $('#inspect-prototype-back').onclick=()=>showInspectPrototypePage('');
+  $('#inspect-prototype-back').onclick=()=>showInspectPrototypePage(inspectMailMockup?.backTarget(inspectPrototypePage)||'');
   $('#inspect-resources-adjust').onclick=()=>showInspectPrototypePage('resources');
  }
  function showInspectPrototypePage(key,restoreFocus=true){
   if(!inspectPrototypeReady)return;
-  if(key)inspectPrototypeReturnFocus=key==='resources'?$('#inspect-resources-adjust'):$('[data-ip-row="'+key+'"]');
+  if(key){const opener=key==='resources'?$('#inspect-resources-adjust'):$('[data-ip-row="'+key+'"]');if(opener)inspectPrototypeReturnFocus=opener}
   const returnFocus=inspectPrototypeReturnFocus;
   inspectPrototypePage=key;
   const subpage=!!key;$('#inspect-prototype-main').hidden=subpage;$('#inspect-prototype-page').hidden=!subpage;
@@ -3216,6 +3219,7 @@ function pairTileStatus(tile,mode,label){
   inspect.classList.toggle('ip-in-subpage',subpage);
   if(subpage){$('#inspect-prototype-page').scrollTop=0;if(key==='resources'){const box=boxes.get(selected);if(box)mountInspectMemory(box)}if(key==='credentials'){const box=boxes.get(selected);if(box)void openBoxCredentials(box)}}
   const box=boxes.get(selected);if(box)renderInspectPrototype(box);
+  inspectMailMockup?.onShow(key);
   if(subpage)$('#inspect-prototype-back').focus({preventScroll:true});
   else{inspectPrototypeReturnFocus=null;if(restoreFocus&&returnFocus?.isConnected&&!returnFocus.hidden)returnFocus.focus({preventScroll:true})}
  }
@@ -3245,6 +3249,7 @@ function pairTileStatus(tile,mode,label){
   setValue('access',inspectProtected?'Protected':'Permissions');
   const count=inspectAttachmentCache?.boxCount;setValue('attachments',Number.isFinite(count)?count+' '+(count===1?'file':'files'):'Storage');
   setValue('technical','IDs & activity');
+  inspectMailMockup?.onBox(box);
   for(const key of ['power','credentials','contacts','access','attachments'])$('[data-ip-row="'+key+'"]').hidden=!owner;
   $('#ip-instructions-summary').textContent='Last synced · '+instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null);
   $('#ip-danger').closest('.ip-group').hidden=!owner;
