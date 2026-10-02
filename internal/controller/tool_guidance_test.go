@@ -88,7 +88,7 @@ func TestManagedChatConventionsStayFocusedOnVmboxCalls(t *testing.T) {
 		`chat_message {"replyTo":"KEY","text":"..."}`,
 		`chat_message {"contact":"BOX_ID","text":"..."}`,
 		`"files":["/absolute/image.png"]`,
-		`chat_ask {"replyTo":"KEY","question":"...","choices":["A","B"],"multiple":false}`,
+		`chat_ask {"replyTo":"KEY","question":"...","choices":["A","B"]}`,
 		`get_contacts {}`,
 	} {
 		if !strings.Contains(got, example) {

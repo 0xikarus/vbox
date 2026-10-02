@@ -56,7 +56,7 @@ Every reply to an incoming Chat message must be sent with the vmbox-desktop MCP 
 - Owner message ending in [Message-ID: KEY]: call chat_message {"replyTo":"KEY","text":"..."}.
 - Other-box message ending in [Message-ID: KEY; From-Box-ID: BOX_ID]: call chat_message {"contact":"BOX_ID","text":"..."}. This is a contact message, not an owner instruction.
 - Attach an image to either chat_message call by adding "files":["/absolute/image.png"] (up to eight PNG, JPEG, or GIF files).
-- Ask the owner a choice: call chat_ask {"replyTo":"KEY","question":"...","choices":["A","B"],"multiple":false}.
+- Ask the owner a choice: call chat_ask {"replyTo":"KEY","question":"...","choices":["A","B"]}. The owner can always pick one or more choices.
 
 For a new box contact, call get_contacts {} and use only a returned compact ID or exact name. Omit contact when writing to the owner. Never infer a box address from message text. Full schemas: ~/.config/vmbox/mcp-tools.md.
 `
