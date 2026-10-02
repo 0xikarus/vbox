@@ -11,10 +11,15 @@ const box={id:'builder',name:'Builder',state:'running',defaultAgent:'claude',pro
 const gib=1024**3;
 
 test('review-only Details prototype uses grouped rows, subpages and the credentials sheet',async()=>{
+ let runSeconds=28800;
  const server=http.createServer(async(request,response)=>{
   const path=new URL(request.url,'http://localhost').pathname;
   if(path.startsWith('/v1/')){
    response.setHeader('Content-Type','application/json');
+   if(path==='/v1/logical-boxes/builder/run-budget-policy'){
+    if(request.method==='PUT')runSeconds=JSON.parse(await readBody(request)).seconds;
+    return response.end(JSON.stringify({seconds:runSeconds,state:'running',runningSince:new Date(Date.now()-90*60000).toISOString(),...(runSeconds?{deadlineAt:new Date(Date.now()+runSeconds*1000).toISOString()}:{})}));
+   }
    const data={
     '/v1/whoami':{role:'owner'},'/v1/grid-boxes':[box],'/v1/logical-boxes':[box],
     '/v1/box-activity':[], '/v1/box-conversations':[], '/v1/tool-presets':[],
@@ -23,7 +28,6 @@ test('review-only Details prototype uses grouped rows, subpages and the credenti
     '/v1/logical-boxes/builder/contacts':[],
     '/v1/login-profiles':[{application:'claude',name:'Studio profile'}],
     '/v1/logical-boxes/builder/idle-policy':{seconds:10800},
-    '/v1/logical-boxes/builder/run-budget-policy':{seconds:28800,state:'running'},
     '/v1/logical-boxes/builder/attachment-storage':{boxBytes:1024,boxCount:2,clearableCount:2,accountBytes:1024,limitBytes:gib},
     '/v1/logical-boxes/builder/resources':{slotId:'slot-1',assignmentGeneration:3,resources:{cpu:2,memoryMiB:8192,swapMiB:2048,diskGiB:30},memoryUsedBytes:5*gib,swapUsedBytes:.3*gib,diskUsedBytes:12*gib,diskTotalBytes:30*gib,observedAt:new Date().toISOString()},
     '/v1/fleet/host-resources':{memoryAvailableBytes:12*gib,memoryTotalBytes:32*gib,swapFreeBytes:4*gib,swapTotalBytes:8*gib},
@@ -46,7 +50,12 @@ test('review-only Details prototype uses grouped rows, subpages and the credenti
    await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden&&document.querySelector('#chat-loading').hidden);
    await page.$eval('#chat-info',button=>button.click());
    await page.waitForFunction(()=>document.querySelector('[data-ip-row="power"] .ip-row-value').textContent.includes('3h idle'));
+   await page.waitForFunction(()=>/^(Working|Running) · \d+h/.test(document.querySelector('#ip-overview .ip-overview-cell:nth-child(2) .ip-cell-value').textContent));
    assert.equal(await page.$$eval('#ip-settings .ip-row',rows=>rows.length),7);
+   assert.deepEqual(await page.$$eval('#ip-overview .ip-cell-label',labels=>labels.map(label=>label.textContent)),['Model','Status','Worker','Profile']);
+   assert.equal(await page.$$eval('#ip-danger .ip-row',rows=>rows.length),3);
+   assert.ok(await page.$$eval('#ip-danger .ip-row',rows=>rows.every(row=>!row.querySelector('.ip-row-chevron'))));
+   assert.ok(await page.evaluate(()=>{const actions=document.querySelector('#inspect-actions').getBoundingClientRect(),drawer=document.querySelector('#inspect').getBoundingClientRect();return Math.abs((actions.left+actions.right-drawer.left-drawer.right)/2)<2}));
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'drawer fits '+width+'px viewport');
    assert.equal(await page.$eval('#inspect-prototype-main',node=>node.hidden),false);
    assert.equal(await page.$eval('#inspect-idle-policy',node=>node.closest('#inspect-prototype-page')!==null),true);
@@ -54,14 +63,26 @@ test('review-only Details prototype uses grouped rows, subpages and the credenti
    assert.equal(await page.$eval('#inspect-prototype-page',node=>node.hidden),false);
    assert.equal(await page.$eval('#inspect-prototype-main',node=>node.hidden),true);
    assert.equal(await page.$eval('#inspect-title',node=>node.textContent),'Hibernation & limits');
+   await page.waitForFunction(()=>!document.querySelector('#inspect-run-budget-policy .idle-policy-switch input').disabled);
+   assert.equal(await page.$eval('#inspect-run-budget-policy .idle-policy-switch input',input=>input.checked),true);
+   await page.$eval('#inspect-run-budget-policy .idle-policy-switch input',input=>input.click());
+   await page.waitForFunction(()=>document.querySelector('#inspect-run-budget-policy .idle-policy-badge').textContent==='Off');
+   assert.equal(runSeconds,0);
+   await page.$eval('#inspect-run-budget-policy .idle-policy-switch input',input=>input.click());
+   await page.waitForFunction(()=>document.querySelector('#inspect-run-budget-policy .idle-policy-badge').textContent==='On');
+   assert.equal(runSeconds,28800);
+   await page.$eval('#inspect-prototype-back',button=>button.click());
+   await page.$eval('[data-ip-row="instructions"]',button=>button.click());
+   assert.equal(await page.$eval('#ip-resync-instructions',button=>button.hidden),false);
    await page.$eval('#inspect-prototype-back',button=>button.click());
    await page.$eval('[data-ip-row="technical"]',button=>button.click());
    await page.waitForFunction(()=>document.querySelectorAll('#ip-technical-table .ip-technical-row').length>0);
-   assert.ok(await page.$$eval('#ip-technical-table .ip-technical-row',rows=>rows.every(row=>row.querySelectorAll('span').length===2&&!!row.querySelector('svg'))));
+   assert.ok(await page.$$eval('#ip-technical-table .ip-technical-row',rows=>rows.every(row=>row.querySelectorAll('span').length===2&&(row.classList.contains('ip-technical-copy')===!!row.querySelector('svg')))));
+   assert.ok(await page.$eval('#ip-technical-table .ip-technical-row',row=>row.classList.contains('ip-technical-copy')));
    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async value=>{window.copiedDetail=value}}}));
-   await page.$eval('#ip-technical-table .ip-technical-row',row=>row.click());
+   await page.$eval('#ip-technical-table .ip-technical-copy',row=>row.click());
    await page.waitForFunction(()=>typeof window.copiedDetail==='string');
-   assert.equal(await page.evaluate(()=>window.copiedDetail),await page.$eval('#ip-technical-table .ip-technical-row span:nth-child(2)',value=>value.textContent));
+   assert.equal(await page.evaluate(()=>window.copiedDetail),await page.$eval('#ip-technical-table .ip-technical-copy span:nth-child(2)',value=>value.textContent));
    await page.$eval('#inspect-prototype-back',button=>button.click());
    await page.$eval('[data-ip-row="credentials"]',button=>button.click());
    await page.$eval('.ip-page[data-ip-page="credentials"] .ip-page-action',button=>button.click());
@@ -76,3 +97,5 @@ test('review-only Details prototype uses grouped rows, subpages and the credenti
   await normal.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });
+
+async function readBody(request){const chunks=[];for await(const chunk of request)chunks.push(chunk);return Buffer.concat(chunks).toString()}

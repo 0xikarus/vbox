@@ -3170,7 +3170,7 @@ function pairTileStatus(tile,mode,label){
   const row=document.createElement('button');row.type='button';row.className='ip-row'+(danger?' ip-row-danger':'');row.dataset.ipRow=key;
   const glyph=lucide(icon),name=mk('span',title),detail=mk('span',value),chevron=lucide('chevron-right');
   glyph.classList.add('ip-row-icon');name.className='ip-row-title';detail.className='ip-row-value';chevron.classList.add('ip-row-chevron');
-  row.append(glyph,name,detail,chevron);row.onclick=onClick;return row;
+  row.append(glyph,name,detail);if(!danger)row.append(chevron);row.onclick=onClick;return row;
  }
  function initInspectPrototype(){
   if(!inspectPrototypeEnabled||inspectPrototypeReady)return;
@@ -3190,6 +3190,7 @@ function pairTileStatus(tile,mode,label){
   const instructions=page('instructions','Saved instructions are synced into this box.');
   instructions.append($('#ip-instructions-summary'));
   const editInstructions=mk('button','Edit instructions');editInstructions.type='button';editInstructions.className='ip-page-action';editInstructions.onclick=()=>{const box=boxes.get(selected);if(box)void openBoxInstructions(box)};instructions.append(editInstructions);
+  const resyncInstructions=$('#ip-resync-instructions');resyncInstructions.onclick=()=>{const box=boxes.get(selected);if(box)void resyncBox(box)};instructions.append(resyncInstructions);
   const credentials=page('credentials','Login profiles available to this box.');
   credentials.append($('#ip-credentials-summary'));
   const editCredentials=mk('button','Manage credentials');editCredentials.type='button';editCredentials.className='ip-page-action';editCredentials.onclick=()=>{const box=boxes.get(selected);if(box)void openBoxCredentials(box)};credentials.append(editCredentials);
@@ -3198,14 +3199,13 @@ function pairTileStatus(tile,mode,label){
   const access=page('access','Control agent permissions, protection and created-box limits.');access.append($('#inspect-access'),$('#inspect-create-limit'));
   $('#inspect-access').open=true;
   page('attachments','Storage used by this box and its chat uploads.').append($('#inspect-attachment-storage'));
-  const technical=page('technical','Tap a value to copy it in full.');technical.append($('#ip-technical-table'));
+  const technical=page('technical','Tap an ID to copy it in full.');technical.append($('#ip-technical-table'));
   for(const [key,icon,title] of [
    ['power','timer','Hibernation & limits'],['instructions','file-text','Instructions'],['credentials','key','Credentials'],
    ['contacts','users','Contacts'],['access','shield-check','Access & permissions'],['attachments','paperclip','Attachments'],
    ['technical','settings','Technical details'],
   ])$('#ip-settings').append(inspectPrototypeRow(key,icon,title,'',()=>showInspectPrototypePage(key)));
   const dangerous=[
-   ['resync','refresh-cw','Re-sync instructions',()=>[...$('#inspect-config-actions').querySelectorAll('button')].find(button=>button.textContent.includes('Re-sync instructions'))?.click()],
    ['restart','power','Restart',()=>[...$('#inspect-config-actions').querySelectorAll('button')].find(button=>button.textContent.includes('Restart'))?.click()],
    ['context','trash-2','Clear context',()=>$('#chat-clear-context').click()],
    ['clear-attachments','image-off','Clear attachments',()=>$('#inspect-clear-attachments').click()],
@@ -3230,13 +3230,13 @@ function pairTileStatus(tile,mode,label){
   const profiles=inspectProfileCache?.profiles||[],primary=profiles[0]||{};
   const model=primary.model||'Auto model',reasoning=primary.reasoningEffort||'Auto';
   const budget=$('#inspect-run-budget-policy'),remaining=budget.querySelector('.run-budget-remaining');
-  const currentRun=remaining&&!remaining.hidden?remaining.textContent.replace('Stops in ',''):'No countdown';
+  const currentRun=remaining?.textContent.startsWith('Stops in ')?remaining.textContent.replace('Stops in ',''):'No countdown';
   const worker=inspectWorker?.name||box.providerCredential||'Assigned worker';
   const overview=[
-   ['Model + reasoning',model+' · '+reasoning],
-   ['Status + current run',(box.streaming||box.processing?'Working':box.state==='running'?'Running':box.state)+' · '+currentRun],
-   ['Pool / worker',[box.provider||'Pool',worker].join(' · ')],
-   ['Profiles',profiles.length?profiles.map(ref=>ref.name||ref.application).join(', '):'None assigned'],
+   ['Model',model+' · '+reasoning],
+   ['Status',(box.streaming||box.processing?'Working':box.state==='running'?'Running':box.state)+' · '+currentRun],
+   ['Worker',[box.provider||'Pool',worker].join(' · ')],
+   ['Profile',profiles.length?profiles.map(ref=>ref.name||ref.application).join(', '):'None assigned'],
   ];
   const grid=$('#ip-overview');if(grid.children.length!==4){grid.replaceChildren();for(let i=0;i<4;i++){const cell=mk('div');cell.className='ip-overview-cell';cell.append(Object.assign(mk('span'),{className:'ip-cell-label'}),Object.assign(mk('strong'),{className:'ip-cell-value'}));grid.append(cell)}}
   overview.forEach(([label,value],i)=>{const cell=grid.children[i];cell.querySelector('.ip-cell-label').textContent=label;cell.querySelector('.ip-cell-value').textContent=value;cell.querySelector('.ip-cell-value').title=value});
@@ -3254,7 +3254,7 @@ function pairTileStatus(tile,mode,label){
   $('#ip-instructions-summary').textContent='Last synced · '+instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null);
   $('#ip-credentials-summary').textContent=profiles.length?profiles.map(importedProfileLabel).join(' · '):'No imported profiles';
   $('#ip-danger').closest('.ip-group').hidden=!owner;
-  $('[data-ip-row="resync"]').hidden=box.state!=='running';$('[data-ip-row="restart"]').hidden=box.state!=='running';
+  $('#ip-resync-instructions').hidden=!owner||box.state!=='running';$('[data-ip-row="restart"]').hidden=box.state!=='running';
   $('[data-ip-row="clear-attachments"]').disabled=$('#inspect-clear-attachments').disabled;
   if(inspectPrototypePage==='technical')renderInspectPrototypeTechnical();
  }
@@ -3265,9 +3265,10 @@ function pairTileStatus(tile,mode,label){
    const label=original.querySelector('dt')?.textContent,valueNode=original.querySelector('dd');if(!label||!valueNode||skipped.has(label))continue;
    const value=valueNode.textContent.trim();
    if(!value||value==='—'||value==='never'||value==='Open Desktop to measure')continue;
-   const row=mk('button');row.type='button';row.className='ip-technical-row';row.title='Copy '+label.toLowerCase();
-   row.append(mk('span',label),mk('span',value),lucide('copy'));
-   row.onclick=async()=>{try{await navigator.clipboard.writeText(value);toast('Copied '+label.toLowerCase())}catch{toast('Copy is unavailable here.')}};
+   const copyable=label==='Slot'||/\bID\b/.test(label);
+   const row=mk(copyable?'button':'div');if(copyable)row.type='button';row.className='ip-technical-row'+(copyable?' ip-technical-copy':'')+(label==='Activity'?' ip-technical-activity':'');
+   row.append(mk('span',label),mk('span',value));
+   if(copyable){row.title='Copy '+label.toLowerCase();row.append(lucide('copy'));row.onclick=async()=>{try{await navigator.clipboard.writeText(value);toast('Copied '+label.toLowerCase())}catch{toast('Copy is unavailable here.')}}}
    table.append(row);
   }
  }
@@ -3348,11 +3349,12 @@ function pairTileStatus(tile,mode,label){
   renderResourceCard();
   const power=$('#inspect-power');power.hidden=!owner;
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
-  if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
+  if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,compact:inspectPrototypeEnabled,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
-  if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,state:box.state,assignmentGeneration:box.assignmentGeneration,
+  if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,state:box.state,assignmentGeneration:box.assignmentGeneration,compact:inspectPrototypeEnabled,
    request:seconds=>api(boxPath(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds}),
-   adjust:(action,seconds,expectedDeadlineAt)=>api(boxPath(box.id)+'/run-budget-policy/adjust','POST',{},{action,seconds,expectedDeadlineAt})});
+   adjust:(action,seconds,expectedDeadlineAt)=>api(boxPath(box.id)+'/run-budget-policy/adjust','POST',{},{action,seconds,expectedDeadlineAt}),
+   onPolicy:inspectPrototypeEnabled?()=>queueMicrotask(()=>{if(inspectOpen&&selected===box.id)renderInspectPrototype(box)}):undefined});
   if(owner&&power.open&&!document.hidden)mountInspectMemory(box);
   renderPowerSummary();
   const limitRoot=$('#inspect-create-limit');
