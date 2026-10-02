@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdir} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import puppeteer from 'puppeteer-core';
 
@@ -46,26 +46,24 @@ test('Details keeps direct contacts separate from Access actions',async()=>{
   await page.waitForFunction(()=>!document.querySelector('#inspect-access').hidden&&document.querySelector('#inspect-tags').textContent==='backend');
   assert.equal(await page.$eval('#inspect-contacts',section=>!!section.querySelector('#inspect-contact-list')&&!section.querySelector('.contact-policy')),true);
   assert.deepEqual(await page.$eval('#inspect-access',section=>[...section.querySelectorAll('.inspect-access-copy strong')].map(node=>node.textContent)),['Permissions','Labels','Protection']);
-  const layout=await page.evaluate(()=>{
-   const frame=document.querySelector('.inspect-screen-frame').getBoundingClientRect();
-   const mascot=document.querySelector('#inspect-avatar .vbox-mascot-shape').getBoundingClientRect();
-   const actions=[...document.querySelectorAll('#inspect-actions .chat-action')];
-   const section=document.querySelector('.inspect-technical-inner>.inspect-block');
-   return {screenScrolls:document.querySelector('#inspect-screen').parentElement.id==='inspect-body',mascotInside:mascot.bottom<=frame.bottom&&mascot.right<=frame.right,mascotShare:mascot.height/frame.height,actionWidths:actions.map(action=>action.querySelector('.chat-action-icon').getBoundingClientRect().width),nestedBorder:getComputedStyle(section).borderTopWidth};
-  });
-  assert.equal(layout.screenScrolls,true,'the mobile desktop hero scrolls with Details content');
-  assert.equal(layout.mascotInside,true,'the mascot stays inside the desktop preview');
-  assert.ok(layout.mascotShare<=.39,'the visible mascot fits the preview height');
-  assert.deepEqual(layout.actionWidths,[48,48,48],'all quick actions share one icon style');
-  assert.equal(layout.nestedBorder,'0px','Technical details has one card boundary');
-  await page.$eval('#inspect-access',section=>section.open=true);
+  const captureDir='/data/workspace/captures/details-redesign';await mkdir(captureDir,{recursive:true});
+  await page.$eval('[data-ip-row="access"]',button=>button.click());
+  await page.waitForFunction(()=>document.querySelector('#inspect-title').textContent==='Access & permissions'&&!document.querySelector('[data-ip-page="access"]').hidden);
+  assert.equal(await page.$eval('#inspect-access',node=>getComputedStyle(node).display),'block');
+  await page.screenshot({path:captureDir+'/access-390.png'});
+  await page.setViewport({width:1440,height:900,isMobile:true,hasTouch:true});await page.screenshot({path:captureDir+'/access-1440.png'});
+  await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
   await page.$eval('#inspect-edit-roles',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#role-editor-modal').hidden);
   await page.$eval('#role-editor-modal [data-close]',button=>button.click());
   await page.$eval('#inspect-toggle-protection',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-toggle-protection').getAttribute('aria-checked')==='true');
   assert.equal(protectionWrites,1);
-  await page.$eval('#inspect-contacts',section=>section.open=true);
+  await page.$eval('#inspect-prototype-back',button=>button.click());
+  await page.$eval('[data-ip-row="contacts"]',button=>button.click());
+  await page.waitForFunction(()=>document.querySelector('#inspect-title').textContent==='Contacts'&&!document.querySelector('[data-ip-page="contacts"]').hidden);
+  await page.screenshot({path:captureDir+'/contacts-390.png'});
+  await page.setViewport({width:1440,height:900,isMobile:true,hasTouch:true});await page.screenshot({path:captureDir+'/contacts-1440.png'});
   await page.$eval('#inspect-contact-permissions',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#role-editor-modal').hidden);
   await page.close();

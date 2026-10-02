@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
 const assetNames=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','run-budget-policy.js','idle-policy.css'];
@@ -42,10 +42,15 @@ test('box details reports attachment use and clears delivered media after confir
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder'&&document.querySelector('#chat-loading').hidden);
   await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#inspect').hidden);
-  await page.evaluate(()=>{const fold=document.querySelector('details[data-fold=technical]');if(fold&&!fold.open)fold.querySelector('summary').click()});
+  await page.$eval('[data-ip-row="attachments"]',button=>button.click());
+  await page.waitForFunction(()=>!document.querySelector('[data-ip-page="attachments"]').hidden);
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-rows')?.textContent.includes('5.0 MiB'));
+  const captureDir='/data/workspace/captures/details-redesign';await mkdir(captureDir,{recursive:true});
+  await page.setViewport({width:390,height:844});await page.screenshot({path:captureDir+'/attachments-390.png'});
+  await page.setViewport({width:1440,height:900});await page.screenshot({path:captureDir+'/attachments-1440.png'});
   assert.match(await page.$eval('#inspect-attachment-rows',element=>element.textContent),/5\.0 MiB.*6\.0 MiB \/ 1\.00 GiB.*Unused uploads.*1\.0 MiB/);
-  await page.$eval('#inspect-clear-attachments',e=>e.click());
+  await page.$eval('#inspect-prototype-back',e=>e.click());
+  await page.$eval('[data-ip-row="clear-attachments"]',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-status')?.textContent.includes('freed 5.0 MiB'));
   assert.equal(await page.evaluate(()=>window.__attachmentClearConfirmed),true);
   assert.deepEqual(deleteBody,{confirmation:'Builder'});
@@ -56,6 +61,7 @@ test('box details reports attachment use and clears delivered media after confir
   await page.waitForFunction(()=>document.querySelector('#inspect').hidden);
   await page.click('#chat-info');
   await page.waitForFunction(()=>!document.querySelector('#inspect').hidden);
+  await page.$eval('[data-ip-row="attachments"]',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-rows')?.textContent.includes('No data'));
   const unavailable=await page.$eval('#inspect-attachment-rows',element=>element.textContent);
   assert.equal((unavailable.match(/No data/g)||[]).length,3,'incomplete counts and sizes show a consistent fallback');

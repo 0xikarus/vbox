@@ -40,7 +40,8 @@ test('chat details edits one box creation limit without changing its other permi
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder'&&document.querySelector('#chat-loading').hidden);
   await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#inspect').hidden);
-  await page.evaluate(()=>{const fold=document.querySelector('details[data-fold=technical]');if(fold&&!fold.open)fold.querySelector('summary').click()});
+  await page.$eval('[data-ip-row="access"]',button=>button.click());
+  await page.waitForFunction(()=>!document.querySelector('[data-ip-page="access"]').hidden);
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='2 total');
   await page.$eval('#inspect-create-limit input',input=>{input.value='5';input.dispatchEvent(new Event('input',{bubbles:true}))});
   await page.$eval('#inspect-create-limit .idle-policy-controls button',e=>e.click());
@@ -52,7 +53,8 @@ test('chat details edits one box creation limit without changing its other permi
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='4 total');
   await page.$eval('[data-box-id="reader"]',row=>row.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='Off');
-  assert.equal(await page.$eval('#inspect-create-limit',root=>root.hidden),true);
+  assert.equal(await page.$eval('#inspect-create-limit',root=>root.hidden),false);
+  assert.equal(await page.$eval('#inspect-create-limit input',input=>input.disabled),true);
   await page.$eval('[data-box-id="builder"]',row=>row.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='5 total');
   await page.close();
