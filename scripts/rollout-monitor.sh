@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base_url="${VMBOX_MONITOR_URL:-https://controller.example.com}"
+if (( $# > 1 )); then
+  printf 'usage: %s [controller URL] (or set VMBOX_MONITOR_URL)\n' "$0" >&2
+  exit 2
+fi
+base_url="${1:-${VMBOX_MONITOR_URL:-}}"
+if [[ -z "$base_url" ]]; then
+  printf 'set VMBOX_MONITOR_URL or pass the controller URL as the first argument\n' >&2
+  exit 2
+fi
+base_url="${base_url%/}"
 token="${VMBOX_MONITOR_TOKEN:?set VMBOX_MONITOR_TOKEN}"
 provider="${VMBOX_MONITOR_PROVIDER:-railway}"
 credential="${VMBOX_MONITOR_CREDENTIAL:-primary}"
