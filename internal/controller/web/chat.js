@@ -2321,7 +2321,7 @@ function pairTileStatus(tile,mode,label){
   $('#chat-header-state').textContent='Direct messages between boxes · read only';
   {const avatar=pairAvatarNode(pair);avatar.removeAttribute('aria-hidden');avatar.setAttribute('role','img');avatar.setAttribute('aria-label',pair.boxAName+' and '+pair.boxBName);$('#chat-header-avatar').replaceChildren(avatar)}headerAvatarKey='';
   renderPairMessages(pair);lastSignature=pair.messages.map(message=>message.id+message.updatedAt+message.state).join('|');
-  setBanner('');statusEl.textContent='';renderRows();doodle('');
+  setBanner('');renderRows();doodle('');
   const loadingKey='#pair='+encodeURIComponent(key);historyLoadingFor=loadingKey;
   void refreshPairMessages().catch(e=>{if(selectedPair===key)statusEl.textContent=e.message}).finally(()=>{if(historyLoadingFor===loadingKey)historyLoadingFor=''});
   const finish=()=>{
@@ -2937,7 +2937,8 @@ function pairTileStatus(tile,mode,label){
  let inspectWorkerKey='',inspectWorker=null;
  let inspectInstructionsFor='',inspectInstructions=null,inspectInstructionsRequest=0;
  let inspectAttachmentFor='',inspectAttachmentCache=null,inspectAttachmentRequest=0;
- const storageSize=bytes=>bytes>=1024*1024*1024?(bytes/1073741824).toFixed(2)+' GiB':bytes>=1024*1024?(bytes/1048576).toFixed(1)+' MiB':bytes>=1024?(bytes/1024).toFixed(1)+' KiB':bytes+' B';
+ const storageSize=bytes=>typeof bytes!=='number'||!Number.isFinite(bytes)||bytes<0?'–':bytes>=1024*1024*1024?(bytes/1073741824).toFixed(2)+' GiB':bytes>=1024*1024?(bytes/1048576).toFixed(1)+' MiB':bytes>=1024?(bytes/1024).toFixed(1)+' KiB':bytes+' B';
+ const storageSummary=(bytes,count)=>storageSize(bytes)==='–'||!Number.isSafeInteger(count)||count<0?'No data':storageSize(bytes)+' · '+count+' files';
  async function loadInspectAttachmentStorage(box){
   const request=++inspectAttachmentRequest;inspectAttachmentFor=box.id;inspectAttachmentCache=null;
   try{
@@ -3144,9 +3145,9 @@ function pairTileStatus(tile,mode,label){
    if(inspectAttachmentFor!==box.id)void loadInspectAttachmentStorage(box);
    const usage=inspectAttachmentCache;
    fillRows($('#inspect-attachment-rows'),usage?.error?[['Storage',usage.error,'alert']]:[
-    ['This box',usage?storageSize(usage.boxBytes)+' · '+usage.boxCount+' files':'Loading…'],
-    ['Account',usage?storageSize(usage.accountBytes)+' / '+storageSize(usage.limitBytes):'Loading…'],
-    ['Unused uploads',usage?storageSize(usage.unusedBytes||0)+' · '+(usage.unusedCount||0)+' files':'Loading…'],
+    ['This box',usage?storageSummary(usage.boxBytes,usage.boxCount):'Loading…'],
+    ['Account',usage?(storageSize(usage.accountBytes)==='–'||storageSize(usage.limitBytes)==='–'?'No data':storageSize(usage.accountBytes)+' / '+storageSize(usage.limitBytes)):'Loading…'],
+    ['Unused uploads',usage?storageSummary(usage.unusedBytes,usage.unusedCount):'Loading…'],
    ]);
    $('#inspect-attachment-empty').hidden=!usage||!!usage.error||Number(usage.boxCount)>0;
    $('#inspect-clear-attachments').disabled=!usage||!!usage.error||!usage.clearableCount;
