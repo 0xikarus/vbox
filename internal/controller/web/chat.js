@@ -279,7 +279,8 @@
   if(r.status===401){showLogin('Please log in to the controller.');throw Error('Please log in to the controller.')}
   if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
   const rawBusy=r.headers.get('X-Vmbox-Agent-Busy');
-  return {messages:await r.json(),busy:rawBusy===null?null:rawBusy==='true',busySince:r.headers.get('X-Vmbox-Agent-Busy-Since')||'',mascotMood:r.headers.get('X-Vmbox-Mascot-Mood')||'',mascotActivity:r.headers.get('X-Vmbox-Mascot-Activity')||'',mascotObservedAt:r.headers.get('X-Vmbox-Mascot-Observed-At')||''};
+  const payload=await r.json();
+  return {messages:Array.isArray(payload)?payload:payload.messages||[],busy:rawBusy===null?null:rawBusy==='true',busySince:r.headers.get('X-Vmbox-Agent-Busy-Since')||'',mascotMood:r.headers.get('X-Vmbox-Mascot-Mood')||'',mascotActivity:r.headers.get('X-Vmbox-Mascot-Activity')||'',mascotObservedAt:r.headers.get('X-Vmbox-Mascot-Observed-At')||''};
  }
  const boxPath=id=>'/v1/logical-boxes/'+encodeURIComponent(id);
 
@@ -1494,10 +1495,51 @@
   imagePending.clear();
  }
  const questionSelections=new Map();// messageId -> Set of picked choices; survives live re-renders
+ const replyParents=new Map(),replyParentRequests=new Set();
+ const replyParentKey=(box,id)=>box.id+':'+id;
+ function replyQuoteText(parent){
+  if(!parent)return 'Reply to an earlier message';
+  const author=messageAuthor(parent),content=(parent.question?.text||parent.text||(parent.images?.length?'Image':'Message')).replace(/\s+/g,' ').trim();
+  const limit=Math.max(0,80-author.length-2),short=Array.from(content);
+  return author+': '+(short.length>limit?short.slice(0,Math.max(0,limit-1)).join('').trimEnd()+'…':content);
+ }
+ function rememberReplyParent(box,parent){
+  if(!box.id)return;
+  replyParents.set(replyParentKey(box,parent.id),parent);
+  if(replyParents.size>500)replyParents.delete(replyParents.keys().next().value);
+ }
+ function fillReplyQuotes(box,parent){
+  rememberReplyParent(box,parent);
+  for(const quote of document.querySelectorAll('.msg-parent[data-parent-id="'+CSS.escape(parent.id)+'"]')){
+   if(quote.dataset.chatId===box.id)quote.textContent=replyQuoteText(parent);
+  }
+ }
+ function loadReplyParent(box,message){
+  if(!box.id||!boxes.has(box.id))return;
+  const key=replyParentKey(box,message.parentMessageId);
+  if(replyParentRequests.has(key))return;
+  replyParentRequests.add(key);
+  void chatHistory(boxPath(box.id)+'/messages?limit=100&threadId='+encodeURIComponent(message.threadId||message.parentMessageId)).then(result=>{
+   const parent=result.messages.find(value=>value.id===message.parentMessageId);
+   if(parent)fillReplyQuotes(box,parent);
+  }).catch(()=>{}).finally(()=>replyParentRequests.delete(key));
+ }
+ function highlightReplyTarget(parent){
+  if(!parent)return false;
+  parent.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+  parent.classList.add('msg-reply-highlight');
+  setTimeout(()=>parent.classList.remove('msg-reply-highlight'),1800);
+  return true;
+ }
+ async function jumpToReplyParent(box,message){
+  const id=message.parentMessageId,selector='.msg[data-message-id="'+CSS.escape(id)+'"]';
+  if(highlightReplyTarget(messagesEl.querySelector(selector)))return;
+  if(selected===box.id){await openThread(message.threadId||id);highlightReplyTarget(threadMessages.querySelector(selector))}
+ }
  function questionAnswered(box,message){
   if(answeredQuestions.has(message.id))return true;
   const ms=box.messages||[],index=ms.findIndex(m=>m.id===message.id);
-  return index>=0&&ms.slice(index+1).some(m=>m.direction==='user'&&m.text.startsWith('Answer to "'+message.question.text+'":'));
+  return index>=0&&ms.slice(index+1).some(m=>m.direction==='user'&&(m.parentMessageId===message.id||m.text.startsWith('Answer to "'+message.question.text+'":')));
  }
  function questionForm(box,message){
   if(!message.question)return null;
@@ -1526,7 +1568,7 @@
    if(!selectedChoices.length){statusEl.textContent='Pick at least one option.';return}
    send.disabled=true;
    try{
-    await api(boxPath(selected)+'/messages','POST',{'Idempotency-Key':crypto.randomUUID()},{text:'Answer to "'+message.question.text+'": '+selectedChoices.join(', '),parentMessageId:message.id});
+    await api(boxPath(selected)+'/messages','POST',{'Idempotency-Key':crypto.randomUUID()},{text:selectedChoices.join(', '),parentMessageId:message.id});
     answeredQuestions.add(message.id);questionSelections.delete(message.id);
     send.textContent='Answer sent';choices.querySelectorAll('button').forEach(c=>{c.disabled=true});
     statusEl.textContent='Selection sent.';await refreshMessages();
@@ -1554,9 +1596,15 @@
   if(message.direction==='system'){row.className='msg system';row.append(Object.assign(document.createElement('span'),{className:'text',textContent:message.text}));return row}
   const mine=message.direction==='user';
   row.className='msg '+(mine?'user':'agent')+(message.state==='silent'?' note':'')+(message.state==='streaming'?' streaming':'');
+  if(message.id)row.dataset.messageId=message.id;
   if(message.pairAuthor){const author=document.createElement('span');author.className='agent-origin';author.textContent=message.pairAuthor;row.append(author)}
   if(message.direction==='box'){const origin=document.createElement('span');origin.className='agent-origin';origin.textContent='From '+(boxes.get(message.senderBoxId)?.name||'agent box');row.append(origin)}
-  if(!readOnly&&message.parentMessageId){const parent=(box.messages||[]).find(value=>value.id===message.parentMessageId),quote=document.createElement('button');quote.type='button';quote.className='msg-parent';quote.textContent=(parent?messageAuthor(parent)+': ':'')+(parent?.question?.text||parent?.text||'Earlier message');quote.title='Show the full thread';quote.onclick=()=>void openThread(message.threadId||message.parentMessageId);row.append(quote)}
+  if(message.parentMessageId){
+   const parent=message.parentPreview||(box.messages||[]).find(value=>value.id===message.parentMessageId)||replyParents.get(replyParentKey(box,message.parentMessageId));
+   if(parent)rememberReplyParent(box,parent);
+   const quote=document.createElement('button');quote.type='button';quote.className='msg-parent';quote.dataset.parentId=message.parentMessageId;quote.dataset.chatId=box.id||'';quote.textContent=replyQuoteText(parent);quote.title='Jump to original message';quote.onclick=()=>void jumpToReplyParent(box,message);row.append(quote);
+   if(!parent&&!readOnly)loadReplyParent(box,message);
+  }
   if(message.state==='silent'){const label=document.createElement('span');label.className='note-label';label.textContent='Note · not sent to the agent';row.append(label)}
   if(message.text.startsWith('Forwarded from ')){const mark=document.createElement('span');mark.className='fwd-mark';const end=message.text.indexOf(':\n');mark.textContent=end>0?message.text.slice(0,end+1):'Forwarded';row.append(mark)}
   const text=document.createElement('div');text.className='text';
@@ -1729,8 +1777,8 @@
   toggle.onclick=()=>setOpen(toggle.getAttribute('aria-expanded')!=='true');
   group.append(toggle,list);return group;
  }
- function messageAuthor(message){return message.direction==='user'?'You':message.direction==='box'?(boxes.get(message.senderBoxId)?.name||'Agent box'):'Agent'}
- function setReply(message){replyingTo=message;replyPreview.hidden=false;$('#reply-preview-text').textContent=messageAuthor(message)+': '+(message.question?.text||message.text||(message.images?.length?'Image':'Message'));inputEl.focus()}
+ function messageAuthor(message){return message.pairAuthor||(message.direction==='user'?'You':message.direction==='box'?(boxes.get(message.senderBoxId)?.name||'Agent box'):'Agent')}
+ function setReply(message){replyingTo=message;replyPreview.hidden=false;$('#reply-preview-text').textContent=replyQuoteText(message);inputEl.focus()}
  function cancelReply(){replyingTo=null;replyPreview.hidden=true;$('#reply-preview-text').textContent=''}
  $('#reply-cancel').onclick=cancelReply;
  let openThreadID='';
@@ -1867,7 +1915,7 @@
   }
   const pending=pendingSends.get(box.id);
   if(pending&&!(box.messages||[]).slice(pending.messageCount).some(m=>m.direction==='user'&&m.text===pending.text)){
-   const row=bubble(box,{id:'pending',direction:'user',state:'delivering',text:pending.text||'📷 Image',createdAt:pending.at,images:[]});
+   const row=bubble(box,{id:'pending',direction:'user',state:'delivering',text:pending.text||'📷 Image',createdAt:pending.at,images:[],parentMessageId:pending.parentMessageId,parentPreview:pending.parentPreview});
    row.querySelector('.fwd')?.remove();paint(row,'pending');messagesEl.append(row);
   }
   if(!(box.messages||[]).length&&!pending){const hint=document.createElement('p');hint.className='day-sep';hint.textContent='No messages yet — say hello to '+box.name;messagesEl.append(hint)}
@@ -2631,7 +2679,7 @@ function pairTileStatus(tile,mode,label){
   // Let the cleared composer paint before rebuilding a long transcript for
   // the pending bubble. The network request can start without that render.
   if(showPending){
-   const pending={messageCount:(box.messages||[]).length,text,at:new Date().toISOString()};
+   const pending={messageCount:(box.messages||[]).length,text,at:new Date().toISOString(),parentMessageId:replyTarget?.id||'',parentPreview:replyTarget};
    pendingSends.set(boxID,pending);
    requestAnimationFrame(()=>setTimeout(()=>{
     if(pendingSends.get(boxID)!==pending)return;
