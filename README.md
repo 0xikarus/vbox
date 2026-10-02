@@ -7,109 +7,62 @@
 
 # vbox
 
-vbox provides a meta-harness and persistent environments for your agents. Create boxes in the browser and work with their desktop, tmux terminal, and agent chat. The controller manages accounts, workers, and storage; you choose where to host them.
+vbox is a self-hosted home for coding agents. Each box keeps its files and agent sessions, with chat, a desktop, and a TMUX terminal in the browser. A controller manages accounts, storage, and worker capacity; you choose where to run it.
 
-<p><strong>Supported harnesses and subscriptions:</strong>
-  <a href="https://openai.com/codex"><img src="docs/assets/harness-codex.svg" alt="" width="16" height="16"> Codex (ChatGPT)</a> ·
-  <a href="https://claude.com/product/claude-code"><img src="docs/assets/harness-claude.svg" alt="" width="16" height="16"> Claude Code (Claude)</a> ·
-  <a href="https://opencode.ai"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/harness-opencode-dark.svg"><img src="docs/assets/harness-opencode-light.svg" alt="" width="16" height="16"></picture> OpenCode (model API keys)</a>
-</p>
+Codex, Claude Code, and OpenCode are supported. Boxes can also use owner-approved MCP tools to message each other and work with desktops.
 
-Grok Bot inspired this project. I wanted to bring my own agent harness and host the boxes myself, so I built vbox.
+## Screenshots
 
-## Features
+These screens use fixture boxes named **builder** and **reviewer**. The desktop image is synthetic.
 
-- **Persistent virtual machines:** keep box files and agent sessions across hibernation and restarts.
-- **Full desktop access:** use the display, keyboard, mouse, screenshots, terminal, and Grid from your browser.
-- **Agent Chat:** talk to each box with images, replies, pinned conversations, and groups.
-- **Agent MCP:** let boxes message each other, create or wake boxes, inspect desktops, and use computer tools with owner-controlled permissions.
-- **Self-hosting:** run the controller and workers yourself and choose where each box runs.
-- **Direct CLI access:** open a box terminal with a command as simple as `vbox mybox`.
+| Desktop chat | Mobile chat |
+| --- | --- |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui/chat-dark.webp"><img src="docs/assets/ui/chat-light.webp" alt="Chat with pinned boxes, activity, messages, and image attachments" width="900"></picture> | <img src="docs/assets/ui/chat-mobile.webp" alt="Chat on a phone" width="260"> |
 
-## Installation
+| Box ↔ box chat with pinned desktops | Details: resources, hibernation, and activity |
+| --- | --- |
+| <img src="docs/assets/ui/pair-desktops.webp" alt="Builder and reviewer direct chat with two pinned desktop views" width="700"> | <img src="docs/assets/ui/details-resources-activity.webp" alt="Box details with RAM, swap, disk, hibernation limits, and activity" width="700"> |
 
-vbox needs a controller with PostgreSQL and HTTPS, plus at least one worker. Running capacity can incur hosting charges.
+| Providers | Workspace |
+| --- | --- |
+| <img src="docs/assets/ui/providers.webp" alt="Providers popup showing workers, slots, and host resources" width="700"> | <img src="docs/assets/ui/workspace.webp" alt="Workspace desktop beside status, resources, and power controls" width="700"> |
+
+| Image annotation | Mobile swipe |
+| --- | --- |
+| <img src="docs/assets/ui/annotation.webp" alt="Annotating a chat image with a rectangle and arrow" width="700"> | <img src="docs/assets/ui/swipe-mobile.gif" alt="Swiping between the mobile chat list and a conversation" width="260"> |
+
+## What you can do
+
+- **Work across boxes:** pin chats, read box ↔ box messages, and keep both desktops visible above their conversation. The mascot and short activity phrase show each agent's current mood and work.
+- **Chat with context:** send images, annotate them with pen, rectangle, ellipse, line, or arrow, and reply in threads. Mobile swipe gestures navigate chats; a local chat cache makes revisits quicker.
+- **Manage capacity:** the Providers popup summarizes workers, slots, and host resources; the Providers page lets owners edit and delete provider configurations. Details shows RAM, swap, disk, activity, hibernation, and limits. Usage is available from the top bar.
+- **Keep work between sessions:** hibernation frees a worker slot while retaining box files. Wake the box to resume; closing a browser tab leaves a running box alone.
+
+## Quick start
+
+You need a controller with PostgreSQL and HTTPS, plus at least one worker. Running capacity can incur hosting charges.
 
 1. Deploy the controller and bootstrap an owner account using the [controller guide](docs/CONTROLLER.md).
-2. Start a Linux worker and register its capacity. Follow the [self-hosted VPS guide](docs/LINUX-VPS-SETUP.md) or choose [another worker provider](docs/PROVIDERS.md).
-3. Open the controller in a browser, sign in, and create a box. Choose its agent, saved login, worker pool, and optional tools.
+2. Register a worker with the [Linux VPS guide](docs/LINUX-VPS-SETUP.md) or [another provider](docs/PROVIDERS.md).
+3. Open the controller, sign in, add an agent profile, and create a box. Chat, desktop, and TMUX are available in its browser workspace.
 
-The browser gives each running box **Desktop**, **TMUX**, and **Chat** views. The [agent desktop guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md) covers tools and browser state; the [local prompt API](docs/LOCAL-AGENT-PROMPT.md) lets apps inside a box send messages.
-
-### Optional CLI
-
-On Linux or macOS, install Git, OpenSSH, and either Go 1.26 or Docker. On Windows, use a Linux environment such as WSL.
+For terminal access on Linux or macOS, install Git, OpenSSH, and Go 1.26 or Docker, then:
 
 ```bash
 git clone https://github.com/0xikarus/vmbox-service.git
 cd vmbox-service
 ./install.sh
-```
-
-The installer places `vbox` in `~/.local/bin` and a `vmbox` compatibility symlink. Open a new terminal if needed, then connect with the token supplied by the controller owner:
-
-```bash
 vbox connect https://YOUR-CONTROLLER
-vbox profiles upload
-vbox new mybox
-vbox mybox
+vbox new builder
+vbox builder
 ```
 
-In **Manage → Profiles → Add profile**, owners can sign in to Codex or Claude Code through a temporary browser terminal, or verify an API key for Codex, Claude Code, OpenRouter, or Venice and select a model. Codex offers ChatGPT device code or a browser link. Device login must be enabled in ChatGPT security or workspace settings. For the browser link, complete sign-in, then copy the full `127.0.0.1:1455/auth/callback` URL from the browser address bar into the dialog; the controller checks the OAuth state and delivers it to the waiting Codex CLI. API keys use provider API billing. The temporary login session is owner-scoped, expires after ten minutes, and saves only the validated credential files in the encrypted profile store. New boxes can select the profile immediately. Apply it to an existing box through **Credentials**; changing the saved profile alone does not update copied box credentials.
+The CLI is named `vbox`; `vmbox` is a compatibility symlink. Run `vbox help` for other commands.
 
-`vbox profiles upload` also imports Codex, Claude, OpenCode, or GitHub credentials into encrypted saved profiles. Run `vbox help` for all commands. `vbox desktop mybox` needs a local VNC viewer; the browser desktop does not.
+## Architecture
 
-## Browser UI
+The controller serves the browser UI and API, stores account and box metadata in PostgreSQL, and assigns running boxes to worker slots. Workers host the box environment and persistent files. Hibernation stops processes and releases the slot; the box can be placed again when it wakes. Agent permissions and provider settings are controlled by the owner.
 
-Chat, manage boxes, and open a desktop or terminal from the browser. These screenshots use demo boxes.
+## Documentation
 
-<table>
-  <tr>
-    <td width="72%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui/chat-dark.png"><img src="docs/assets/ui/chat-light.png" alt="Desktop chat with pinned conversations, message replies, and MCP activity" width="1440"></picture></td>
-    <td width="28%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui/chat-mobile-dark.png"><img src="docs/assets/ui/chat-mobile-light.png" alt="Chat on a phone" width="390"></picture></td>
-  </tr>
-  <tr><td>Desktop chat keeps conversations, messages, and details in view.</td><td>Mobile chat fits the same controls on a small screen.</td></tr>
-</table>
-
-![Details panel with a live, view-only desktop preview](docs/assets/ui/details-live.png)
-
-Details opens a live desktop preview when the box desktop is available.
-
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui/manage-dark.png"><img src="docs/assets/ui/manage-light.png" alt="Manage page with box rows and controls" width="1440"></picture>
-
-Manage shows box state and the controls to create, start, or hibernate boxes.
-
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui/workspace-dark.png"><img src="docs/assets/ui/workspace-light.png" alt="Box workspace with desktop and terminal panels" width="1440"></picture>
-
-Workspace puts the box desktop and terminal within reach.
-
-![Grid of box workspaces in dark mode](docs/assets/ui/grid-dark.png)
-
-Dark mode also covers the Grid view for several boxes at once.
-
-![Animated mascot showing a box working, typing, and replying](docs/assets/ui/mascot-chat.gif)
-
-The mascot shows when a box is busy, typing, or ready with a reply. A running agent's box-local MCP process checks its active native conversation every 10 seconds and sends a small sample when it changes. Compact local models on the controller derive mood and activity from the text; the controller stores the derived state and a digest to detect unchanged samples, never the sample itself. See the [mascot classifier guide](docs/MASCOT-CLASSIFIER.md) for training and evaluation.
-
-## How boxes work
-
-A running box uses a worker slot. Hibernation frees the slot and keeps the box's files, but stops its processes. When a saved agent session is available, chat offers to restore it after wake. Closing the browser tab leaves the box running.
-
-## Security and limits
-
-Agents can run commands inside their boxes, and the default image gives the box user passwordless sudo. Keep the controller behind HTTPS, protect its token and encryption key, and choose worker isolation for your host. See [controller operations](docs/CONTROLLER.md) and [shared worker isolation](docs/SHARED-WORKERS.md) before opening an installation to other users.
-
-Saved chat attachments share a 1 GiB account limit. Owners can clear a box's attachments in **Chat → Box details** without deleting message text.
-
-## Development
-
-The [documentation index](docs/README.md) links setup guides and the dated product comparison. The [agent guide](docs/AGENT-GUIDE.md) maps implementation and lifecycle rules; the [API contract](docs/openapi.yaml) documents endpoints.
-
-```bash
-go test ./...
-go vet ./...
-bash tests/run.sh
-npm run test:browser
-```
-
-Some integration tests require a disposable PostgreSQL database or container. The browser suite requires Chromium; check the scripts before running tests that create resources.
+Start with the [documentation index](docs/README.md). See [controller operations](docs/CONTROLLER.md), [worker isolation](docs/SHARED-WORKERS.md), the [agent desktop guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md), and the [API contract](docs/openapi.yaml).
