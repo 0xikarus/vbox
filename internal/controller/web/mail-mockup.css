@@ -66,6 +66,11 @@
 #inspect.details-prototype .mail-detail-head dt{color:var(--vb-ink-faint)}
 #inspect.details-prototype .mail-detail-head dd{min-width:0;margin:0;color:var(--vb-ink-soft);overflow-wrap:anywhere}
 #inspect.details-prototype .mail-auth{display:flex;gap:7px;margin-top:13px;padding-top:12px;border-top:1px solid var(--vb-line)}
+#inspect.details-prototype .mail-secret{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 15px 12px;padding:10px 11px;border:1px solid var(--vb-line);border-radius:10px;background:var(--vb-surface-2)}
+#inspect.details-prototype .mail-secret>div{display:grid;gap:3px;min-width:0}
+#inspect.details-prototype .mail-secret strong{font-size:12px;color:var(--vb-ink)}
+#inspect.details-prototype .mail-secret small{font-size:11px;color:var(--vb-ink-soft)}
+#inspect.details-prototype .mail-secret button{min-width:70px;min-height:40px;padding:0 12px;border:1px solid var(--vb-line-strong);border-radius:9px;background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font);cursor:pointer}
 #inspect.details-prototype .mail-body{padding:2px 15px 16px;color:var(--vb-ink);font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
 #inspect.details-prototype .mail-attachment{display:flex;align-items:center;gap:9px;padding:0 15px 15px}
 #inspect.details-prototype .mail-attachment>span{font-size:25px;color:var(--vb-ink-soft)}
@@ -74,6 +79,7 @@
 #inspect.details-prototype .mail-attachment small{font-size:11px;color:var(--vb-ink-soft)}
 #inspect.details-prototype .mail-attachment button{max-width:115px;white-space:normal;line-height:1.15}
 #inspect.details-prototype .mail-inline-status{min-height:16px;margin:0 3px;color:var(--vb-ink-soft);font-size:12px}
+#inspect.details-prototype .mail-mark-read:disabled{opacity:.6;cursor:default}
 #inspect.details-prototype .mail-notice{padding:12px 14px;border:1px solid var(--vb-line);border-radius:12px;background:var(--vb-surface);color:var(--vb-ink-soft);font-size:12px;line-height:1.4}
 #inspect.details-prototype .mail-notice.warn{border-color:var(--vb-warn,#cc842e);background:var(--vb-warn-soft,#fff5e7);color:var(--vb-ink)}
 #inspect.details-prototype .mail-outbox-row{align-items:center;min-height:82px}

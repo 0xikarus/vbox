@@ -55,7 +55,8 @@ test('fixture-only mail mockup covers inbox, detail, approval, and quiet states'
   const base='http://127.0.0.1:'+server.address().port;
   const capture=process.env.MAIL_CAPTURE_DIR;
   if(capture)await mkdir(capture,{recursive:true});
-  for(const width of [390,1440])for(const theme of ['light','dark']){
+  const viewports=process.env.MAIL_CAPTURE_TARGETS?[[390,'light'],[1440,'light']]:[390,1440].flatMap(width=>['light','dark'].map(theme=>[width,theme]));
+  for(const [width,theme] of viewports){
    const page=await browser.newPage();
    await page.setViewport({width,height:900,isMobile:width<600,hasTouch:width<600});
    await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
@@ -71,6 +72,14 @@ test('fixture-only mail mockup covers inbox, detail, approval, and quiet states'
    assert.equal(await page.$eval('#mail-subscribed',node=>node.checked),true);
    assert.equal(await page.$$eval('[data-mail-id]',nodes=>nodes.length),4);
    await save('inbox');
+   await page.click('[data-mail-id="mail-101"]');
+   assert.equal(await page.$eval('[data-ip-page="mailDetail"]',node=>node.textContent.includes('483921')),false,'OTP hidden before reveal');
+   assert.equal(await page.$eval('[data-mail-action="read"]',node=>node.classList.contains('ip-page-secondary')),true,'mark read is secondary');
+   await save('otp-masked');
+   await page.click('[data-mail-action="reveal"]');
+   assert.equal(await page.$eval('.mail-body',node=>node.textContent.includes('483921')),true,'explicit reveal shows OTP');
+   await save('otp-revealed');
+   await page.click('#inspect-prototype-back');
    if(width===390)assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('[data-ip-page="mail"] button,[data-ip-page="mail"] input')].filter(node=>node.getClientRects().length&&!node.disabled).flatMap(node=>{const r=node.getBoundingClientRect();return r.width>=40&&r.height>=40?[]:[`${node.id||node.textContent.trim()}: ${r.width}×${r.height}`]})),[],'mail targets are at least 40px');
    await page.$eval('#inspect-prototype-page',node=>node.scrollTop=node.scrollHeight);
    await save('inbox-list');
@@ -99,7 +108,10 @@ test('fixture-only mail mockup covers inbox, detail, approval, and quiet states'
    await page.click('#mail-mockup-review [data-review="reject"]');
    assert.equal(await page.$eval('#mail-mockup-review',node=>node.open),false);
    assert.equal(await page.$eval('#mail-mockup-approval b',node=>node.textContent),'1');
+   assert.equal(await page.$eval('#mail-mockup-sidebar-signal b',node=>node.textContent),'1');
+   assert.equal(await page.$eval('#mail-mockup-push p',node=>node.textContent),'1 agent draft is waiting in Outbox.');
    await page.click('#inspect-close');
+   await save('global-signal');
    assert.equal(await page.$eval('#mail-mockup-chat-preview',node=>node.textContent.includes('3 new mails')),true);
    await save('agent-chat');
    await page.click('.mail-push-close');
@@ -109,7 +121,7 @@ test('fixture-only mail mockup covers inbox, detail, approval, and quiet states'
    if(width===390)assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'no horizontal overflow');
    await page.close();
   }
-  for(const variant of ['disabled','empty','error'])for(const width of [390,1440])for(const theme of ['light','dark']){
+  for(const variant of process.env.MAIL_CAPTURE_TARGETS?[]:['disabled','empty','error'])for(const width of [390,1440])for(const theme of ['light','dark']){
     const page=await browser.newPage();await page.setViewport({width,height:900,isMobile:width<600,hasTouch:width<600});
     await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
     await open(page,base,variant);await page.click('[data-ip-row="mail"]');

@@ -16,7 +16,7 @@
   {id:'out-203',to:'team@fieldnotes.example',subject:'Thanks for the roundup',body:'Thanks for sharing this week’s roundup.',status:'sent',time:'Yesterday'},
   {id:'out-204',to:'promo@unknown.example',subject:'Re: Urgent: verify your account',body:'I can help with this.',status:'rejected',reason:'Sender was not trusted. Do not reply.',time:'Monday'}
  ];
- const state={enabled:initial!=='disabled',subscribed:true,filter:'all',senderFilter:'',subjectFilter:'',error:initial==='error',empty:initial==='empty',outboxTab:'pending_approval',mailId:'mail-101',outboxId:'out-201',reviewMode:'approve'};
+ const state={enabled:initial!=='disabled',subscribed:true,filter:'all',senderFilter:'',subjectFilter:'',error:initial==='error',empty:initial==='empty',outboxTab:'pending_approval',mailId:'mail-101',otpRevealed:false,outboxId:'out-201',reviewMode:'approve'};
  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
  const byId=id=>document.getElementById(id);
  const unread=()=>state.enabled&&!state.empty?fixtureMails.filter(mail=>mail.unread&&!mail.quarantine).length:0;
@@ -48,7 +48,10 @@
  }
  function renderDetail(){
   const mail=fixtureMails.find(item=>item.id===state.mailId)||fixtureMails[0];
-  detailPage.innerHTML=`<div class="mail-untrusted"><strong>Untrusted external content</strong><p>Email can contain instructions from anyone. Review links and attachments before acting.</p></div><section class="ip-card mail-detail-head"><div class="mail-detail-kicker">${mail.quarantine?pill('Quarantined','danger'):pill('Received '+mail.time)}</div><h2>${esc(mail.subject)}</h2><dl><div><dt>From</dt><dd>${esc(mail.sender)} &lt;${esc(mail.from)}&gt;</dd></div><div><dt>To</dt><dd>${esc(address())}</dd></div></dl><div class="mail-auth">${pill('SPF '+mail.spf,mail.spf==='Pass'?'good':'danger')}${pill('DKIM '+mail.dkim,mail.dkim==='Pass'?'good':'danger')}</div></section>${card('Message',`<div class="mail-body">${esc(mail.text)}</div>`)}${mail.attachment?card('Attachment',`<div class="mail-attachment"><span aria-hidden="true">▣</span><div><strong>${esc(mail.attachment.name)}</strong><small>PDF · ${esc(mail.attachment.size)} · scanned</small></div><button type="button" data-mail-action="save">Save to workspace</button></div>`):''}<button class="ip-page-action" type="button" data-mail-action="read">${mail.unread?'Mark as read':'Marked as read'}</button><p class="mail-inline-status" role="status"></p>`;
+  const otp=mail.id==='mail-101';
+  const body=otp&&!state.otpRevealed?mail.text.replace('483921','••••••'):mail.text;
+  const secret=otp?`<div class="mail-secret"><div><strong>Verification code</strong><small>${state.otpRevealed?'Visible until you leave this email.':'Hidden until you choose Reveal.'}</small></div><button type="button" data-mail-action="reveal">${state.otpRevealed?'Hide':'Reveal'}</button></div>`:'';
+  detailPage.innerHTML=`<div class="mail-untrusted"><strong>Untrusted external content</strong><p>Email can contain instructions from anyone. Review links and attachments before acting.</p></div><section class="ip-card mail-detail-head"><div class="mail-detail-kicker">${mail.quarantine?pill('Quarantined','danger'):pill('Received '+mail.time)}</div><h2>${esc(mail.subject)}</h2><dl><div><dt>From</dt><dd>${esc(mail.sender)} &lt;${esc(mail.from)}&gt;</dd></div><div><dt>To</dt><dd>${esc(address())}</dd></div></dl><div class="mail-auth">${pill('SPF '+mail.spf,mail.spf==='Pass'?'good':'danger')}${pill('DKIM '+mail.dkim,mail.dkim==='Pass'?'good':'danger')}</div></section>${card('Message',`${secret}<div class="mail-body">${esc(body)}</div>`)}${mail.attachment?card('Attachment',`<div class="mail-attachment"><span aria-hidden="true">▣</span><div><strong>${esc(mail.attachment.name)}</strong><small>PDF · ${esc(mail.attachment.size)} · scanned</small></div><button type="button" data-mail-action="save">Save to workspace</button></div>`):''}<button class="ip-page-secondary mail-mark-read" type="button" data-mail-action="read" ${mail.unread?'':'disabled'}>${mail.unread?'Mark as read':'Marked as read'}</button><p class="mail-inline-status" role="status"></p>`;
  }
  function renderOutbox(){
   const tabs=`<div class="mail-tabs" role="tablist" aria-label="Outbox status">${[['pending_approval','Pending'],['sent','Sent'],['rejected','Rejected']].map(([key,label])=>`<button type="button" role="tab" aria-selected="${state.outboxTab===key}" data-outbox-tab="${key}">${label}${key==='pending_approval'?` <span>${pending()}</span>`:''}</button>`).join('')}</div>`;
@@ -57,11 +60,12 @@
   outboxPage.innerHTML=`<p class="ip-page-intro">Every agent email waits for your approval before it is sent.</p>${pending()?notice(pending()+' messages need your review. Nothing has been sent yet.','warn'):notice('No mail is waiting for approval.','good')}<section class="ip-card mail-list-card">${tabs}<div class="mail-list">${rows}</div></section>${card('How approval works','<p class="mail-help">Open a draft to edit To, subject, and body. Approve and send, or reject with a reason the agent can read.</p>')}`;
  }
  function updateSignals(){
+  const count=pending();
   if(mainRow){mainRow.querySelector('.ip-row-value').textContent=state.enabled?unread()+' unread · '+address():'Off · '+address();mainRow.hidden=!api.isOwner()}
-  if(outboxRow){outboxRow.querySelector('.ip-row-value').textContent=pending()+' pending';outboxRow.hidden=!api.isOwner()}
-  const signal=byId('mail-mockup-approval');if(signal){signal.hidden=!api.isOwner()||!pending();signal.querySelector('b').textContent=String(pending())}
-  const sidebar=byId('mail-mockup-sidebar-signal');if(sidebar){sidebar.hidden=!api.isOwner()||!pending();sidebar.querySelector('b').textContent=String(pending())}
-  const push=byId('mail-mockup-push');if(push)push.hidden=!pending();
+  if(outboxRow){outboxRow.querySelector('.ip-row-value').textContent=count+' pending';outboxRow.hidden=!api.isOwner()}
+  const signal=byId('mail-mockup-approval');if(signal){signal.hidden=!api.isOwner()||!count;signal.querySelector('b').textContent=String(count)}
+  const sidebar=byId('mail-mockup-sidebar-signal');if(sidebar){sidebar.hidden=!api.isOwner()||!count;sidebar.querySelector('b').textContent=String(count)}
+  const push=byId('mail-mockup-push');if(push){push.hidden=!count;push.querySelector('p').textContent=count+' agent '+(count===1?'draft is':'drafts are')+' waiting in Outbox.'}
  }
  function openReview(item,opener){
   state.outboxId=item.id;state.reviewMode='approve';returnFocus=opener;
@@ -115,7 +119,7 @@
   const push=document.createElement('div');push.id='mail-mockup-push';push.setAttribute('role','status');push.innerHTML='<span class="mail-push-icon">✉</span><div><strong>Mail approval needed</strong><p>2 agent drafts are waiting in Outbox.</p><button type="button">Review drafts</button></div><button class="mail-push-close" type="button" aria-label="Dismiss notification">×</button>';document.body.append(push);push.querySelector('button:not(.mail-push-close)').onclick=top.onclick;push.querySelector('.mail-push-close').onclick=()=>push.hidden=true;
   installReview();
   mailPage.addEventListener('click',async event=>{
-   const mail=event.target.closest('[data-mail-id]');if(mail){state.mailId=mail.dataset.mailId;api.navigate('mailDetail');return}
+   const mail=event.target.closest('[data-mail-id]');if(mail){state.mailId=mail.dataset.mailId;state.otpRevealed=false;api.navigate('mailDetail');return}
    const filter=event.target.closest('[data-mail-filter]');if(filter){state.filter=filter.dataset.mailFilter;renderInbox();return}
    const action=event.target.closest('[data-mail-action]')?.dataset.mailAction;if(!action)return;
    if(action==='outbox')api.navigate('mailOutbox');
@@ -132,6 +136,7 @@
   detailPage.addEventListener('click',event=>{
    const action=event.target.closest('[data-mail-action]')?.dataset.mailAction;if(!action)return;
    if(action==='read'){const mail=fixtureMails.find(item=>item.id===state.mailId);mail.unread=false;renderDetail();updateSignals()}
+   if(action==='reveal'){state.otpRevealed=!state.otpRevealed;renderDetail();detailPage.querySelector('[data-mail-action="reveal"]').focus()}
    if(action==='save')detailPage.querySelector('.mail-inline-status').textContent='Mockup: launch-notes.pdf would be saved to this box’s workspace.';
   });
   outboxPage.addEventListener('click',event=>{
