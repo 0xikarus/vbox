@@ -57,9 +57,10 @@ test('owner provider popup works on every topbar and isolates pool errors',async
    await page.waitForFunction(()=>document.querySelectorAll('.providers-dialog tbody tr').length===2&&document.querySelector('.providers-dialog .providers-row-error'));
    const state=await page.evaluate(()=>{
     const dialog=document.querySelector('.providers-dialog'),rows=[...dialog.querySelectorAll('tbody tr')];
-    return {open:dialog.open,link:dialog.querySelector('.providers-open-link').getAttribute('href'),rows:rows.map(row=>({text:row.innerText,warning:!!row.querySelector('.is-warning'),danger:!!row.querySelector('.is-danger'),diskWarning:row.querySelector('[data-label="Disk"]')?.classList.contains('is-warning'),cpuDanger:row.querySelector('[data-label="CPU"]')?.classList.contains('is-danger'),error:!!row.querySelector('.providers-row-error')}))};
+    return {open:dialog.open,link:dialog.querySelector('.providers-open-link').getAttribute('href'),deleteButtons:[...dialog.querySelectorAll('button')].filter(button=>/delete/i.test(button.textContent)).length,rows:rows.map(row=>({text:row.innerText,warning:!!row.querySelector('.is-warning'),danger:!!row.querySelector('.is-danger'),diskWarning:row.querySelector('[data-label="Disk"]')?.classList.contains('is-warning'),cpuDanger:row.querySelector('[data-label="CPU"]')?.classList.contains('is-danger'),error:!!row.querySelector('.providers-row-error')}))};
    });
    assert.equal(state.open,true);assert.equal(state.link,'/#providers');
+   assert.equal(state.deleteButtons,0,'popup has no delete action');
    assert.match(state.rows[0].text,/alpha[\s\S]*Default[\s\S]*1 used · 1 free[\s\S]*of 4 configured[\s\S]*7\.0 GiB \/ 8\.0 GiB[\s\S]*87\.0 GiB \/ 100\.0 GiB[\s\S]*97% · load 1\.5 \/ 4 cores[\s\S]*2 min ago/);
    assert.equal(state.rows[0].warning,true,'RAM pressure at 87.5% is highlighted');
    assert.equal(state.rows[0].danger,true,'swap pressure at 97.5% uses danger colour');

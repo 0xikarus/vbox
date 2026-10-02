@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdir} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import puppeteer from 'puppeteer-core';
 
 const web=resolve('internal/controller/web');
 const boxes=[{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex'}];
-const providers=[{provider:'railway',name:'primary',config:{}},{provider:'shared-worker',name:'local',config:{}}];
+const providers=[{provider:'railway',name:'primary',config:{}},{provider:'shared-worker',name:'local',config:{host:'worker'}},{provider:'shared-worker',name:'broken',config:{}}];
 test('Manage permission, version, and provider layouts retain their content',async()=>{
  const server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://local'),path=url.pathname;
@@ -20,6 +20,12 @@ test('Manage permission, version, and provider layouts retain their content',asy
    if(path==='/v1/provider-credentials')return json(providers);
    if(path==='/v1/controller-defaults')return json({provider:'railway',providerCredential:'primary'});
    if(path==='/v1/fleet/status')return json({slots:[{id:'s1',state:'free'}],actualSlots:1,freeSlots:1,occupiedSlots:0});
+   if(path==='/v1/fleet/slots')return json({compute_box_slots:2});
+   if(path==='/v1/fleet/host-resources'){
+    if(url.searchParams.get('providerCredential')==='broken'){res.statusCode=502;return json({error:'HTTP 502'})}
+    return json({memoryTotalBytes:8*1024**3,memoryAvailableBytes:1*1024**3,swapTotalBytes:4*1024**3,swapFreeBytes:2*1024**3,cpuCores:0,cpuPercent:0,cpuLoad1:0,observedAt:new Date(Date.now()-120000).toISOString()});
+   }
+   if(path==='/v1/provider-credentials/shared-worker/local/delete-plan')return json({boxes:[],slots:[],cloudServers:0,blockers:[],canDelete:true,isDefault:false});
    if(path==='/v1/agent-cli-versions')return json({claude:'latest',codex:'latest',opencode:'latest'});
    if(path.startsWith('/v1/agent-cli-versions/catalog/'))return json({latest:'1.0.0',versions:['1.0.0']});
    if(path==='/v1/push/vapid-key'){res.statusCode=404;return json({})}
@@ -39,10 +45,29 @@ test('Manage permission, version, and provider layouts retain their content',asy
   const color=await desktop.$eval('#role-editor-modal .mcp-tool-group strong',node=>getComputedStyle(node).color);assert.notEqual(color,'rgb(255, 255, 255)');
   await desktop.goto(base+'#profiles');await desktop.waitForSelector('#agent-cli-versions select');await desktop.waitForFunction(()=>document.querySelector('#agent-cli-versions select').selectedOptions[0]?.textContent.includes('1.0.0'));
   assert(await desktop.$eval('#agent-cli-versions select',node=>node.getBoundingClientRect().width)>=350);
-  await desktop.goto(base+'#providers');await desktop.waitForSelector('#provider-list .provider-actions-more');
-  const row=await desktop.$eval('#provider-list .provider-card:last-of-type .provider-actions',node=>({tops:[...node.children].map(child=>Math.round(child.getBoundingClientRect().top)),labels:[...node.children].map(child=>child.textContent.trim())}));
-  assert(row.tops.every(top=>top===row.tops[0]),JSON.stringify(row));assert.deepEqual(row.labels.slice(0,3),['Edit','Validate','Delete']);
-  await desktop.$eval('#provider-list .provider-actions-more>summary',node=>node.click());assert.match(await desktop.$eval('#provider-list .provider-actions-extra',node=>node.innerText),/Refresh usage[\s\S]*Use as default/);
+  await desktop.goto(base+'#providers');await desktop.waitForFunction(()=>document.querySelectorAll('#provider-list .providers-table tbody tr').length===3&&document.querySelector('#provider-list .providers-row-error'));
+  assert.deepEqual(await desktop.$$eval('#provider-list .providers-table th',nodes=>nodes.map(node=>node.textContent)),['Provider','Workers','Slots','RAM','Swap','Disk','CPU','Observed','Actions']);
+  const local=await desktop.$eval('#provider-list .providers-table tbody tr:nth-child(2)',node=>({text:node.innerText,cpu:node.querySelector('[data-label="CPU"]')?.textContent,disk:node.querySelector('[data-label="Disk"]')?.textContent,cpuTitle:node.querySelector('[data-label="CPU"]')?.title,diskTitle:node.querySelector('[data-label="Disk"]')?.title,actions:[...node.querySelectorAll('.provider-actions>button')].map(button=>button.textContent)}));
+  assert.match(local.text,/0 used · 1 free[\s\S]*of 2 configured[\s\S]*7\.0 GiB \/ 8\.0 GiB/);
+  assert.deepEqual([local.cpu,local.disk,local.cpuTitle,local.diskTitle,local.actions],['–','–','Worker update needed','Worker update needed',['Edit','Validate']]);
+  assert.match(await desktop.$eval('#provider-list .providers-table tbody tr:nth-child(3) .providers-row-error',node=>node.textContent),/Resource usage unavailable: HTTP 502/);
+  await desktop.$eval('#provider-list .providers-table tbody tr:nth-child(2) .provider-actions-more>summary',node=>node.click());
+  assert.deepEqual(await desktop.$$eval('#provider-list .providers-table tbody tr:nth-child(2) .provider-actions-extra button',nodes=>nodes.map(node=>node.textContent)),['Use as default','Refresh usage','Configuration…','Delete…']);
+  await desktop.$eval('#provider-list .providers-table tbody tr:nth-child(2) .provider-actions-extra button:nth-child(3)',node=>node.click());
+  await desktop.waitForSelector('.provider-config-dialog[open]');assert.match(await desktop.$eval('.provider-config-dialog',node=>node.innerText),/host[\s\S]*worker/);
+  await desktop.$eval('.provider-config-dialog .vb-sheet-header button',node=>node.click());
+  await desktop.$eval('#provider-list .providers-table tbody tr:nth-child(2) .provider-actions-more>summary',node=>node.click());
+  await desktop.$eval('#provider-list .providers-table tbody tr:nth-child(2) .provider-menu-delete',node=>node.click());
+  await desktop.waitForSelector('.provider-delete-dialog[open]');
+  assert.match(await desktop.$eval('.provider-delete-dialog',node=>node.innerText),/Delete local/);
+  await desktop.$eval('.provider-delete-dialog button[aria-label="Close delete dialog"]',node=>node.click());
+  const captureDir=process.env.VMBOX_CAPTURE_DIR;if(captureDir)await mkdir(captureDir,{recursive:true});
+  for(const theme of ['light','dark'])for(const width of [1440,390]){
+   const page=await browser.newPage();await page.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);await page.goto(base+'#providers');await page.waitForFunction(()=>document.querySelectorAll('#provider-list .providers-table tbody tr').length===3&&document.querySelector('#provider-list .providers-row-error'));
+   const layout=await page.$eval('#provider-list .providers-table tbody tr',row=>({display:getComputedStyle(row).display,width:document.documentElement.scrollWidth}));
+   assert.equal(layout.width<=width,true,'page fits '+width+'px');if(width===390)assert.equal(layout.display,'grid','mobile rows become cards');
+   if(captureDir)await page.screenshot({path:`${captureDir}/providers-page-${width}-${theme}.png`,fullPage:true});await page.close();
+  }
   await desktop.close();
  }finally{await browser.close();await new Promise(done=>server.close(done))}
 });

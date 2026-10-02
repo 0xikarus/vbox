@@ -40,6 +40,51 @@ window.VMBoxWorkspaceNav=(()=>{
   }catch(error){status.textContent=error.message;ready()}});
  }
  function age(timestamp){const time=Date.parse(timestamp);if(!Number.isFinite(time))return '—';const seconds=Math.max(0,Math.floor((Date.now()-time)/1000));if(seconds<60)return 'Just now';const minutes=Math.floor(seconds/60);if(minutes<60)return minutes+' min ago';const hours=Math.floor(minutes/60);if(hours<24)return hours+' hr ago';return Math.floor(hours/24)+' d ago'}
+ const providerColumns=['Provider','Workers','Slots','RAM','Swap','Disk','CPU','Observed'];
+ function providerCell(label,value){const td=el('td',value);td.dataset.label=label;return td}
+ function providerTable(withActions=false){
+  const table=el('table');table.className='providers-table'+(withActions?' providers-manage-table':'');
+  const head=el('thead'),heading=el('tr');for(const label of [...providerColumns,...(withActions?['Actions']:[])])heading.append(el('th',label));
+  head.append(heading);const rows=el('tbody');table.append(head,rows);return {table,rows};
+ }
+ async function providerSnapshot(provider){
+  const query=new URLSearchParams({provider:provider.provider,providerCredential:provider.name||''});
+  const results=await Promise.allSettled([read('/v1/fleet/status?'+query),read('/v1/fleet/slots?'+query),provider.provider==='shared-worker'?read('/v1/fleet/host-resources?'+query):Promise.resolve(null)]);
+  const value=index=>results[index].status==='fulfilled'?results[index].value:null;
+  const errors=[];if(results[0].status==='rejected')errors.push('Capacity unavailable: '+results[0].reason.message);if(results[1].status==='rejected')errors.push('Slot settings unavailable: '+results[1].reason.message);
+  const hostError=results[2].status==='rejected'?results[2].reason.message:'';if(hostError)errors.push('Resource usage unavailable: '+hostError);
+  return {fleet:value(0),config:value(1),host:value(2),hostError,errors};
+ }
+ function renderProviderRow(row,provider,isDefault,snapshot,actions){
+  const {fleet,config,host,errors}=snapshot;row.replaceChildren();
+  const identity=providerCell('Provider');identity.className='providers-identity';const name=el('strong',provider.name||'Default');const type=el('small',provider.provider==='shared-worker'?'Shared worker':provider.provider);identity.append(name,type);
+  if(isDefault){const badge=el('span','Default');badge.className='providers-default';identity.append(badge)}
+  if(errors.length){const error=el('p',errors.join(' · '));error.className='providers-row-error';identity.append(error)}
+  const slots=Array.isArray(fleet?.slots)?fleet.slots:[];
+  const workers=fleet?(provider.provider==='shared-worker'?(slots.length?1:0):new Set(slots.map(slot=>slot.serviceId||slot.id).filter(Boolean)).size):'—';
+  const used=Number.isFinite(fleet?.occupiedSlots)?fleet.occupiedSlots:'—',free=Number.isFinite(fleet?.freeSlots)?fleet.freeSlots:'—';
+  const capacity=Number.isFinite(config?.compute_box_slots)?config.compute_box_slots:null;
+  const slotCell=providerCell('Slots');slotCell.append(el('span',used+' used · '+free+' free'));
+  if(capacity!==null){const configured=el('small','of '+capacity+' configured');configured.className='providers-configured';slotCell.append(configured)}
+  const resource=(label,usedBytes,totalBytes)=>{
+   const unavailable=!!snapshot.hostError,total=number(totalBytes),used=Math.max(0,number(usedBytes));
+   const missing=provider.provider==='shared-worker'&&!unavailable&&host&&label!=='Swap'&&(!Number.isFinite(totalBytes)||total<=0);
+   const item=providerCell(label,unavailable?'Unavailable':missing?'–':total?gib(used)+' / '+gib(total):label==='Swap'?'No swap':'—');
+   if(missing)item.title='Worker update needed';
+   if(!unavailable&&total){const ratio=used/total;if(ratio>=.95)item.classList.add('is-danger');else if(ratio>=.85)item.classList.add('is-warning')}return item;
+  };
+  const ram=resource('RAM',number(host?.memoryTotalBytes)-number(host?.memoryAvailableBytes),host?.memoryTotalBytes);
+  const swap=resource('Swap',number(host?.swapTotalBytes)-number(host?.swapFreeBytes),host?.swapTotalBytes);
+  const disk=resource('Disk',host?.diskUsedBytes,host?.diskTotalBytes);
+  const cpuMissing=provider.provider==='shared-worker'&&host&&(!Number.isFinite(host.cpuCores)||host.cpuCores<=0||!Number.isFinite(host.cpuPercent));
+  const cpu=providerCell('CPU',snapshot.hostError?'Unavailable':cpuMissing?'–':Number.isFinite(host?.cpuPercent)&&Number.isFinite(host?.cpuCores)?number(host.cpuPercent).toFixed(0)+'% · load '+number(host.cpuLoad1).toFixed(1)+' / '+number(host.cpuCores).toFixed(1).replace(/\.0$/,'')+' cores':'—');
+  if(cpuMissing)cpu.title='Worker update needed';
+  if(!snapshot.hostError&&!cpuMissing&&Number.isFinite(host?.cpuPercent)){const ratio=host.cpuPercent/100;if(ratio>=.95)cpu.classList.add('is-danger');else if(ratio>=.85)cpu.classList.add('is-warning')}
+  if(provider.provider!=='shared-worker'){ram.textContent='—';swap.textContent='—';disk.textContent='—';cpu.textContent='—'}
+  const observed=providerCell('Observed',age(host?.observedAt));if(host?.observedAt)observed.title=new Date(host.observedAt).toLocaleString();
+  row.append(identity,providerCell('Workers',String(workers)),slotCell,ram,swap,disk,cpu,observed);
+  if(actions){const actionCell=providerCell('Actions');actionCell.className='providers-actions-space';actions(actionCell);row.append(actionCell)}
+ }
  function initProviders(id){
   const button=document.getElementById(id);if(!button)return {setOwner(){}};
   const dialog=el('dialog');dialog.className='vb-sheet-dialog providers-dialog';dialog.setAttribute('aria-labelledby',id+'-title');
@@ -50,37 +95,8 @@ window.VMBoxWorkspaceNav=(()=>{
   header.append(title,refresh,link,close);
   const frame=el('div');frame.className='sheet-scroll-frame';const body=el('div');body.className='sheet-scroll-body';
   const status=el('p');status.className='providers-status';status.setAttribute('role','status');
-  const table=el('table');table.className='providers-table';const head=el('thead'),heading=el('tr');
-  for(const label of ['Provider','Workers','Slots','RAM used / total','Swap used / total','Disk used / total','CPU','Observed',''])heading.append(el('th',label));
-  head.append(heading);const rows=el('tbody');table.append(head,rows);body.append(status,table);frame.append(body);dialog.append(header,frame);document.body.append(dialog);
+  const {table,rows}=providerTable();body.append(status,table);frame.append(body);dialog.append(header,frame);document.body.append(dialog);
   let owner=false,generation=0;
-  function cell(label,value){const td=el('td',value);td.dataset.label=label;return td}
-  function renderRow(row,provider,isDefault,snapshot){
-   const {fleet,config,host,errors}=snapshot;
-   row.replaceChildren();
-   const identity=cell('Provider');identity.className='providers-identity';const name=el('strong',provider.name||'Default');const type=el('small',provider.provider==='shared-worker'?'Shared worker':provider.provider);identity.append(name,type);
-   if(isDefault){const badge=el('span','Default');badge.className='providers-default';identity.append(badge)}
-   if(errors.length){const error=el('p',errors.join(' · '));error.className='providers-row-error';identity.append(error)}
-   const slots=Array.isArray(fleet?.slots)?fleet.slots:[];
-   const workers=fleet?(provider.provider==='shared-worker'?(slots.length?1:0):new Set(slots.map(slot=>slot.serviceId||slot.id).filter(Boolean)).size):'—';
-   const used=Number.isFinite(fleet?.occupiedSlots)?fleet.occupiedSlots:'—',free=Number.isFinite(fleet?.freeSlots)?fleet.freeSlots:'—';
-   const capacity=Number.isFinite(config?.compute_box_slots)?config.compute_box_slots:null;
-   const slotCell=cell('Slots');slotCell.append(el('span',used+' used · '+free+' free'));
-   if(capacity!==null){const configured=el('small','of '+capacity+' configured');configured.className='providers-configured';slotCell.append(configured)}
-   const resource=(label,usedBytes,totalBytes,unavailable)=>{
-    const total=number(totalBytes),used=Math.max(0,number(usedBytes)),item=cell(label,unavailable?'Unavailable':total?gib(used)+' / '+gib(total):label==='Swap'?'No swap':'—');
-    if(!unavailable&&total){const ratio=used/total;if(ratio>=.95)item.classList.add('is-danger');else if(ratio>=.85)item.classList.add('is-warning')}return item;
-   };
-   const ram=resource('RAM',number(host?.memoryTotalBytes)-number(host?.memoryAvailableBytes),host?.memoryTotalBytes,!!snapshot.hostError);
-   const swap=resource('Swap',number(host?.swapTotalBytes)-number(host?.swapFreeBytes),host?.swapTotalBytes,!!snapshot.hostError);
-   const disk=resource('Disk',host?.diskUsedBytes,host?.diskTotalBytes,!!snapshot.hostError);
-   const cpu=cell('CPU',snapshot.hostError?'Unavailable':Number.isFinite(host?.cpuPercent)&&Number.isFinite(host?.cpuCores)?number(host.cpuPercent).toFixed(0)+'% · load '+number(host.cpuLoad1).toFixed(1)+' / '+number(host.cpuCores).toFixed(1).replace(/\.0$/,'')+' cores':'—');
-   if(!snapshot.hostError&&Number.isFinite(host?.cpuPercent)){const ratio=host.cpuPercent/100;if(ratio>=.95)cpu.classList.add('is-danger');else if(ratio>=.85)cpu.classList.add('is-warning')}
-   if(provider.provider!=='shared-worker'){ram.textContent='—';swap.textContent='—';disk.textContent='—';cpu.textContent='—'}
-   const observed=cell('Observed',age(host?.observedAt));if(host?.observedAt)observed.title=new Date(host.observedAt).toLocaleString();
-   const actions=cell('Actions');actions.className='providers-actions-space';const remove=el('button','Delete');remove.type='button';remove.className='providers-delete';remove.onclick=()=>void openProviderDelete(provider,load);actions.append(remove);
-   row.append(identity,cell('Workers',String(workers)),slotCell,ram,swap,disk,cpu,observed,actions);
-  }
   async function load(){
    const request=++generation;refresh.disabled=true;status.textContent='Loading providers…';table.hidden=true;rows.replaceChildren();
    try{
@@ -89,14 +105,10 @@ window.VMBoxWorkspaceNav=(()=>{
     if(!Array.isArray(providers))throw Error('Provider list unavailable');
     status.textContent=providers.length?'':'No providers configured.';table.hidden=!providers.length;
     await Promise.all(providers.map(async provider=>{
-     const row=el('tr');rows.append(row);const identity=cell('Provider',provider.name||'Default');identity.className='providers-identity';row.append(identity,cell('Status','Loading capacity…'));
-     const query=new URLSearchParams({provider:provider.provider,providerCredential:provider.name||''});
-     const results=await Promise.allSettled([read('/v1/fleet/status?'+query),read('/v1/fleet/slots?'+query),provider.provider==='shared-worker'?read('/v1/fleet/host-resources?'+query):Promise.resolve(null)]);
+     const row=el('tr');rows.append(row);const identity=providerCell('Provider',provider.name||'Default');identity.className='providers-identity';row.append(identity,providerCell('Status','Loading capacity…'));
+     const snapshot=await providerSnapshot(provider);
      if(request!==generation||!dialog.open)return;
-     const value=index=>results[index].status==='fulfilled'?results[index].value:null;
-     const errors=[];if(results[0].status==='rejected')errors.push('Capacity unavailable: '+results[0].reason.message);if(results[1].status==='rejected')errors.push('Slot settings unavailable: '+results[1].reason.message);
-     const hostError=results[2].status==='rejected'?results[2].reason.message:'';if(hostError)errors.push('Resource usage unavailable: '+hostError);
-     renderRow(row,provider,defaultResult?.provider===provider.provider&&defaultResult?.providerCredential===(provider.name||''),{fleet:value(0),config:value(1),host:value(2),hostError,errors});
+     renderProviderRow(row,provider,defaultResult?.provider===provider.provider&&defaultResult?.providerCredential===(provider.name||''),snapshot);
     }));
    }catch(error){if(request===generation&&dialog.open){status.textContent=error.message;table.hidden=true}}
    finally{if(request===generation)refresh.disabled=false}
@@ -167,7 +179,7 @@ window.VMBoxWorkspaceNav=(()=>{
    }catch(error){if(dialog.open)status.textContent=error.message}
   }
   usage.onclick=()=>void showUsage();
-  return {setOwner(value){owner=!!value;updateUsagePill(usage,null,owner);providers.setOwner(owner);if(!owner&&dialog.open)dialog.close()},closeMenu,openProviderDelete};
+  return {setOwner(value){owner=!!value;updateUsagePill(usage,null,owner);providers.setOwner(owner);if(!owner&&dialog.open)dialog.close()},closeMenu,openProviderDelete,providerTable,providerSnapshot,renderProviderRow};
  }
- return {init,initProviders,updateUsagePill};
+ return {init,initProviders,updateUsagePill,providerTable,providerSnapshot,renderProviderRow};
 })();

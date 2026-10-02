@@ -76,7 +76,7 @@ body[data-manage-view="boxes"] .manage-content>section:not(#boxes),body[data-man
 .profile-row:last-child{border-bottom:0}.profile-row-text{display:grid;gap:.14rem;min-width:0}.profile-row-text strong,.profile-model{overflow-wrap:anywhere}.profile-row-text strong{font-size:var(--vb-type-rem-0-82)}.profile-row-text span,.profile-row-text small{color:var(--vb-swatch-91a0b3);font-size:var(--vb-type-rem-0-72)}
 .profile-row .linkbtn{margin:0;flex:none}.profile-help{margin:1rem 0 0;font-size:var(--vb-type-rem-0-76)}
 #profiles code{padding:.08rem .25rem;border-radius:var(--r-control);background:var(--vb-swatch-263749);color:var(--vb-swatch-c9defe)}
-#provider-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(18rem,100%),1fr));gap:.75rem;margin:1rem 0}
+#provider-list{display:block;margin:1rem 0}
 .provider-card{min-width:0;padding:1rem;border:1px solid var(--vb-swatch-2b3848);border-radius:var(--r-surface);background:var(--vb-swatch-1a2230)}
 .provider-card-heading{display:flex;align-items:start;justify-content:space-between;gap:.6rem}
 .provider-card-heading>div{display:grid;gap:.1rem;min-width:0}
