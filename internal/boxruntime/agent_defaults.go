@@ -70,6 +70,9 @@ func ensureClaudeTrust(path, workspace string) error {
 	entry["hasTrustDialogAccepted"] = true
 	projects[workspace], _ = json.Marshal(entry)
 	state["projects"], _ = json.Marshal(projects)
+	// A profile from `claude auth login` never ran Claude's first-run setup;
+	// without this flag the terminal stops at the theme picker.
+	state["hasCompletedOnboarding"] = json.RawMessage("true")
 	return writeJSONObject(path, state, 0600)
 }
 
