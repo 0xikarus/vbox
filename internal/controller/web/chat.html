@@ -85,48 +85,45 @@
    <aside id="inspect" role="region" aria-label="Box details" hidden>
     <header id="inspect-header">
      <span class="inspect-grab" aria-hidden="true"></span>
+     <button id="inspect-prototype-back" type="button" aria-label="Back to details" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
      <div id="inspect-header-text" hidden><strong id="inspect-title">Box details</strong><span id="inspect-header-state">—</span></div>
      <span class="spacer"></span>
      <button id="inspect-close" type="button" aria-label="Close details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button>
     </header>
-    <div id="inspect-body">
+    <div id="inspect-prototype" hidden>
+     <div id="inspect-prototype-main">
+      <div id="inspect-prototype-identity"></div>
+      <section class="ip-group" aria-labelledby="ip-overview-title"><h3 id="ip-overview-title" class="ip-heading">Overview</h3><div id="ip-overview" class="ip-card ip-overview"></div></section>
+      <div id="inspect-prototype-resources"></div>
+      <section class="ip-group" aria-labelledby="ip-settings-title"><h3 id="ip-settings-title" class="ip-heading">Settings</h3><div id="ip-settings" class="ip-card ip-list"></div></section>
+      <section class="ip-group ip-danger-group" aria-labelledby="ip-danger-title"><h3 id="ip-danger-title" class="ip-heading">Danger zone</h3><div id="ip-danger" class="ip-card ip-list"></div></section>
+     </div>
+     <div id="inspect-prototype-page" hidden>
+      <div id="ip-instructions-summary" class="ip-card ip-page-card"></div>
+      <button id="ip-resync-instructions" class="ip-page-secondary" type="button">Re-sync instructions</button>
+      <div id="ip-credentials-summary" class="ip-card ip-page-card"></div>
+      <div id="ip-technical-table" class="ip-card ip-technical-table"></div>
+     </div>
+    </div>
+    <div id="inspect-mounts" hidden>
      <div id="inspect-screen" class="inspect-screen" aria-label="Desktop preview">
       <div class="inspect-screen-frame"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><span id="inspect-screen-off">Desktop off</span><img id="inspect-screen-image" alt="" hidden><div id="inspect-screen-live" aria-hidden="true"></div><div id="inspect-screen-live-chip" hidden>Live</div><div id="inspect-screen-hint" hidden></div><div id="inspect-avatar" aria-hidden="true"></div></div>
       <span id="inspect-screen-title" class="inspect-screen-title">Screen</span>
      </div>
-      <section id="inspect-summary" aria-label="Box overview">
-       <div id="inspect-hero">
-        <h2 id="inspect-name">—</h2>
-        <p id="inspect-subtitle">—</p>
-        <div id="inspect-badges" class="inspect-badges"></div>
-        <div id="inspect-quick-actions" class="inspect-quick"></div>
-       </div>
+     <div id="inspect-hero"><h2 id="inspect-name">—</h2><p id="inspect-subtitle">—</p></div>
        <div id="inspect-actions" class="inspect-actions" role="group" aria-label="Box actions">
       <button id="chat-control" class="chat-action" type="button" aria-label="Desktop" title="Desktop"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></span><span class="chat-action-label">Desktop</span></button>
       <button id="chat-terminal" class="chat-action" type="button" aria-label="Terminal" title="Terminal (TMUX)"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></span><span class="chat-action-label">Terminal</span></button>
       <a id="chat-workspace" class="chat-action" href="#"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></span><span class="chat-action-label">Workspace</span></a>
      </div>
-     <div id="inspect-facts" class="inspect-facts"></div>
      <section id="inspect-resources" class="inspect-resources" aria-labelledby="inspect-resources-title">
       <div class="inspect-resources-heading"><h3 id="inspect-resources-title">Resources</h3></div>
       <button id="inspect-resources-adjust" type="button" hidden>Adjust</button>
       <div id="inspect-resource-rows"></div><p id="inspect-resources-context"></p><p id="inspect-resources-updated"></p>
      </section>
-     <details id="inspect-power" class="inspect-block inspect-fold" data-fold="power" hidden>
-      <summary><svg class="row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 2h6M19 5l1.5-1.5"/></svg><span class="inspect-power-heading"><h3>Hibernation &amp; limits</h3><small id="inspect-power-summary">Loading limits…</small></span><svg class="row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
-      <div class="inspect-power-inner"><div id="inspect-idle-policy"></div><div id="inspect-run-budget-policy"></div><div id="inspect-memory-settings" tabindex="-1" hidden></div></div>
-     </details>
-       <details class="inspect-block inspect-fold inspect-technical" data-fold="technical">
-        <summary><svg class="row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><h3>Technical details</h3><svg class="row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
-        <div class="inspect-technical-inner">
-        <details class="inspect-block inspect-fold" data-fold="runtime" open>
-         <summary><h3>Runtime</h3></summary>
-         <dl id="inspect-runtime-rows" class="inspect-rows"></dl>
-        </details>
-        <details class="inspect-block inspect-fold" data-fold="activity" open>
-         <summary><h3>Activity</h3></summary>
-         <dl id="inspect-activity-rows" class="inspect-rows"></dl>
-        </details>
+     <div id="inspect-idle-policy"></div>
+     <div id="inspect-run-budget-policy"></div>
+     <div id="inspect-memory-settings" tabindex="-1" hidden></div>
         <section id="inspect-attachment-storage" class="inspect-block inspect-subsection" hidden>
          <h3>Chat attachments</h3>
          <dl id="inspect-attachment-rows" class="inspect-rows"></dl>
@@ -135,13 +132,6 @@
          <div class="inspect-actions"><button id="inspect-clear-attachments" type="button">Clear this box's attachments…</button></div>
          <p id="inspect-attachment-status" role="status"></p>
         </section>
-        <section class="inspect-block inspect-subsection" id="inspect-config-section">
-         <h3>Config</h3>
-         <div id="inspect-config-actions" class="inspect-actions"></div>
-        </section>
-        <div id="inspect-create-limit"></div>
-        </div>
-       </details>
      <details id="inspect-contacts" class="inspect-block inspect-fold" data-fold="contacts" hidden>
       <summary><svg class="row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 8h5"/><path d="M18.5 5.5v5"/></svg><h3>Contacts</h3><svg class="row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
       <div class="inspect-contact-body">
@@ -151,7 +141,7 @@
         <input id="inspect-contact-search" type="search" placeholder="Search boxes…" aria-label="Search boxes to add as contacts">
         <ul id="inspect-contact-options"></ul>
        </div>
-       <p class="inspect-lede">Choose this box's direct contacts. <strong>All contacts</strong> makes every eligible box available; change it in <button id="inspect-contact-permissions" type="button">Permissions</button>.</p>
+       <p class="inspect-lede"><strong>All contacts</strong> makes every eligible box available; change it in <button id="inspect-contact-permissions" type="button">Permissions</button>.</p>
        <p id="inspect-contact-status" role="status"></p>
       </div>
      </details>
@@ -163,8 +153,7 @@
        <div class="inspect-access-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg><span class="inspect-access-copy"><strong>Protection</strong><small id="inspect-protection-label">Protection unknown</small></span><button id="inspect-toggle-protection" type="button" role="switch" aria-checked="false" aria-label="Protect box"><span aria-hidden="true"></span></button></div>
       </div>
      </details>
-      </section>
-     <div class="inspect-footer"><button id="chat-clear-context" type="button" aria-label="Clear context" title="Start a new agent context in this chat session"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>Clear context</button></div>
+     <div id="inspect-create-limit"></div>
     </div>
    </aside>
    <div id="chat-loading" hidden aria-hidden="true"><img src="/loading-doodle.svg" alt=""><p id="chat-loading-text">Loading…</p></div>

@@ -2,10 +2,11 @@
 // One per-box control used by chat details, management details and workspaces.
 window.VMBoxIdlePolicy = (() => {
  const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el};
- function mount(root,{boxId,boxName='',request}){
+ function mount(root,{boxId,boxName='',request,compact=false}){
   if(!root || root.dataset.idleBox===boxId)return;
   root.dataset.idleBox=boxId;root.replaceChildren();
   const card=text('section','');card.className='idle-policy';
+  if(compact)card.classList.add('ip-policy-compact');
   const top=text('div','');top.className='idle-policy-top';
   const name=text('strong','Automatic hibernation');
   const badge=text('span','Loading…');badge.className='idle-policy-badge';
@@ -18,8 +19,9 @@ window.VMBoxIdlePolicy = (() => {
   const hoursLabel=text('label','Idle after');
   const hours=document.createElement('input');hours.type='number';hours.min='0.25';hours.max='168';hours.step='0.25';hours.value='4';hours.required=true;hours.disabled=true;
   hours.setAttribute('aria-label','Idle hours before hibernation');
-  hoursLabel.append(hours,document.createTextNode(' hours'));
-  const save=text('button','Save hours');save.type='button';save.disabled=true;
+  if(compact){const field=text('span','');field.className='ip-unit-field';field.append(hours,text('span','hours'));hoursLabel.append(field)}
+  else hoursLabel.append(hours,document.createTextNode(' hours'));
+  const save=text('button',compact?'Save':'Save hours');save.type='button';save.disabled=true;
   controls.append(hoursLabel,save);
   const note=text('p','Managed tasks, pending private requests and human takeover pause the idle timer.');note.className='idle-policy-note';
   const status=text('p','Loading idle policy…');status.className='idle-policy-status';status.setAttribute('role','status');
@@ -49,7 +51,7 @@ window.VMBoxIdlePolicy = (() => {
     const policy=await request(next);
     if(!current())return;
     applyPolicy(policy);
-    status.textContent=seconds>0?'Hibernates after '+hours.value+' idle hours.':'Automatic hibernation is off for this box.';
+    status.textContent=compact?'':seconds>0?'Hibernates after '+hours.value+' idle hours.':'Automatic hibernation is off for this box.';
    }catch(error){
     if(!current())return;
     render();status.textContent=error.message;
@@ -67,7 +69,7 @@ window.VMBoxIdlePolicy = (() => {
    retry.hidden=true;status.textContent='Loading idle policy…';
    try{
     const policy=await request();if(!current())return;
-    applyPolicy(policy);status.textContent=seconds>0?'Hibernates after '+hours.value+' idle hours.':'Automatic hibernation is off for this box.';
+    applyPolicy(policy);status.textContent=compact?'':seconds>0?'Hibernates after '+hours.value+' idle hours.':'Automatic hibernation is off for this box.';
    }catch(error){if(current()){badge.textContent='Unavailable';status.textContent=error.message;retry.hidden=false}}
   }
   retry.addEventListener('click',()=>void load());

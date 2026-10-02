@@ -201,7 +201,7 @@ test('Reply uses the main composer without opening the thread sidebar',async()=>
   await p.type('#chat-input','Agreed.');await p.click('#send');await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(posts.at(-1).parentMessageId,threadMessages[1].id,'replying to a thread member preserves the direct parent');
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true);
-  await p.click('#chat-messages .msg.user + .msg-thread-line');
+  await p.$eval('#chat-messages .msg.user + .msg-thread-line',button=>button.click());
   await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===2);
   const initialWidth=await p.$eval('#thread-panel',panel=>panel.getBoundingClientRect().width);
   assert.ok(initialWidth>=400,'the thread sidebar starts at its intended desktop width');

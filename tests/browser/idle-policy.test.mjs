@@ -34,7 +34,7 @@ async function openDetails(page){
  await page.goto(base+'/chat#box=builder');
  await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
  await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
- await page.evaluate(()=>{const fold=document.querySelector('#inspect-power');if(fold&&!fold.open)fold.querySelector('summary').click()});
+ await page.click('[data-ip-row="power"]');
  await page.waitForFunction(()=>document.querySelector('#inspect-idle-policy .idle-policy-switch input:not(:disabled)'));
 }
 try{
@@ -43,7 +43,7 @@ try{
   assert.equal(await page.$eval('#inspect-idle-policy .idle-policy-switch input',el=>el.checked),true);
   await page.$eval('#inspect-idle-policy input[type=number]',el=>el.value='6');
   await page.$eval('#inspect-idle-policy .idle-policy-controls button',e=>e.click());
-  await page.waitForFunction(()=>document.querySelector('#inspect-idle-policy .idle-policy-status').textContent.includes('6 idle hours'));
+  await page.waitForFunction(()=>document.querySelector('[data-ip-row="power"] .ip-row-value').textContent.includes('6h idle'));
   assert.equal(seconds,21600);
   await page.$eval('#inspect-idle-policy .idle-policy-switch input',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-idle-policy .idle-policy-badge').textContent==='Off');

@@ -114,14 +114,16 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   // The details drawer must fit one column on a phone.
   await p.click('#chat-info');
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
-  await p.waitForFunction(()=>!!document.querySelector('#inspect-contacts'));
+  assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth<=1),'mobile Details main page must not overflow horizontally');
+  await p.click('[data-ip-row="contacts"]');
+  await p.waitForFunction(()=>!document.querySelector('[data-ip-page="contacts"]').hidden);
   await p.evaluate(()=>{document.activeElement?.blur()});
   await p.screenshot({path:screenshotDir+'/mobile-chat-details.png'});
   const fit=await p.evaluate(()=>{
    const panel=document.querySelector('#inspect'),contacts=document.querySelector('#inspect-contacts');
    return {overflowX:document.documentElement.scrollWidth-document.documentElement.clientWidth,contactsWidth:contacts.getBoundingClientRect().width,panelWidth:panel.getBoundingClientRect().width};
   });
-  assert.ok(fit.contactsWidth>fit.panelWidth*0.85,'contacts must span the mobile drawer, not sit in a half column');
+  assert.ok(fit.contactsWidth>fit.panelWidth*0.85,'Contacts subpage must span the mobile drawer');
   assert.ok(fit.overflowX<=1,'mobile details must not overflow horizontally');
   await p.$eval('#inspect-close',el=>el.click());
 

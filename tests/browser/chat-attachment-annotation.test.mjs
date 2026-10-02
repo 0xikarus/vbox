@@ -87,6 +87,7 @@ test('composer annotation replaces one upload, cancel preserves another, and pas
   await page.waitForFunction(()=>!document.querySelector('#image-annotation').open);
   assert.equal(uploads.length,3);
   assert.deepEqual([...uploads[2].subarray(0,8)],[137,80,78,71,13,10,26,10]);
+  await page.waitForFunction(()=>document.querySelector('#chat-image-drafts .draft:first-child img')?.naturalWidth===640);
   const preview=await page.$eval('#chat-image-drafts .draft:first-child img',img=>({src:img.src,width:img.naturalWidth}));
   assert.match(preview.src,/blob:/);assert.equal(preview.width,640);
   assert.equal(await page.$eval('#chat-image-drafts .draft:first-child',draft=>draft.title),'first-annotated.png');

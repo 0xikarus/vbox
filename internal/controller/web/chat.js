@@ -1473,6 +1473,12 @@
   forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
   reply:[['polyline',{points:'9 17 4 12 9 7'}],['path',{d:'M20 18v-2a4 4 0 0 0-4-4H4'}]],
   pencil:[['path',{d:'M12 20h9'}],['path',{d:'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'}]],
+  timer:[['circle',{cx:'12',cy:'13',r:'8'}],['path',{d:'M12 9v4l3 2M9 2h6M19 5l2-2'}]],
+  'shield-check':[['path',{d:'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z'}],['path',{d:'m9 12 2 2 4-4'}]],
+  paperclip:[['path',{d:'m20 11.5-7.8 7.8a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 1 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8'}]],
+  settings:[['circle',{cx:'12',cy:'12',r:'3'}],['path',{d:'M19.4 15a1.7 1.7 0 0 0 .3 1.8l-1.9 1.9a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21h-2v-1.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-1.9-1.9a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H5v-2h1.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l1.9-1.9a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h2v1.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l1.9 1.9a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21v2h-1.1a1.7 1.7 0 0 0-1.5 1Z'}]],
+  'trash-2':[['path',{d:'M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7'}]],
+  'image-off':[['rect',{x:'3',y:'3',width:'18',height:'18',rx:'2'}],['path',{d:'m3 15 5-5 4 4 3-3 6 6M2 2l20 20'}]],
  };
  function lucide(name){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -2152,7 +2158,7 @@
   else{syncAvatarMascot($('#chat-header-avatar .avatar'),box);refreshAvatarNodes(box)}
   $('#chat-wake').hidden=!canWakeBox(box);
   $('#chat-wake').disabled=wakingBoxes.has(box.id);
-  $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
+  const clearContext=$('[data-ip-row="context"]');if(clearContext)clearContext.disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
   updateThreadSendState();
   updateSendState();
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
@@ -2920,11 +2926,11 @@ function pairTileStatus(tile,mode,label){
  };
 
  /* ---------- clear agent context ---------- */
- $('#chat-clear-context').onclick=async()=>{
+ async function clearChatContext(){
   const box=boxes.get(selected);if(!box)return;
   if(box.state!=='running'){statusEl.textContent=box.name+' is '+box.state+'; resume it before clearing context.';return}
   if(!confirm('Clear the active '+(box.defaultAgent||'agent')+' context for "'+box.name+'"? Chat history stays visible, but the next message starts without the agent\'s prior context.'))return;
-  const btn=$('#chat-clear-context');btn.disabled=true;statusEl.textContent='Clearing agent context…';
+  const btn=$('[data-ip-row="context"]');if(btn)btn.disabled=true;statusEl.textContent='Clearing agent context…';
   try{
    const result=await api(boxPath(box.id)+'/messages/clear-context','POST',{'Idempotency-Key':crypto.randomUUID()},{},45000);
    statusEl.textContent='Context cleared. The next message continues in the same visible terminal with fresh context.';
@@ -2932,7 +2938,7 @@ function pairTileStatus(tile,mode,label){
    if(selected===box.id)try{await refreshMessages(true)}catch(e){statusEl.textContent='Context cleared; chat refresh failed: '+e.message}
   }catch(e){statusEl.textContent=e.message}
   finally{renderHeader()}
- };
+ }
 
  /* ---------- inspect drawer: ping / activity per box ---------- */
  const inspect=$('#inspect');
@@ -2993,7 +2999,7 @@ function pairTileStatus(tile,mode,label){
  let inspectInstructionsFor='',inspectInstructions=null,inspectInstructionsRequest=0;
  let inspectAttachmentFor='',inspectAttachmentCache=null,inspectAttachmentRequest=0;
  const storageSize=bytes=>typeof bytes!=='number'||!Number.isFinite(bytes)||bytes<0?'–':bytes>=1024*1024*1024?(bytes/1073741824).toFixed(2)+' GiB':bytes>=1024*1024?(bytes/1048576).toFixed(1)+' MiB':bytes>=1024?(bytes/1024).toFixed(1)+' KiB':bytes+' B';
- const storageSummary=(bytes,count)=>storageSize(bytes)==='–'||!Number.isSafeInteger(count)||count<0?'No data':storageSize(bytes)+' · '+count+' files';
+ const storageSummary=(bytes,count)=>storageSize(bytes)==='–'||!Number.isSafeInteger(count)||count<0?'No data':storageSize(bytes)+' · '+count+' '+(count===1?'file':'files');
  async function loadInspectAttachmentStorage(box){
   const request=++inspectAttachmentRequest;inspectAttachmentFor=box.id;inspectAttachmentCache=null;
   try{
@@ -3091,18 +3097,6 @@ function pairTileStatus(tile,mode,label){
    target.append(row);
   }
  };
- function renderPowerSummary(){
-  const summary=$('#inspect-power-summary');if(!selected||!owner)return;
-  const idle=$('#inspect-idle-policy'),budget=$('#inspect-run-budget-policy');
-  const idleBadge=idle.dataset.idleBox===selected?idle.querySelector('.idle-policy-badge'):null;
-  const budgetBadge=budget.dataset.budgetKey?.startsWith(selected+'|')?budget.querySelector('.idle-policy-badge'):null;
-  const hours=value=>{const number=Number(value);return Number.isFinite(number)?String(number):'—'};
-  const idleText=idleBadge?.textContent==='On'?'Hibernate after '+hours(idle.querySelector('input[type=number]')?.value)+' h':idleBadge?.textContent==='Off'?'Hibernate off':idleBadge?.textContent==='Unavailable'?'Hibernation unavailable':'Hibernation loading…';
-  const budgetText=budgetBadge?.textContent==='On'?'Run limit '+hours(budget.querySelector('input[type=number]')?.value)+' h':budgetBadge?.textContent==='Off'?'No run limit':budgetBadge?.textContent==='Unavailable'?'Run limit unavailable':'Run limit loading…';
-  const box=boxes.get(selected),resources=resourceSnapshot?.id===selected?resourceSnapshot.data?.resources:null;
-  const memoryGiB=Number(resources?.memoryMiB)/1024||Number(box?.memoryGiB)||0;
-  summary.textContent=[idleText,budgetText,memoryGiB?'RAM '+hours(memoryGiB)+' GB':'RAM —'].join(' · ');
- }
  function mountInspectMemory(box,force=false){
   const root=$('#inspect-memory-settings');
   if(!owner||box.provider!=='shared-worker'||box.state!=='running'){root.hidden=true;root.dataset.boxId='';root.replaceChildren();return}
@@ -3158,49 +3152,141 @@ function pairTileStatus(tile,mode,label){
    finally{form.querySelector('button').disabled=false;updateWarning()}
   };
  }
+ const inspectPrototypeTitles={power:'Hibernation & limits',instructions:'Instructions',credentials:'Credentials',contacts:'Contacts',access:'Access & permissions',attachments:'Attachments',technical:'Technical details',resources:'Adjust resources'};
+ const inspectPrototypePages=new Map();
+ let inspectPrototypeReady=false,inspectPrototypePage='',inspectPrototypeReturnFocus=null;
+ function inspectPrototypeRow(key,icon,title,value,onClick,danger=false){
+  const row=document.createElement('button');row.type='button';row.className='ip-row'+(danger?' ip-row-danger':'');row.dataset.ipRow=key;
+  const glyph=lucide(icon),name=mk('span',title),detail=mk('span',value),chevron=lucide('chevron-right');
+  glyph.classList.add('ip-row-icon');name.className='ip-row-title';detail.className='ip-row-value';chevron.classList.add('ip-row-chevron');
+  row.append(glyph,name,detail);if(!danger)row.append(chevron);row.onclick=onClick;return row;
+ }
+ function initInspectPrototype(){
+  if(inspectPrototypeReady)return;
+  inspectPrototypeReady=true;inspect.classList.add('details-prototype');$('#inspect-prototype').hidden=false;$('#inspect-header-text').hidden=false;
+  $('#inspect-prototype-identity').append($('#inspect-screen'),$('#inspect-hero'),$('#inspect-actions'));
+  $('#inspect-prototype-resources').append($('#inspect-resources'));
+  $('#inspect-resources .inspect-resources-heading').append($('#inspect-resources-adjust'));
+  const pageRoot=$('#inspect-prototype-page');
+  const page=(key,intro)=>{
+   const section=mk('section');section.className='ip-page';section.dataset.ipPage=key;section.hidden=true;
+   if(intro)section.append(Object.assign(mk('p',intro),{className:'ip-page-intro'}));
+   pageRoot.append(section);inspectPrototypePages.set(key,section);return section;
+  };
+  const power=page('power','Set how long this box may stay idle or run. These limits are independent.');
+  power.append($('#inspect-idle-policy'),$('#inspect-run-budget-policy'));
+  const resources=page('resources','CPU, RAM and swap limits apply live to this box.');resources.append($('#inspect-memory-settings'));
+  const instructions=page('instructions','Saved instructions are synced into this box.');
+  instructions.append($('#ip-instructions-summary'));
+  const editInstructions=mk('button','Edit instructions');editInstructions.type='button';editInstructions.className='ip-page-action';editInstructions.onclick=()=>{const box=boxes.get(selected);if(box)void openBoxInstructions(box)};instructions.append(editInstructions);
+  const resyncInstructions=$('#ip-resync-instructions');resyncInstructions.onclick=()=>{const box=boxes.get(selected);if(box)void resyncBox(box)};instructions.append(resyncInstructions);
+  const credentials=page('credentials','Login profiles available to this box.');
+  credentials.append($('#ip-credentials-summary'));
+  const editCredentials=mk('button','Manage credentials');editCredentials.type='button';editCredentials.className='ip-page-action';editCredentials.onclick=()=>{const box=boxes.get(selected);if(box)void openBoxCredentials(box)};credentials.append(editCredentials);
+  page('contacts','Choose the boxes this agent can contact.').append($('#inspect-contacts'));
+  $('#inspect-contacts').open=true;
+  const access=page('access','Control agent permissions, protection and created-box limits.');access.append($('#inspect-access'),$('#inspect-create-limit'));
+  $('#inspect-access').open=true;
+  page('attachments','Storage used by this box and its chat uploads.').append($('#inspect-attachment-storage'));
+  const technical=page('technical','Tap an ID to copy it in full.');technical.append($('#ip-technical-table'));
+  for(const [key,icon,title] of [
+   ['power','timer','Hibernation & limits'],['instructions','file-text','Instructions'],['credentials','key','Credentials'],
+   ['contacts','users','Contacts'],['access','shield-check','Access & permissions'],['attachments','paperclip','Attachments'],
+   ['technical','settings','Technical details'],
+  ])$('#ip-settings').append(inspectPrototypeRow(key,icon,title,'',()=>showInspectPrototypePage(key)));
+  const dangerous=[
+   ['restart','power','Restart',()=>{const box=boxes.get(selected);if(box)void restartBox(box)}],
+   ['context','trash-2','Clear context',()=>void clearChatContext()],
+   ['clear-attachments','image-off','Clear attachments',()=>$('#inspect-clear-attachments').click()],
+  ];
+  for(const [key,icon,title,action] of dangerous)$('#ip-danger').append(inspectPrototypeRow(key,icon,title,'',action,true));
+  $('#inspect-prototype-back').onclick=()=>showInspectPrototypePage('');
+  $('#inspect-resources-adjust').onclick=()=>showInspectPrototypePage('resources');
+ }
+ function showInspectPrototypePage(key,restoreFocus=true){
+  if(!inspectPrototypeReady)return;
+  if(key)inspectPrototypeReturnFocus=key==='resources'?$('#inspect-resources-adjust'):$('[data-ip-row="'+key+'"]');
+  const returnFocus=inspectPrototypeReturnFocus;
+  inspectPrototypePage=key;
+  const subpage=!!key;$('#inspect-prototype-main').hidden=subpage;$('#inspect-prototype-page').hidden=!subpage;
+  for(const [name,node] of inspectPrototypePages)node.hidden=name!==key;
+  $('#inspect-prototype-back').hidden=!subpage;
+  inspect.classList.toggle('ip-in-subpage',subpage);
+  if(subpage){$('#inspect-prototype-page').scrollTop=0;if(key==='resources'){const box=boxes.get(selected);if(box)mountInspectMemory(box)}}
+  const box=boxes.get(selected);if(box)renderInspectPrototype(box);
+  if(subpage)$('#inspect-prototype-back').focus({preventScroll:true});
+  else{inspectPrototypeReturnFocus=null;if(restoreFocus&&returnFocus?.isConnected&&!returnFocus.hidden)returnFocus.focus({preventScroll:true})}
+ }
+ function renderInspectPrototype(box){
+  if(!inspectPrototypeReady)return;
+  $('#inspect-title').textContent=inspectPrototypeTitles[inspectPrototypePage]||'Details';
+  const profiles=inspectProfileCache?.profiles||[],primary=profiles[0]||{};
+  const model=primary.model||'Auto model',reasoning=primary.reasoningEffort||'Auto';
+  const budget=$('#inspect-run-budget-policy'),remaining=budget.querySelector('.run-budget-remaining');
+  const currentRun=remaining?.textContent.startsWith('Stops in ')?remaining.textContent.replace('Stops in ',''):'No countdown';
+  const worker=inspectWorker?.name||box.providerCredential||'Assigned worker';
+  const overview=[
+   ['Model',model+' · '+reasoning],
+   ['Status',(box.streaming||box.processing?'Working':box.state==='running'?'Running':box.state)+' · '+currentRun],
+   ['Worker',[box.provider||'Pool',worker].join(' · ')],
+   ['Profile',profiles.length?profiles.map(ref=>ref.name||ref.application).join(', '):'None assigned'],
+  ];
+  const grid=$('#ip-overview');if(grid.children.length!==4){grid.replaceChildren();for(let i=0;i<4;i++){const cell=mk('div');cell.className='ip-overview-cell';cell.append(Object.assign(mk('span'),{className:'ip-cell-label'}),Object.assign(mk('strong'),{className:'ip-cell-value'}));grid.append(cell)}}
+  overview.forEach(([label,value],i)=>{const cell=grid.children[i];cell.querySelector('.ip-cell-label').textContent=label;cell.querySelector('.ip-cell-value').textContent=value;cell.querySelector('.ip-cell-value').title=value});
+  const setValue=(key,value)=>{const node=$('[data-ip-row="'+key+'"] .ip-row-value');if(node){node.textContent=value;node.title=value}};
+  const idle=$('#inspect-idle-policy'),idleOn=idle.querySelector('.idle-policy-badge')?.textContent==='On';
+  const runOn=budget.querySelector('.idle-policy-badge')?.textContent==='On';
+  setValue('power',(idleOn?(idle.querySelector('input[type=number]')?.value||'—')+'h idle':'Idle off')+' · '+(runOn?(budget.querySelector('input[type=number]')?.value||'—')+'h run':'No run limit'));
+  setValue('instructions',instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null));
+  setValue('credentials',profiles.length+' '+(profiles.length===1?'profile':'profiles'));
+  const contacts=(Array.isArray(inspectContactCache)?inspectContactCache:[]).filter(contact=>contact.override==='allow').length;setValue('contacts',contacts+' direct '+(contacts===1?'contact':'contacts'));
+  setValue('access',inspectProtected?'Protected':'Permissions');
+  const count=inspectAttachmentCache?.boxCount;setValue('attachments',Number.isFinite(count)?count+' '+(count===1?'file':'files'):'Storage');
+  setValue('technical','IDs & activity');
+  for(const key of ['power','credentials','contacts','access','attachments'])$('[data-ip-row="'+key+'"]').hidden=!owner;
+  $('#ip-instructions-summary').textContent='Last synced · '+instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null);
+  $('#ip-credentials-summary').textContent=profiles.length?profiles.map(importedProfileLabel).join(' · '):'No imported profiles';
+  $('#ip-danger').closest('.ip-group').hidden=!owner;
+  $('#ip-resync-instructions').hidden=!owner||box.state!=='running';$('[data-ip-row="restart"]').hidden=box.state!=='running';
+  $('[data-ip-row="context"]').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
+  $('[data-ip-row="clear-attachments"]').disabled=$('#inspect-clear-attachments').disabled;
+  if(inspectPrototypePage==='technical')renderInspectPrototypeTechnical(box);
+ }
+ function renderInspectPrototypeTechnical(box){
+  const table=$('#ip-technical-table');table.replaceChildren();
+  const messages=box.messages||[],lastAgent=lastMessage(messages,'agent'),livePing=boxViewerMetrics.get(box.id)?.ping;
+  const sync=inspectInstructionsFor===box.id?inspectInstructions:null;
+  const rows=[
+   ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId,null,inspectWorker.serviceId]]:[]),
+   ['Slot',inspectWorker?.slot||box.slotId||'—',null,box.slotId],
+   ['Messages',messages.length+' total'],
+   ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
+   ['Box ping',livePing==null?'—':livePing+' ms'],
+   ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
+   ...inspectObservationRows(box),
+   ['Instructions synced',instructionSyncLabel(sync),null,null,{title:instructionSyncFull(sync)}],
+  ];
+  for(const [label,rawValue,,copy,meta] of rows){
+   const value=String(rawValue).trim();
+   if(!value||value==='—'||value==='never'||value==='Open Desktop to measure')continue;
+   const copyable=label==='Slot'||/\bID\b/.test(label);
+   const row=mk(copyable?'button':'div');if(copyable)row.type='button';row.className='ip-technical-row'+(copyable?' ip-technical-copy':'')+(label==='Activity'?' ip-technical-activity':'');
+   const detail=mk('span',value);if(meta?.title)detail.title=meta.title;if(meta?.note)row.dataset.detailNote=meta.note;
+   row.append(mk('span',label),detail);
+   if(copyable){row.title='Copy '+label.toLowerCase();row.append(lucide('copy'));row.onclick=async()=>{try{await navigator.clipboard.writeText(copy||value);toast('Copied '+label.toLowerCase())}catch{toast('Copy is unavailable here.')}}}
+   table.append(row);
+  }
+ }
  function renderInspect(){
   if(!inspectOpen||!selected)return;
   const box=boxes.get(selected);if(!box)return;
   if(inspectProfilesFor!==box.id)inspectProfileCache=null;
   const workerKey=box.id+'|'+(box.slotId||'');
   if(inspectWorkerKey!==workerKey){inspectWorkerKey=workerKey;inspectWorker=null;void loadInspectWorker(box,workerKey)}
-  const msgs=box.messages||[],lastAgent=lastMessage(msgs,'agent'),lastUser=lastMessage(msgs,'user');
-  const livePing=boxViewerMetrics.get(box.id)?.ping;
-  const waiting=!!lastUser&&(!lastAgent||new Date(lastUser.createdAt)>new Date(lastAgent.createdAt));
-  const agent=box.defaultAgent||'shell';
-  const workerName=inspectWorker?.name||'Loading…';
-  const workerCopy=workerName==='Unknown worker'||workerName==='Loading…'?'':workerName;
-  const stateText=box.state+((box.streaming||box.processing)?' · working':'');
-  $('#inspect-title').textContent=box.name;
-  $('#inspect-header-state').textContent=boxActivitySubtitle(box);
-  $('#inspect-header-state').className=stateClass(box.state);
   {const hero=$('#inspect-avatar'),live=hero.firstElementChild,next=reuseMessageMascot(live,box,'inspect-hero-mascot',false);if(next!==live)hero.replaceChildren(next);next.removeAttribute('aria-hidden');bindMascotTooltip(next,box)}
   renderInspectScreen(box);
   $('#inspect-name').textContent=box.name;
   $('#inspect-subtitle').textContent=boxActivitySubtitle(box);
-  const badges=$('#inspect-badges');badges.replaceChildren();
-  const badge=(text,cls)=>{const b=document.createElement('span');b.className='inspect-badge'+(cls?' '+cls:'');b.textContent=text;badges.append(b)};
-  badge(box.state,stateClass(box.state));
-  badge(agent,'agent');
-  if(box.provider)badge(box.provider);
-  fillRows($('#inspect-runtime-rows'),[
-   ['State',stateText,stateClass(box.state)],
-   ['Agent',agent],
-   ...(owner?[['Profiles',inspectProfileCache?inspectProfileCache.error||([...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))].length?[...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))]:['None']):'Loading…']]:[]),
-   ['Provider',box.provider||'—'],
-   ['Worker',workerName,workerCopy?'':'muted',workerCopy],
-   ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId,'',inspectWorker.serviceId]]:[]),
-   ['Slot',inspectWorker?.slot||'Loading…','',box.slotId],
-   ['Messages',msgs.length+' total'],
-  ]);
-  fillRows($('#inspect-activity-rows'),[
-   ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
-   ['Box ping',livePing!=null?livePing+' ms':'Open Desktop to measure',livePing!=null?'':'explain'],
-   ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
-   ...inspectObservationRows(box),
-   ['Instructions synced',instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null),'',instructionSyncFull(inspectInstructionsFor===box.id?inspectInstructions:null)],
-   ['Waiting for agent',waiting?'since '+fmtAgo(lastUser.createdAt):'no',waiting?'alert':'ok'],
-  ]);
   const attachmentRoot=$('#inspect-attachment-storage');attachmentRoot.hidden=!owner;
   if(owner){
    if(inspectAttachmentFor!==box.id)void loadInspectAttachmentStorage(box);
@@ -3213,41 +3299,21 @@ function pairTileStatus(tile,mode,label){
    $('#inspect-attachment-empty').hidden=!usage||!!usage.error||Number(usage.boxCount)>0;
    $('#inspect-clear-attachments').disabled=!usage||!!usage.error||!usage.clearableCount;
   }
-  const quick=$('#inspect-quick-actions');quick.replaceChildren();
-  const link=document.createElement('a');
-  link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open workspace';link.target='_blank';link.rel='noopener';
-  quick.append(link);
-  if(canWakeBox(box)){
-   const wake=document.createElement('button');wake.type='button';wake.textContent='Wake box';wake.disabled=wakingBoxes.has(box.id);
-   wake.title='Restore the saved workspace and check for a saved agent conversation';wake.onclick=()=>void wakeBox(box);quick.append(wake);
-  }
-  if(box.state==='running'&&agent!=='shell'){
-   const clear=document.createElement('button');clear.type='button';clear.textContent='Clear context';
-   clear.title='Start a fresh agent context for this chat';clear.onclick=()=>$('#chat-clear-context').click();quick.append(clear);
-  }
-  // Config the box keeps in sync, editable from the same place it is reported.
-  const actions=$('#inspect-config-actions');actions.replaceChildren();
-  const act=(label,title,icon,fn,danger=false)=>{const b=document.createElement('button');b.type='button';b.className='inspect-config-action'+(danger?' danger':'');b.title=title;b.append(lucide(icon),Object.assign(document.createElement('span'),{textContent:label}),lucide('chevron-right'));b.onclick=fn;actions.append(b)};
-  act('Instructions…','Edit the Markdown instructions synced into this box','file-text',()=>void openBoxInstructions(box));
-  if(owner)act('Credentials…','Replace the login profiles imported into this box','key',()=>void openBoxCredentials(box));
-  if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box','refresh-cw',()=>void resyncBox(box));
-  if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end','power',()=>void restartBox(box),true);
   renderResourceCard();
-  const power=$('#inspect-power');power.hidden=!owner;
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
-  if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
+  if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,compact:true,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
-  if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,state:box.state,assignmentGeneration:box.assignmentGeneration,
+  if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,state:box.state,assignmentGeneration:box.assignmentGeneration,compact:true,
    request:seconds=>api(boxPath(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds}),
-   adjust:(action,seconds,expectedDeadlineAt)=>api(boxPath(box.id)+'/run-budget-policy/adjust','POST',{},{action,seconds,expectedDeadlineAt})});
-  if(owner&&power.open&&!document.hidden)mountInspectMemory(box);
-  renderPowerSummary();
+   adjust:(action,seconds,expectedDeadlineAt)=>api(boxPath(box.id)+'/run-budget-policy/adjust','POST',{},{action,seconds,expectedDeadlineAt}),
+   onPolicy:()=>queueMicrotask(()=>{if(inspectOpen&&selected===box.id)renderInspectPrototype(box)})});
   const limitRoot=$('#inspect-create-limit');
-  if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
+  if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,showWhenDisabled:true,showStateToggle:true,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
   else limitRoot.hidden=true;
   maybeLoadInspectProfiles(box);
   if(inspectInstructionsFor!==box.id)void loadInspectInstructions(box);
   maybeLoadInspectContacts(box);
+  renderInspectPrototype(box);
  }
  function maybeLoadInspectProfiles(box){
   if(!owner||inspectProfilesFor===box.id)return;
@@ -3271,11 +3337,12 @@ function pairTileStatus(tile,mode,label){
  $('#chat-info').onclick=()=>{
   if(inspectOpen){closeInspect();return}
   inspectOpen=true;inspect.hidden=false;$('#inspect-backdrop').hidden=false;scheduleResources(0);
+  initInspectPrototype();
   inspect.classList.toggle('with-contacts',owner);
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   controllerPing=null;renderInspect();void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;clearTimeout(resourceTimer);resourceRequest++;clearInspectMemory();stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
+ function closeInspect(){if(inspectPrototypeReady)showInspectPrototypePage('',false);inspectOpen=false;inspect.hidden=true;clearTimeout(resourceTimer);resourceRequest++;clearInspectMemory();stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#chat-header-open')?.addEventListener('click',()=>$('#chat-info').click());
  $('#chat-terminal')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('tmux',b.id)});
  $('#inspect-screen')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('desktop',b.id)});
@@ -3292,17 +3359,8 @@ function pairTileStatus(tile,mode,label){
    if(inspectOpen&&selected===box.id){await loadInspectAttachmentStorage(box);storageStatus.textContent='Removed '+result.removedReferences+' attachment references; freed '+storageSize(result.freedBytes)+'.'}
   }catch(e){storageStatus.textContent=e.message;button.disabled=false}
  };
- // Collapsible details sections, remembered per browser.
- const foldKey='vmbox.inspectFold';
- let foldState={};try{foldState=JSON.parse(localStorage.getItem(foldKey)||'{}')}catch{}
- document.querySelectorAll('#inspect-summary .inspect-fold').forEach(node=>{
-  const key=node.dataset.fold;
-  if(key in foldState)node.open=!!foldState[key];
-  node.addEventListener('toggle',()=>{foldState[key]=node.open;try{localStorage.setItem(foldKey,JSON.stringify(foldState))}catch{}});
- });
- $('#inspect-power').addEventListener('toggle',()=>{if($('#inspect-power').open&&inspectOpen&&selected&&!document.hidden)mountInspectMemory(boxes.get(selected))});
  const powerObserver=new MutationObserver(records=>{
-  if(records.some(record=>record.target===record.target.closest?.('#inspect-idle-policy,#inspect-run-budget-policy')||record.target.parentElement?.closest?.('.idle-policy-badge,.idle-policy-status')||record.target.closest?.('.idle-policy-badge,.idle-policy-status')))renderPowerSummary();
+  if(inspectOpen&&selected&&records.some(record=>record.target.closest?.('.idle-policy-badge,.idle-policy-status,.run-budget-remaining')))renderInspectPrototype(boxes.get(selected));
  });
  for(const id of ['#inspect-idle-policy','#inspect-run-budget-policy'])powerObserver.observe($(id),{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['data-enabled']});
 
@@ -3352,6 +3410,7 @@ function pairTileStatus(tile,mode,label){
    $('#inspect-toggle-protection').setAttribute('aria-checked',String(inspectProtected));
    $('#inspect-toggle-protection').setAttribute('aria-label',inspectProtected?'Remove protection':'Protect box');
    renderInspectContacts(box);
+   if(inspectPrototypeReady)renderInspectPrototype(box);
    status.textContent='';
   }catch(e){status.textContent=e.message}
  }
@@ -4089,8 +4148,7 @@ function pairTileStatus(tile,mode,label){
    track.className='inspect-resource-track';fill.style.width=(metric.ratio===null?0:Math.max(0,Math.min(100,metric.ratio*100)))+'%';track.append(fill);
    row.classList.toggle('resource-warning',metric.ratio!==null&&metric.ratio>=.85&&(kind==='disk'&&data?.diskEnforced===false||metric.ratio<.95));
    row.classList.toggle('resource-danger',metric.ratio!==null&&metric.ratio>=.95&&!(kind==='disk'&&data?.diskEnforced===false));
-   if(kind==='ram'){const name=mk('span');name.className='inspect-resource-name';name.append(label,adjust);row.append(name,value,track)}
-   else row.append(label,value,track);
+   row.append(label,value,track);
    if(kind==='disk'&&data?.diskEnforced===false)row.append(Object.assign(mk('small','Limit not enforced on this shared worker'),{className:'inspect-resource-note'}));
    rows.append(row);
   }
@@ -4101,9 +4159,7 @@ function pairTileStatus(tile,mode,label){
   adjust.hidden=box.provider!=='shared-worker'||box.state!=='running';
  }
  $('#inspect-resources-adjust').onclick=()=>{
-  const box=boxes.get(selected);if(!box)return;
-  const fold=$('#inspect-power');fold.open=true;mountInspectMemory(box);
-  requestAnimationFrame(()=>{memoryRoot.scrollIntoView({block:'nearest'});memoryRoot.focus({preventScroll:true})});
+  showInspectPrototypePage('resources');
  };
  async function refreshBoxResources(){
   const box=boxes.get(selected);
@@ -4112,9 +4168,9 @@ function pairTileStatus(tile,mode,label){
   try{
    const data=await api(boxPath(id)+'/resources');
    if(request!==resourceRequest||selected!==id||!inspectOpen||document.hidden||!owner)return;
-   resourceSnapshot={id,data};renderResourceCard();renderPowerSummary();
+   resourceSnapshot={id,data};renderResourceCard();
   }catch{
-   if(request===resourceRequest&&selected===id){resourceSnapshot=null;renderResourceCard();renderPowerSummary()}
+   if(request===resourceRequest&&selected===id){resourceSnapshot=null;renderResourceCard()}
   }
  }
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
