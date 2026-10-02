@@ -33,3 +33,52 @@ func TestExplicitIntentActivity(t *testing.T) {
 		}
 	}
 }
+
+func TestExplicitProseActivityCompletesItsObject(t *testing.T) {
+	cases := []struct{ input, want string }{
+		{"assistant: I'm asking builder if there's time to review.", "Asking builder if there's time"},
+		{"assistant: I'm asking builder if there's.", "Asking builder"},
+		{"assistant: I'm telling owner they are ready.", "Telling owner they are ready"},
+		{"assistant: I'm telling owner they are.", "Telling owner"},
+		{"assistant: I'm waiting on the other.", ""},
+		{"assistant: I'm marking as the top priority.", "Marking as the top priority"},
+		{"assistant: I'm marking as the top.", ""},
+		{"assistant: I'm sending builder a speed limit.", "Sending builder a speed limit"},
+		{"assistant: I'm sending builder a speed.", "Sending builder"},
+		{"assistant: I'm leaving until the owner returns.", "Leaving until the owner returns"},
+		{"assistant: I'm leaving until the owner.", ""},
+		{"assistant: I'm starting with step 2.", "Starting with step 2"},
+		{"assistant: I'm starting with step.", ""},
+		{"assistant: I'm waiting for your next.", ""},
+		{"assistant: I'm waiting for it.", ""},
+		{"assistant: I'm waiting for the CI results.", "Waiting for the CI results"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			if got := ExplicitProseActivity(tc.input); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCompletedAndWaitingForWork(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{"assistant: Done. Waiting for your next task.", true},
+		{"assistant: The build is finished. I'm waiting for instructions.", true},
+		{"assistant: Finished the report.\nassistant: Waiting for your next message.", true},
+		{"assistant: Done. Waiting for approval to merge.", false},
+		{"assistant: Waiting for your next task.", false},
+		{"assistant: Done. Waiting for your next task.\ntool: Running go test", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			if got := CompletedAndWaitingForWork(tc.input); got != tc.want {
+				t.Errorf("got %t, want %t", got, tc.want)
+			}
+		})
+	}
+}

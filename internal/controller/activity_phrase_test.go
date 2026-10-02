@@ -25,6 +25,21 @@ func TestActivityPhraseDropsTrivialToolOnlyEvidence(t *testing.T) {
 	}
 }
 
+func TestActivityPhraseUsesIdleForCompletedWorkAwaitingNewWork(t *testing.T) {
+	cases := []struct{ text, want string }{
+		{"assistant: Done with the build. Waiting for your next task.", "Idle"},
+		{"assistant: The script finished and the tests passed.\nassistant: Waiting for your next message.", "Idle"},
+		{"assistant: Finished the report. Waiting for instructions.", "Idle"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.text, func(t *testing.T) {
+			if got := activityPhrase(tc.text); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRecentOwnFixRejectsRelayedWorkerAction(t *testing.T) {
 	for _, text := range []string{
 		"assistant: Builder fixed the mascot eyes and is rerunning tests.",
@@ -59,6 +74,9 @@ func TestActivityPhraseRejectsInvalidGenerations(t *testing.T) {
 		"Using a tool",                          // Generic tool name.
 		"Planning mascot plan",                  // Repeated stem after doubled consonant.
 		"Holding deepseek screenshots",          // Garbled screenshot action.
+		"Waiting for your next",                 // Incomplete object.
+		"Waiting on the other",                  // Incomplete object.
+		"Telling owner they are",                // Incomplete clause.
 	} {
 		if validActivityPhrase(phrase) {
 			t.Errorf("accepted invalid phrase %q", phrase)
