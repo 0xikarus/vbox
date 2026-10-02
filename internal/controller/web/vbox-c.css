@@ -2896,3 +2896,30 @@ dialog:not([open]){display:none}
 .worker-settings-form .form-actions{margin:0}
 .worker-settings-form [role=status]:empty{display:none}
 .worker-settings-note{margin:.5rem 0;color:var(--vb-ink-faint);font-size:var(--vb-type-rem-0-75);line-height:1.4;overflow-wrap:anywhere}
+
+/* Providers page: a pool's slots, box size, connection and actions open inline under its row. */
+#providers .section-heading{display:flex;justify-content:space-between;gap:12px}
+#providers .section-heading #provider-add{flex:none}
+#provider-list .provider-row.is-open>td{border-bottom-color:transparent}
+#provider-list .provider-detail-row>td{padding:0 0 16px;border-bottom:1px solid var(--vb-line)}
+.provider-panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr));gap:18px 22px;padding:16px;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-surface)}
+.provider-panel-section{display:grid;align-content:start;gap:.55rem;min-width:0}
+.provider-panel-section:first-child{grid-column:1/-1}
+.provider-panel-section h3{margin:0;font-size:var(--vb-type-px-14);font-weight:700}
+.provider-panel-section>.hint{margin:0}
+.provider-panel .slot-grid{margin:.2rem 0 0}
+.provider-panel .worker-specs{margin:0}
+.provider-panel-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem}
+.provider-panel-actions .provider-menu-delete{color:var(--vb-danger-text)}
+.provider-default-note{padding:.3rem .6rem;border-radius:var(--r-pill);background:var(--vb-accent-soft,var(--vb-bg-soft));color:var(--vb-ink-soft);font-size:var(--vb-type-px-12);font-weight:600}
+.provider-panel-status{margin:0;font-size:var(--vb-type-rem-0-75);line-height:1.4;overflow-wrap:anywhere}
+.provider-panel-status:empty{display:none}
+#provider-editor.in-panel{margin:0;padding:0;border:0;background:none}
+#provider-editor.in-panel>summary{display:none}
+#provider-editor.in-panel #provider-type-help{margin-top:0}
+@media(max-width:600px){
+ #provider-list .providers-table tr.provider-detail-row{display:block;margin-top:-6px;padding:0;border:0;background:none}
+ #provider-list .provider-detail-row>td{display:block;padding:0;border:0}
+ #provider-list .provider-detail-row>td::before{content:none}
+ .provider-panel{padding:13px}
+}

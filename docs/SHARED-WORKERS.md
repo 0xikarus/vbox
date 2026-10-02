@@ -32,9 +32,8 @@ aliases.
 
 ## Changing slots and box size remotely
 
-Once registered, nothing on the host needs editing. Choose **Worker settings…**
-from the pool's **⋯** menu on the Providers page, or use
-`vbox pools worker shared-worker ALIAS`:
+Once registered, nothing on the host needs editing. Choose **Manage** on the
+pool's row on the Providers page, or use `vbox pools worker shared-worker ALIAS`:
 
 ```sh
 vbox pools worker shared-worker my-vps                     # show specs and settings

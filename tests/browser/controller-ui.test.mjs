@@ -824,7 +824,7 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.deepEqual(errors,[]);await page.close();
 });
 
-test('shared worker slots and box size are set from its row up to the machine',async()=>{
+test('a shared worker pool is managed inline on the providers page up to its machine',async()=>{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.setViewport({width:1280,height:900});
  await page.evaluateOnNewDocument(revision=>{
@@ -847,25 +847,30 @@ test('shared worker slots and box size are set from its row up to the machine',a
  },revision);
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');
  await page.click('.workspace-links a[href="#providers"]');
- await page.waitForSelector('#provider-list .provider-actions-more summary');
- await page.click('#provider-list .provider-actions-more summary');
- await page.evaluate(()=>[...document.querySelectorAll('#provider-list .provider-actions-extra button')].find(b=>b.textContent==='Worker settings…').click());
- await page.waitForSelector('dialog.worker-settings[open] .worker-settings-form');
+ await page.waitForSelector('#provider-list .provider-actions button');
+ assert.equal(await page.$eval('#provider-list .provider-actions button',n=>n.textContent),'Manage');
+ await page.click('#provider-list .provider-actions button');
+ await page.waitForSelector('#provider-list .provider-detail-row .provider-panel .worker-settings-form');
+ // Everything for the pool is in one place: slots and box size, slot cards, connection and actions.
+ assert.deepEqual(await page.$$eval('.provider-panel h3',nodes=>nodes.map(n=>n.textContent)),['Slots and box size','Connection','Pool']);
+ assert.equal(await page.$$eval('.provider-panel .slot-card',nodes=>nodes.length),2);
+ assert.deepEqual(await page.$eval('#provider-editor',n=>({open:n.open,inPanel:!!n.closest('.provider-panel'),alias:n.querySelector('input[name=alias]').value,endpoint:n.querySelector('input[name="config:endpoint"]').value})),{open:true,inPanel:true,alias:'my-vps',endpoint:'https://203.0.113.10'});
+ assert.deepEqual(await page.$$eval('.provider-panel-actions button',nodes=>nodes.map(n=>n.textContent)),['Validate','Refresh usage','Delete…']);
  assert.match(await page.$eval('.worker-specs',n=>n.textContent),/4 CPUs · 7\.8 GiB RAM · 4\.0 GiB swap · 40 GiB free of 80 GiB disk · container isolation/);
  assert.deepEqual(await page.$eval('.worker-settings-form',form=>({min:form.elements.slots.min,max:form.elements.slots.max,cpuMax:form.elements.cpu.max,memoryMax:form.elements.memory.max,warning:form.querySelector('.worker-overcommit').hidden})),{min:'1',max:'7',cpuMax:'4',memoryMax:'7',warning:true});
  await page.$eval('.worker-settings-form input[name=slots]',n=>{n.value='6';n.dispatchEvent(new Event('input',{bubbles:true}))});
  await page.$eval('.worker-settings-form input[name=cpu]',n=>{n.value='1.5'});
  assert.match(await page.$eval('.worker-overcommit',n=>n.hidden?'':n.textContent),/6 slots × 2 GiB = 12 GiB, more than this machine's 7\.8 GiB RAM/);
- if(process.env.VMBOX_SCREENSHOT_DIR)await (await page.$('dialog.worker-settings')).screenshot({path:process.env.VMBOX_SCREENSHOT_DIR+'/worker-panel.png'});
+ if(process.env.VMBOX_SCREENSHOT_DIR)await (await page.$('.provider-panel')).screenshot({path:process.env.VMBOX_SCREENSHOT_DIR+'/worker-panel.png'});
  await page.$eval('.worker-settings-form',form=>form.requestSubmit());
  await page.waitForFunction(()=>window.workerWrites.length===1);
  assert.deepEqual(await page.evaluate(()=>window.workerWrites[0]),{provider:'shared-worker',providerCredential:'my-vps',revision:3,slots:6,boxDefaults:{cpu:1.5,memoryMiB:2048,swapMiB:1024}});
  await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('without a restart'));
- await page.waitForFunction(()=>document.querySelector('.worker-settings-form input[name=slots]')?.value==='6');
- await page.evaluate(()=>document.querySelector('dialog.worker-settings').close());
- await page.waitForFunction(()=>!document.querySelector('dialog.worker-settings'));
+ await page.waitForFunction(()=>document.querySelector('.provider-panel .worker-settings-form input[name=slots]')?.value==='6');
  // A new provider is typed fields, not JSON; the token goes only into the secret.
- await page.click('#provider-editor summary');
+ await page.$eval('#provider-add',button=>button.click());
+ await page.waitForFunction(()=>!document.querySelector('.provider-panel')&&document.querySelector('#provider-editor').open&&!document.querySelector('#provider-editor').classList.contains('in-panel'));
+ assert.equal(await page.$eval('#provider input[name=alias]',n=>n.value),'');
  await page.select('#provider select[name=provider]','shared-worker');
  await page.type('#provider input[name=alias]','my-vps');
  await page.type('#provider input[name="config:endpoint"]','https://203.0.113.10');
@@ -874,7 +879,8 @@ test('shared worker slots and box size are set from its row up to the machine',a
  const created=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().endsWith('/v1/provider-credentials/shared-worker/my-vps'));
  await page.$eval('#provider',form=>form.requestSubmit());await created;
  assert.deepEqual(requests.findLast(r=>r.path==='/v1/provider-credentials/shared-worker/my-vps').body,{config:{endpoint:'https://203.0.113.10'},secret:{token:'disposable-token-not-real-0123456789'}});
- assert.equal(await page.$eval('#provider-editor',n=>n.open),false);
+ // The new pool opens straight into its panel so its slots can be set next.
+ await page.waitForFunction(()=>document.querySelector('#provider-editor').closest('.provider-panel'));
  if(process.env.VMBOX_SCREENSHOT_DIR)await page.screenshot({path:process.env.VMBOX_SCREENSHOT_DIR+'/worker-settings.png',fullPage:true});
  assert.deepEqual(errors,[]);await page.close();
 });
