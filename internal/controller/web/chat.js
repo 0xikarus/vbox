@@ -1563,14 +1563,16 @@
    btn.disabled=answered;
    btn.onclick=()=>{
     if(btn.disabled)return;
-    if(message.question.multiple)btn.classList.toggle('on');
-    else{btn.classList.add('on');for(const sib of choices.children)if(sib!==btn)sib.classList.remove('on')}
+    // Every question accepts several picks: agents often leave multiple unset
+    // even when more than one choice applies, and a single pick still works.
+    btn.classList.toggle('on');
     record();
    };
    choices.append(btn);
   }
   const send=document.createElement('button');send.type='submit';send.className='send';send.textContent=answered?'Answer sent':'Send selection';send.disabled=answered;
-  form.append(choices,send);
+  const hint=document.createElement('span');hint.className='hint';hint.textContent='Pick one or more';hint.hidden=answered;
+  form.append(choices,hint,send);
   form.onsubmit=async event=>{
    event.preventDefault();
    const selectedChoices=[...choices.children].filter(c=>c.classList.contains('on')).map(c=>c.dataset.value);
