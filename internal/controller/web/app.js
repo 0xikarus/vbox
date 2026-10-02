@@ -237,38 +237,22 @@ function renderNotifications(values){const root=$('#destinations');root.replaceC
 function renderProviders(providers){
  const root=$('#provider-list');root.replaceChildren();
  if(!providers.length){root.append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));return}
+ const {table,rows}=workspaceNav.providerTable(true);root.append(table);
  for(const provider of providers){
   const fleet=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));
-  const card=node('article');card.className='provider-card';
-  const heading=node('div');heading.className='provider-card-heading';
-  const identity=node('div');identity.append(node('small',provider.provider),node('strong',provider.name));
   const isDefault=defaults?.provider===provider.provider&&defaults?.providerCredential===provider.name;
-  if(isDefault){const badge=node('span','Default pool');badge.className='provider-default-badge';heading.append(identity,badge)}else heading.append(identity);
-  const capacity=node('div');capacity.className='provider-capacity';
-  if(fleet?.error)capacity.append(node('span','Capacity unavailable: '+fleet.error));
-  else for(const [label,value] of [['Workers',provider.provider==='shared-worker'?(fleet?.slots?.length?1:0):(fleet?.slots?.length??'—')],['Slots',fleet?.actualSlots??'—'],['Occupied',fleet?.occupiedSlots??'—'],['Free',fleet?.freeSlots??'—']]){const stat=node('span');stat.append(node('small',label),node('strong',String(value)));capacity.append(stat)}
-  if(provider.provider==='shared-worker'&&fleet?.slots?.length){
-   const host=fleet?.hostResources,fmt=bytes=>(bytes/(1024**3)).toFixed(1)+' GiB';
-   if(host?.memoryTotalBytes){
-    const scope=host.scope==='cgroup'?'Worker':'Host';
-    for(const [label,used,total,description] of [[scope+' RAM',host.memoryTotalBytes-host.memoryAvailableBytes,host.memoryTotalBytes,''],[scope+' swap',host.swapTotalBytes-host.swapFreeBytes,host.swapTotalBytes,host.swapUnlimited?'Unlimited':host.swapLimitKnown===false?'Limit unavailable':'No swap configured']]){
-     const stat=node('span');stat.append(node('small',label+' used'),node('strong',total?fmt(used)+' / '+fmt(total):description));
-     if(host.observedAt)stat.title='Observed '+new Date(host.observedAt).toLocaleString();
-     if(total&&used/total>=.85){stat.title=label+' pressure is high';stat.classList.add('alert')}
-     capacity.append(stat);
-    }
-   }else if(fleet?.hostError){const notice=node('p','Usage unavailable: '+fleet.hostError);notice.className='provider-capacity-notice';capacity.append(notice)}
-  }else if(provider.provider==='shared-worker'&&!fleet?.error){const notice=node('p','No active worker in this pool.');notice.className='provider-capacity-notice';capacity.append(notice);
-  }
-  const actions=node('div');actions.className='provider-actions';
-  actions.append(button('Edit',()=>{const form=$('#provider').elements;form.provider.value=provider.provider;form.alias.value=provider.name;form.config.value=JSON.stringify(provider.config||{},null,2);form.secret.value='';form.revision.value=provider.updatedAt;$('#provider-editor').open=true;$('#provider-editor').scrollIntoView({block:'start'});form.config.focus()}),button('Validate',async()=>{const result=await api(pp(provider.provider,provider.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}));
-  actions.append(button('Delete',()=>workspaceNav.openProviderDelete(provider,refresh)));
-  const extra=node('div');extra.className='provider-actions-extra';
-  if(provider.provider==='shared-worker'&&fleet?.slots?.length)extra.append(button('Refresh usage',async()=>{const target={provider:provider.provider,providerCredential:provider.name||''};const snapshot=fleetSnapshots.find(item=>item.provider===target.provider&&item.providerCredential===target.providerCredential);try{const usage=await api('/v1/fleet/host-resources?'+new URLSearchParams(target));if(snapshot){snapshot.hostResources=usage;snapshot.hostError=''}}catch(err){if(snapshot){snapshot.hostResources=null;snapshot.hostError=err.message}}if(snapshot)renderProviders(providers)}));
-  if(!isDefault)extra.append(button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:provider.provider,providerCredential:provider.name});await refresh()}));
-  if(extra.childElementCount){const more=node('details');more.className='provider-actions-more';more.append(node('summary','More'),extra);actions.append(more)}
-  const details=node('details');details.append(node('summary','Configuration'),dataTable(['Setting','Value'],Object.entries(provider.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));
-  card.append(heading,capacity,actions,details);root.append(card);
+  const row=node('tr');rows.append(row);
+  const snapshot=fleet?fleet.providerSnapshot:{fleet:null,config:null,host:null,hostError:'',errors:[]};
+  workspaceNav.renderProviderRow(row,provider,isDefault,snapshot,cell=>{
+   const actions=node('div');actions.className='provider-actions';
+   actions.append(button('Edit',()=>{const form=$('#provider').elements;form.provider.value=provider.provider;form.alias.value=provider.name;form.config.value=JSON.stringify(provider.config||{},null,2);form.secret.value='';form.revision.value=provider.updatedAt;$('#provider-editor').open=true;$('#provider-editor').scrollIntoView({block:'start'});form.config.focus()}),button('Validate',async()=>{const result=await api(pp(provider.provider,provider.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}));
+   const more=node('details');more.className='provider-actions-more';const menu=node('div');menu.className='provider-actions-extra';
+   if(!isDefault)menu.append(button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:provider.provider,providerCredential:provider.name});await refresh()}));
+   menu.append(button('Refresh usage',async()=>{const fresh=await workspaceNav.providerSnapshot(provider);const target=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));if(target){Object.assign(target,fresh.fleet||{}, {providerSnapshot:fresh,hostResources:fresh.host,hostError:fresh.hostError});renderProviders(providers)}}));
+   menu.append(button('Configuration…',()=>{const dialog=node('dialog');dialog.className='vb-sheet-dialog provider-config-dialog';dialog.setAttribute('aria-label','Configuration for '+provider.name);const header=node('header');header.className='vb-sheet-header';const title=node('h2','Configuration · '+provider.name);const close=button('Close',()=>dialog.close());header.append(title,close);const body=node('div');body.className='sheet-scroll-body';body.append(dataTable(['Setting','Value'],Object.entries(provider.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));dialog.append(header,body);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal()}));
+   const remove=button('Delete…',()=>workspaceNav.openProviderDelete(provider,refresh));remove.classList.add('provider-menu-delete');menu.append(remove);
+   const summary=node('summary','⋯');summary.setAttribute('aria-label','More actions for '+provider.name);menu.addEventListener('click',()=>{more.open=false});more.append(summary,menu);actions.append(more);cell.append(actions);
+  });
  }
 }
 const bp=id=>'/v1/logical-boxes/'+encodeURIComponent(id),pp=(p,n)=>'/v1/provider-credentials/'+encodeURIComponent(p)+'/'+encodeURIComponent(n);
@@ -595,7 +579,7 @@ async function refresh(){
  workspaceNav?.setOwner(identity.role==='owner');
  renderPermissionBoxes(boxes);
  renderPoolChoices(providers);
- const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};try{const fleet=await api('/v1/fleet/status?'+new URLSearchParams(target));let hostResources=null,hostError='';if(provider.provider==='shared-worker'&&fleet.slots?.length)try{hostResources=await api('/v1/fleet/host-resources?'+new URLSearchParams(target))}catch(err){hostError=err.message}return {...fleet,...target,hostResources,hostError}}catch(err){return {...target,error:err.message}}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
+ const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};const snapshot=await workspaceNav.providerSnapshot(provider);return {...(snapshot.fleet||{}),...target,providerSnapshot:snapshot,hostResources:snapshot.host,hostError:snapshot.hostError,error:snapshot.fleet?undefined:snapshot.errors[0]}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
  const chosenTools=new Set([...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value));$('#create-tools').replaceChildren(node('legend','Optional tools'));
  for(const preset of toolPresets){if(preset.id==='desktop')continue;const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=chosenTools.has(preset.id);label.title=preset.version+' — '+preset.description;label.append(input,document.createTextNode(preset.name));$('#create-tools').append(label)}
  renderProfiles(identity,profiles);

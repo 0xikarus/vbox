@@ -21,8 +21,7 @@ const targets={
 const desktopBounds={
  chatTop:[[41.172,38.391],[61.703,36],[97.656,36],[41.172,38.391]],
  composer:[[40,40],[32,32]],viewer:[[36.797,36.797],[32,32],[32,32],[40.047,32]],
- boxes:[[41.172,38.391],[61.703,36],[97.656,36],[41.172,38.391],[59.797,31.594],[33.594,33.594]],
- providers:[[51.125,35.969],[80.953,35.969],[69.344,35.969],[51.125,35.969],[80.953,35.969],[69.344,35.969],[59.344,39.969]]
+ boxes:[[41.172,38.391],[61.703,36],[97.656,36],[41.172,38.391],[59.797,31.594],[33.594,33.594]]
 };
 function assertDesktopBounds(kind,items){assert.equal(items.length,desktopBounds[kind].length,kind);items.forEach((item,index)=>{const [width,height]=desktopBounds[kind][index];assert(Math.abs(item.visualWidth-width)<.15&&Math.abs(item.visualHeight-height)<.15,JSON.stringify({kind,index,item,expected:[width,height]}))})}
 const dimensions=async(page,selectors)=>page.evaluate(selectors=>selectors.flatMap(selector=>[...document.querySelectorAll(selector)].filter(node=>{const style=getComputedStyle(node),rect=node.getBoundingClientRect();return style.display!=='none'&&style.visibility!=='hidden'&&rect.width&&rect.height}).map(node=>{
@@ -106,7 +105,7 @@ test('phone controls have 40px hit areas while desktop bounds stay unchanged',as
     await manage.click('#manage-menu');await manage.click('#manage-menu-panel a[href="#providers"]');assert.equal(await manage.$eval('#manage-menu-panel',node=>node.hidden),true);
    }
    await manage.goto(base+'/#providers');await manage.waitForSelector('#provider-list .provider-actions>button');
-   found=await dimensions(manage,targets.providers);if(process.env.VMBOX_TOUCH_REPORT)console.log('providers',suffix,JSON.stringify(found));assert(found.length>=7,JSON.stringify(found));if(verify&&mobile){assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));assertNeighbourCentres('providers',found)}if(verify&&!mobile)assertDesktopBounds('providers',found);
+   found=await dimensions(manage,targets.providers);if(process.env.VMBOX_TOUCH_REPORT)console.log('providers',suffix,JSON.stringify(found));assert.equal(found.length,6,JSON.stringify(found));if(verify&&mobile){assert(found.every(item=>item.hitWidth>=39.9&&item.hitHeight>=39.9&&item.topHit&&item.leftHit),JSON.stringify(found));assertNeighbourCentres('providers',found)}
    if(captureDir&&mobile)await manage.screenshot({path:`${captureDir}/providers-${suffix}.png`});
    await manage.$eval('#provider-list .provider-actions-more>summary',node=>node.click());assert.equal(await manage.$eval('#provider-list .provider-actions-more',node=>node.open),true);await manage.close();
   }

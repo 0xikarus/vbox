@@ -120,7 +120,7 @@ test('management views expose box placement and keep details easy to close',asyn
  assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / providers');
  assert.equal(await page.title(),'vbox / providers');
  assert.equal(await page.$eval('#boxes',section=>getComputedStyle(section).display),'none');
- await page.waitForSelector('.provider-card');
+ await page.waitForSelector('#provider-list .providers-table tbody tr');
  await page.setViewport({width:390,height:844});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.close();
@@ -494,7 +494,7 @@ test('worker placement distinguishes shared hosts and creation targets the selec
  assert.match(await page.$eval('[data-box-id="dedicated"] .box-placement',e=>e.textContent),/Dedicated · slot 1/);
  assert.match(await page.$eval('[data-box-id="shared-a"] .box-placement',e=>e.textContent),/Shared · slot 1/);
  assert.match(await page.$eval('[data-box-id="shared-b"] .box-placement',e=>e.textContent),/Shared · slot 1/);
- assert.match(await page.$eval('#provider-list',e=>e.textContent),/Host RAM used5\.0 GiB \/ 8\.0 GiB/);
+ assert.match(await page.$eval('#provider-list',e=>e.textContent),/5\.0 GiB \/ 8\.0 GiB/);
  const selected=JSON.stringify({provider:'shared-worker',providerCredential:'shared-02'});
  await page.click('#create details summary');
  await page.select('#create-pool',selected);
