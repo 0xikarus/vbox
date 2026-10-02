@@ -62,11 +62,24 @@ test('Details drawer uses grouped rows, subpages and the credentials sheet',asyn
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'drawer fits '+width+'px viewport');
    assert.equal(await page.$eval('#inspect-prototype-main',node=>node.hidden),false);
    assert.equal(await page.$eval('#inspect-idle-policy',node=>node.closest('#inspect-prototype-page')!==null),true);
+   if(width<600)assert.deepEqual(await page.evaluate(()=>['#inspect-close','#inspect-resources-adjust'].flatMap(selector=>{
+    const rect=document.querySelector(selector).getBoundingClientRect();return rect.width>=40&&rect.height>=40?[]:[`${selector}: ${rect.width}×${rect.height}`];
+   })),[],'phone main-page controls have 40px hit areas');
    await page.$eval('[data-ip-row="power"]',button=>button.click());
    assert.equal(await page.$eval('#inspect-prototype-page',node=>node.hidden),false);
    assert.equal(await page.$eval('#inspect-prototype-main',node=>node.hidden),true);
    assert.equal(await page.$eval('#inspect-title',node=>node.textContent),'Hibernation & limits');
+   assert.equal(await page.evaluate(()=>document.activeElement?.id),'inspect-prototype-back','opening a subpage focuses Back');
    await page.waitForFunction(()=>!document.querySelector('#inspect-run-budget-policy .idle-policy-switch input').disabled);
+   if(width<600)assert.deepEqual(await page.evaluate(()=>[
+    '#inspect-prototype-back','#inspect-idle-policy .idle-policy-switch','#inspect-run-budget-policy .idle-policy-switch',
+    '#inspect-idle-policy .ip-unit-field input','#inspect-run-budget-policy .ip-unit-field input',
+    '#inspect-idle-policy .idle-policy-controls:not(.run-budget-actions)>button',
+    '#inspect-run-budget-policy .idle-policy-controls:not(.run-budget-actions)>button',
+    '#inspect-run-budget-policy .run-budget-actions button',
+   ].flatMap(selector=>[...document.querySelectorAll(selector)].flatMap(node=>{
+    const rect=node.getBoundingClientRect();return rect.width>=40&&rect.height>=40?[]:[`${selector}: ${rect.width}×${rect.height}`];
+   }))),[],'phone policy controls have 40px hit areas');
    assert.equal(await page.$eval('#inspect-run-budget-policy .idle-policy-switch input',input=>input.checked),true);
    await page.$eval('#inspect-run-budget-policy .idle-policy-switch input',input=>input.click());
    await page.waitForFunction(()=>document.querySelector('#inspect-run-budget-policy .idle-policy-badge').textContent==='Off');
@@ -75,6 +88,11 @@ test('Details drawer uses grouped rows, subpages and the credentials sheet',asyn
    await page.waitForFunction(()=>document.querySelector('#inspect-run-budget-policy .idle-policy-badge').textContent==='On');
    assert.equal(runSeconds,28800);
    await page.$eval('#inspect-prototype-back',button=>button.click());
+   assert.equal(await page.evaluate(()=>document.activeElement?.dataset.ipRow),'power','Back restores focus to the opening row');
+   await page.$eval('#inspect-resources-adjust',button=>button.click());
+   assert.equal(await page.evaluate(()=>document.activeElement?.id),'inspect-prototype-back');
+   await page.$eval('#inspect-prototype-back',button=>button.click());
+   assert.equal(await page.evaluate(()=>document.activeElement?.id),'inspect-resources-adjust','Back restores focus to Adjust');
    await page.$eval('[data-ip-row="instructions"]',button=>button.click());
    assert.equal(await page.$eval('#ip-resync-instructions',button=>button.hidden),false);
    await page.$eval('#inspect-prototype-back',button=>button.click());

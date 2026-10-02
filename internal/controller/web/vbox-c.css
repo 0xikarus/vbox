@@ -2964,6 +2964,15 @@ dialog:not([open]){display:none}
  #inspect.details-prototype{top:0;right:0;bottom:0;width:100%;border:0}
  #inspect.details-prototype #inspect-prototype-main,#inspect.details-prototype #inspect-prototype-page{padding:12px 13px calc(env(safe-area-inset-bottom) + 24px)}
  #inspect.details-prototype #inspect-screen .inspect-screen-frame{max-height:180px}
+ #inspect.details-prototype #inspect-close,#inspect.details-prototype #inspect-prototype-back{width:40px;height:40px}
+ #inspect.details-prototype #inspect-resources-adjust{min-height:40px;padding:7px 12px}
+ #inspect.details-prototype .ip-page[data-ip-page="power"] .idle-policy-switch{display:flex;align-items:center;height:40px}
+ #inspect.details-prototype .ip-page[data-ip-page="power"] .idle-policy-switch span{height:1.45rem}
+ #inspect.details-prototype .ip-page[data-ip-page="power"] .ip-unit-field{min-height:40px}
+ #inspect.details-prototype .ip-page[data-ip-page="power"] .ip-unit-field input{min-height:40px;box-sizing:border-box}
+ #inspect.details-prototype .ip-page[data-ip-page="power"] .idle-policy-controls:not(.run-budget-actions)>button,
+ #inspect.details-prototype .ip-page[data-ip-page="power"] .run-budget-actions button,
+ #inspect.details-prototype .ip-page[data-ip-page="power"] .idle-policy-retry{min-height:40px}
 }
 
 /* Details subpages share the main page's quiet cards and divided rows. */

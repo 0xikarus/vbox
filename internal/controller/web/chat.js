@@ -3154,7 +3154,7 @@ function pairTileStatus(tile,mode,label){
  }
  const inspectPrototypeTitles={power:'Hibernation & limits',instructions:'Instructions',credentials:'Credentials',contacts:'Contacts',access:'Access & permissions',attachments:'Attachments',technical:'Technical details',resources:'Adjust resources'};
  const inspectPrototypePages=new Map();
- let inspectPrototypeReady=false,inspectPrototypePage='';
+ let inspectPrototypeReady=false,inspectPrototypePage='',inspectPrototypeReturnFocus=null;
  function inspectPrototypeRow(key,icon,title,value,onClick,danger=false){
   const row=document.createElement('button');row.type='button';row.className='ip-row'+(danger?' ip-row-danger':'');row.dataset.ipRow=key;
   const glyph=lucide(icon),name=mk('span',title),detail=mk('span',value),chevron=lucide('chevron-right');
@@ -3203,8 +3203,10 @@ function pairTileStatus(tile,mode,label){
   $('#inspect-prototype-back').onclick=()=>showInspectPrototypePage('');
   $('#inspect-resources-adjust').onclick=()=>showInspectPrototypePage('resources');
  }
- function showInspectPrototypePage(key){
+ function showInspectPrototypePage(key,restoreFocus=true){
   if(!inspectPrototypeReady)return;
+  if(key)inspectPrototypeReturnFocus=key==='resources'?$('#inspect-resources-adjust'):$('[data-ip-row="'+key+'"]');
+  const returnFocus=inspectPrototypeReturnFocus;
   inspectPrototypePage=key;
   const subpage=!!key;$('#inspect-prototype-main').hidden=subpage;$('#inspect-prototype-page').hidden=!subpage;
   for(const [name,node] of inspectPrototypePages)node.hidden=name!==key;
@@ -3212,6 +3214,8 @@ function pairTileStatus(tile,mode,label){
   inspect.classList.toggle('ip-in-subpage',subpage);
   if(subpage){$('#inspect-prototype-page').scrollTop=0;if(key==='resources'){const box=boxes.get(selected);if(box)mountInspectMemory(box)}}
   const box=boxes.get(selected);if(box)renderInspectPrototype(box);
+  if(subpage)$('#inspect-prototype-back').focus({preventScroll:true});
+  else{inspectPrototypeReturnFocus=null;if(restoreFocus&&returnFocus?.isConnected&&!returnFocus.hidden)returnFocus.focus({preventScroll:true})}
  }
  function renderInspectPrototype(box){
   if(!inspectPrototypeReady)return;
@@ -3338,7 +3342,7 @@ function pairTileStatus(tile,mode,label){
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   controllerPing=null;renderInspect();void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){if(inspectPrototypeReady)showInspectPrototypePage('');inspectOpen=false;inspect.hidden=true;clearTimeout(resourceTimer);resourceRequest++;clearInspectMemory();stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
+ function closeInspect(){if(inspectPrototypeReady)showInspectPrototypePage('',false);inspectOpen=false;inspect.hidden=true;clearTimeout(resourceTimer);resourceRequest++;clearInspectMemory();stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#chat-header-open')?.addEventListener('click',()=>$('#chat-info').click());
  $('#chat-terminal')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('tmux',b.id)});
  $('#inspect-screen')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('desktop',b.id)});
