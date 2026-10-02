@@ -3153,7 +3153,7 @@ function pairTileStatus(tile,mode,label){
    finally{form.querySelector('button').disabled=false;updateWarning()}
   };
  }
- const inspectPrototypeTitles={power:'Hibernation & limits',instructions:'Instructions',credentials:'Credentials',contacts:'Contacts',access:'Access & permissions',attachments:'Attachments',technical:'Technical details',resources:'Adjust resources',mail:'Inbox',mailDetail:'Email',mailOutbox:'Outbox'};
+ const inspectPrototypeTitles={power:'Hibernation & limits',instructions:'Instructions',credentials:'Credentials',contacts:'Contacts',access:'Access & permissions',attachments:'Attachments',technical:'Technical details',resources:'Adjust resources',mail:'Mail',mailDetail:'Email'};
  const inspectPrototypePages=new Map();
  let inspectPrototypeReady=false,inspectPrototypePage='',inspectPrototypeReturnFocus=null,inspectMailMockup=null;
  function inspectPrototypeRow(key,icon,title,value,onClick,danger=false){

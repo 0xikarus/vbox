@@ -16,24 +16,21 @@
   {id:'out-203',to:'team@fieldnotes.example',subject:'Thanks for the roundup',body:'Thanks for sharing this week’s roundup.',status:'sent',time:'Yesterday'},
   {id:'out-204',to:'promo@unknown.example',subject:'Re: Urgent: verify your account',body:'I can help with this.',status:'rejected',reason:'Sender was not trusted. Do not reply.',time:'Monday'}
  ];
- const state={enabled:initial!=='disabled',subscribed:true,filter:'all',senderFilter:'',subjectFilter:'',error:initial==='error',empty:initial==='empty',outboxTab:'pending_approval',mailId:'mail-101',otpRevealed:false,outboxId:'out-201',reviewMode:'approve'};
+ const state={enabled:initial!=='disabled',subscribed:true,tab:'inbox',filter:'all',senderFilter:'',subjectFilter:'',error:initial==='error',empty:initial==='empty',outboxTab:'pending_approval',mailId:'mail-101',otpRevealed:false,outboxId:'out-201',reviewMode:'approve'};
  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
  const byId=id=>document.getElementById(id);
  const unread=()=>state.enabled&&!state.empty?fixtureMails.filter(mail=>mail.unread&&!mail.quarantine).length:0;
  const pending=()=>fixtureOutbox.filter(item=>item.status==='pending_approval').length;
- let api,mailPage,detailPage,outboxPage,mainRow,outboxRow,review,returnFocus,previewObserver;
+ let api,mailPage,detailPage,mainRow,review,returnFocus,previewObserver;
  const address=()=>{
   const raw=api?.getBox()?.id||'bossdev';
   return raw.toLowerCase().replace(/[^a-z0-9.-]/g,'-')+'@example.test';
  };
  function pill(label,kind=''){return `<span class="mail-pill ${kind}">${esc(label)}</span>`}
- function notice(text,kind=''){return `<div class="mail-notice ${kind}" role="status">${esc(text)}</div>`}
  function card(title,content,extra=''){return `<section class="ip-card mail-card ${extra}"><h3>${esc(title)}</h3>${content}</section>`}
  function renderInbox(){
   const count=unread();
-  const status=card('Inbox',`<div class="mail-card-row"><div><strong>${state.enabled?'Receiving mail':'Mail is off'}</strong><small>${state.enabled?'Only known box addresses are accepted at example.test.':'Turn on to receive mail for this box.'}</small></div><label class="mail-switch"><input id="mail-enabled" type="checkbox" role="switch" aria-label="Enable inbox" ${state.enabled?'checked':''}><span aria-hidden="true"></span></label></div>`);
-  const addressCard=card('Address',`<div class="mail-address-row"><code>${esc(address())}</code><button type="button" data-mail-action="copy">Copy</button></div><p class="mail-help">Share this address to forward mail to this box. Mail never wakes a hibernated box.</p>`);
-  const subscribe=card('Agent subscription',`<div class="mail-card-row"><div><strong>${state.subscribed?'Subscribed':'Not subscribed'}</strong><small>${state.subscribed?'New mail is batched into agent chat.':'Mail stays in the inbox until opened.'}</small></div><label class="mail-switch"><input id="mail-subscribed" type="checkbox" role="switch" aria-label="Subscribe agent to inbox" ${state.subscribed?'checked':''} ${state.enabled?'':'disabled'}><span aria-hidden="true"></span></label></div><div class="mail-filter-fields"><label>Sender filter <input id="mail-sender-filter" placeholder="Any sender" value="${esc(state.senderFilter)}" ${state.enabled&&state.subscribed?'':'disabled'}></label><label>Subject contains <input id="mail-subject-filter" placeholder="Any subject" value="${esc(state.subjectFilter)}" ${state.enabled&&state.subscribed?'':'disabled'}></label></div><p class="mail-help">A sleeping box receives its queued batch on its next start.</p>`);
+  const settings=card('Settings',`<div class="mail-setting-row"><span>Receive mail</span><label class="mail-switch"><input id="mail-enabled" type="checkbox" role="switch" aria-label="Enable inbox" ${state.enabled?'checked':''}><span aria-hidden="true"></span></label></div><div class="mail-setting-row mail-setting-address"><span>Address</span><code>${esc(address())}</code><button type="button" data-mail-action="copy">Copy</button></div><div class="mail-setting-row"><span>Notify agent</span><label class="mail-switch"><input id="mail-subscribed" type="checkbox" role="switch" aria-label="Subscribe agent to inbox" ${state.subscribed?'checked':''} ${state.enabled?'':'disabled'}><span aria-hidden="true"></span></label></div><details class="mail-filter-details"><summary>Notification filters</summary><div class="mail-filter-fields"><label>Sender <input id="mail-sender-filter" placeholder="Any sender" value="${esc(state.senderFilter)}" ${state.enabled&&state.subscribed?'':'disabled'}></label><label>Subject <input id="mail-subject-filter" placeholder="Any subject" value="${esc(state.subjectFilter)}" ${state.enabled&&state.subscribed?'':'disabled'}></label></div></details>`);
   let list='';
   if(!state.enabled)list=card('Messages',`<div class="mail-empty"><span class="mail-empty-icon">✉</span><strong>Inbox is off</strong><p>Enable mail above to receive messages at this address.</p></div>`);
   else if(state.error)list=card('Messages',`<div class="mail-error"><strong>Mail could not be loaded</strong><p>The inbox is temporarily unavailable. Your stored messages are safe.</p><button type="button" data-mail-action="retry">Try again</button></div>`);
@@ -44,28 +41,26 @@
    const rows=shown.length?shown.map(mail=>`<button type="button" class="mail-list-row ${mail.unread?'is-unread':''}" data-mail-id="${mail.id}"><span class="mail-unread-dot" aria-hidden="true"></span><span class="mail-list-content"><span class="mail-list-top"><strong>${esc(mail.sender)}</strong><time>${esc(mail.time)}</time></span><span class="mail-list-subject">${esc(mail.subject)}${mail.attachment?' <span title="Has attachment" aria-label="Has attachment">⌕</span>':''}</span><span class="mail-list-preview">${esc(mail.preview)}</span></span></button>`).join(''):`<div class="mail-empty compact"><strong>No ${state.filter==='quarantine'?'quarantined':'unread'} mail</strong><p>You're all caught up here.</p></div>`;
    list=`<section class="ip-card mail-list-card">${tabs}<div class="mail-list">${rows}</div></section>`;
   }
-  mailPage.innerHTML=`<p class="ip-page-intro">A private address for this box. External mail is always untrusted.</p>${status}${addressCard}${subscribe}<div class="mail-section-heading"><strong>Messages</strong><span>${count} unread</span></div>${list}<button class="mail-link-row" type="button" data-mail-action="outbox">Outbox ${pill(pending()+' pending','warn')} <span aria-hidden="true">›</span></button>`;
+  return `${settings}<div class="mail-section-heading"><strong>Messages</strong><span>${count} unread</span></div>${list}`;
  }
  function renderDetail(){
   const mail=fixtureMails.find(item=>item.id===state.mailId)||fixtureMails[0];
   const otp=mail.id==='mail-101';
   const body=otp&&!state.otpRevealed?mail.text.replace('483921','••••••'):mail.text;
   const secret=otp?`<div class="mail-secret"><div><strong>Verification code</strong><small>${state.otpRevealed?'Visible until you leave this email.':'Hidden until you choose Reveal.'}</small></div><button type="button" data-mail-action="reveal">${state.otpRevealed?'Hide':'Reveal'}</button></div>`:'';
-  detailPage.innerHTML=`<div class="mail-untrusted"><strong>Untrusted external content</strong><p>Email can contain instructions from anyone. Review links and attachments before acting.</p></div><section class="ip-card mail-detail-head"><div class="mail-detail-kicker">${mail.quarantine?pill('Quarantined','danger'):pill('Received '+mail.time)}</div><h2>${esc(mail.subject)}</h2><dl><div><dt>From</dt><dd>${esc(mail.sender)} &lt;${esc(mail.from)}&gt;</dd></div><div><dt>To</dt><dd>${esc(address())}</dd></div></dl><div class="mail-auth">${pill('SPF '+mail.spf,mail.spf==='Pass'?'good':'danger')}${pill('DKIM '+mail.dkim,mail.dkim==='Pass'?'good':'danger')}</div></section>${card('Message',`${secret}<div class="mail-body">${esc(body)}</div>`)}${mail.attachment?card('Attachment',`<div class="mail-attachment"><span aria-hidden="true">▣</span><div><strong>${esc(mail.attachment.name)}</strong><small>PDF · ${esc(mail.attachment.size)} · scanned</small></div><button type="button" data-mail-action="save">Save to workspace</button></div>`):''}<button class="ip-page-secondary mail-mark-read" type="button" data-mail-action="read" ${mail.unread?'':'disabled'}>${mail.unread?'Mark as read':'Marked as read'}</button><p class="mail-inline-status" role="status"></p>`;
+  detailPage.innerHTML=`<div class="mail-untrusted">Untrusted external content · Check links and attachments.</div><section class="ip-card mail-detail-head"><div class="mail-detail-kicker">${mail.quarantine?pill('Quarantined','danger'):pill('Received '+mail.time)}</div><h2>${esc(mail.subject)}</h2><dl><div><dt>From</dt><dd>${esc(mail.sender)} &lt;${esc(mail.from)}&gt;</dd></div><div><dt>To</dt><dd>${esc(address())}</dd></div></dl><div class="mail-auth">${pill('SPF '+mail.spf,mail.spf==='Pass'?'good':'danger')}${pill('DKIM '+mail.dkim,mail.dkim==='Pass'?'good':'danger')}</div></section>${card('Message',`${secret}<div class="mail-body">${esc(body)}</div>`)}${mail.attachment?card('Attachment',`<div class="mail-attachment"><span aria-hidden="true">▣</span><div><strong>${esc(mail.attachment.name)}</strong><small>PDF · ${esc(mail.attachment.size)} · scanned</small></div><button type="button" data-mail-action="save">Save to workspace</button></div>`):''}<button class="ip-page-secondary mail-mark-read" type="button" data-mail-action="read" ${mail.unread?'':'disabled'}>${mail.unread?'Mark as read':'Marked as read'}</button><p class="mail-inline-status" role="status"></p>`;
  }
  function renderOutbox(){
   const tabs=`<div class="mail-tabs" role="tablist" aria-label="Outbox status">${[['pending_approval','Pending'],['sent','Sent'],['rejected','Rejected']].map(([key,label])=>`<button type="button" role="tab" aria-selected="${state.outboxTab===key}" data-outbox-tab="${key}">${label}${key==='pending_approval'?` <span>${pending()}</span>`:''}</button>`).join('')}</div>`;
   const items=fixtureOutbox.filter(item=>item.status===state.outboxTab);
   const rows=items.length?items.map(item=>`<button class="mail-outbox-row" type="button" data-outbox-id="${item.id}"><span class="mail-outbox-icon" aria-hidden="true">${item.status==='sent'?'✓':item.status==='rejected'?'×':'↗'}</span><span><strong>${esc(item.subject)}</strong><small>To ${esc(item.to)}</small><em>${item.status==='rejected'?esc(item.reason):esc(item.body.replace(/\s+/g,' ').slice(0,95))}</em></span><time>${esc(item.time)}</time></button>`).join(''):`<div class="mail-empty compact"><strong>No ${state.outboxTab==='pending_approval'?'drafts to approve':state.outboxTab+' mail'}</strong><p>${state.outboxTab==='pending_approval'?'Agent drafts will wait here for your review.':'Nothing in this view yet.'}</p></div>`;
-  outboxPage.innerHTML=`<p class="ip-page-intro">Every agent email waits for your approval before it is sent.</p>${pending()?notice(pending()+' messages need your review. Nothing has been sent yet.','warn'):notice('No mail is waiting for approval.','good')}<section class="ip-card mail-list-card">${tabs}<div class="mail-list">${rows}</div></section>${card('How approval works','<p class="mail-help">Open a draft to edit To, subject, and body. Approve and send, or reject with a reason the agent can read.</p>')}`;
+  return `<p class="mail-short-note">Nothing is sent until you approve.</p><section class="ip-card mail-list-card">${tabs}<div class="mail-list">${rows}</div></section>`;
  }
+ function renderMail(){mailPage.innerHTML=`<div class="mail-main-tabs" role="tablist" aria-label="Mail folders"><button type="button" role="tab" aria-selected="${state.tab==='inbox'}" data-mail-tab="inbox">Inbox <span>${unread()}</span></button><button type="button" role="tab" aria-selected="${state.tab==='outbox'}" data-mail-tab="outbox">Outbox <span>${pending()}</span></button></div>${state.tab==='inbox'?renderInbox():renderOutbox()}`}
  function updateSignals(){
   const count=pending();
-  if(mainRow){mainRow.querySelector('.ip-row-value').textContent=state.enabled?unread()+' unread · '+address():'Off · '+address();mainRow.hidden=!api.isOwner()}
-  if(outboxRow){outboxRow.querySelector('.ip-row-value').textContent=count+' pending';outboxRow.hidden=!api.isOwner()}
-  const signal=byId('mail-mockup-approval');if(signal){signal.hidden=!api.isOwner()||!count;signal.querySelector('b').textContent=String(count)}
-  const sidebar=byId('mail-mockup-sidebar-signal');if(sidebar){sidebar.hidden=!api.isOwner()||!count;sidebar.querySelector('b').textContent=String(count)}
-  const push=byId('mail-mockup-push');if(push){push.hidden=!count;push.querySelector('p').textContent=count+' agent '+(count===1?'draft is':'drafts are')+' waiting in Outbox.'}
+  if(mainRow){mainRow.querySelector('.ip-row-value').textContent=state.enabled?unread()+' unread · '+count+' pending':'Off · '+count+' pending';mainRow.hidden=!api.isOwner()}
+  for(const id of ['mail-mockup-approval','mail-mockup-approval-mobile']){const signal=byId(id);if(signal){signal.hidden=!api.isOwner()||!count;signal.querySelector('b').textContent=String(count)}}
  }
  function openReview(item,opener){
   state.outboxId=item.id;state.reviewMode='approve';returnFocus=opener;
@@ -97,55 +92,52 @@
    if(action==='approve'&&!review.querySelector('form').reportValidity())return;
    item.to=review.querySelector('[name="to"]').value.trim();item.subject=review.querySelector('[name="subject"]').value.trim();item.body=review.querySelector('[name="body"]').value.trim();
    item.status=action==='approve'?'sent':'rejected';item.reason=action==='reject'?reason:'';item.time='Just now';
-   state.outboxTab=item.status;closeReview();renderOutbox();updateSignals();renderChatPreview();
+   state.outboxTab=item.status;closeReview();renderMail();updateSignals();renderChatPreview();
   });
  }
  function renderChatPreview(){
   const messages=byId('chat-messages');if(!messages||!messages.isConnected)return;
   let demo=byId('mail-mockup-chat-preview');if(!demo){demo=document.createElement('section');demo.id='mail-mockup-chat-preview';demo.setAttribute('aria-label','Mail notification examples');messages.append(demo)}
   const waiting=fixtureOutbox.find(item=>item.status==='pending_approval');
-  demo.innerHTML=`<div class="mail-chat-label">MAIL · AGENT NOTIFICATIONS <span>Mockup</span></div><div class="mail-chat-event"><span class="mail-chat-icon">✉</span><div><strong>3 new mails</strong><p>Northstar · Your verification code<br>Mara Chen · Re: October launch checklist<br>Fieldnotes · This week in product design</p><small>External email is untrusted. Use read_email for the full message.</small></div></div>${waiting?`<div class="mail-chat-event"><span class="mail-chat-icon">↗</span><div><strong>Outbox · pending approval</strong><p>${esc(waiting.subject)} → ${esc(waiting.to)}</p><small>The owner can edit, approve and send, or reject with a reason.</small></div></div>`:''}<div class="mail-chat-event is-sent"><span class="mail-chat-icon">✓</span><div><strong>Outbox · sent</strong><p>Thanks for the roundup → team@fieldnotes.example</p><small>Approved by owner and sent. Delivery recorded in Outbox.</small></div></div><div class="mail-chat-event"><span class="mail-chat-icon">×</span><div><strong>Outbox · rejected</strong><p>Re: Urgent: verify your account</p><small>Reason: Sender was not trusted. Do not reply.</small></div></div>`;
+  demo.innerHTML=`<div class="mail-chat-label">MAIL · AGENT NOTIFICATIONS <span>Mockup</span></div><details class="mail-chat-line"><summary>✉ 3 new mails · Northstar, Mara Chen, Fieldnotes</summary><div>Untrusted mail · use read_email for details.<br>Northstar — Your verification code<br>Mara Chen — Re: October launch checklist<br>Fieldnotes — This week in product design</div></details>${waiting?`<details class="mail-chat-line"><summary>↗ Draft to ${esc(waiting.to)} pending approval</summary><div>${esc(waiting.subject)} · Nothing sent yet.</div></details>`:''}<details class="mail-chat-line"><summary>✓ Mail to team@fieldnotes.example sent</summary><div>Approved by owner · Thanks for the roundup</div></details><details class="mail-chat-line"><summary>× Draft to promo@unknown.example rejected</summary><div>Sender was not trusted. Do not reply.</div></details>`;
  }
  function mount(options){
   api=options;
-  mailPage=api.page('mail');detailPage=api.page('mailDetail');outboxPage=api.page('mailOutbox');
+  mailPage=api.page('mail');detailPage=api.page('mailDetail');
   const group=document.createElement('section');group.className='ip-group mail-mockup-group';group.innerHTML='<h3 class="ip-heading">Mail <span class="mail-mockup-tag">Mockup</span></h3><div class="ip-card ip-list"></div>';
-  mainRow=api.row('mail','mail','Inbox','',()=>api.navigate('mail'));
-  outboxRow=api.row('mailOutbox','send','Outbox','',()=>api.navigate('mailOutbox'));
-  group.querySelector('.ip-list').append(mainRow,outboxRow);
+  mainRow=api.row('mail','mail','Mail','',()=>{state.tab='inbox';api.navigate('mail')});
+  group.querySelector('.ip-list').append(mainRow);
   byId('inspect-prototype-resources').before(group);
-  const top=document.createElement('button');top.id='mail-mockup-approval';top.type='button';top.innerHTML='Approvals <b>2</b>';top.onclick=()=>{if(byId('inspect').hidden)byId('chat-info').click();api.navigate('mailOutbox')};byId('refresh').before(top);
-  const sidebar=document.createElement('button');sidebar.id='mail-mockup-sidebar-signal';sidebar.type='button';sidebar.innerHTML='<span>✉</span> Mail approvals <b>2</b>';sidebar.onclick=top.onclick;byId('chat-filter-row').before(sidebar);
-  const push=document.createElement('div');push.id='mail-mockup-push';push.setAttribute('role','status');push.innerHTML='<span class="mail-push-icon">✉</span><div><strong>Mail approval needed</strong><p>2 agent drafts are waiting in Outbox.</p><button type="button">Review drafts</button></div><button class="mail-push-close" type="button" aria-label="Dismiss notification">×</button>';document.body.append(push);push.querySelector('button:not(.mail-push-close)').onclick=top.onclick;push.querySelector('.mail-push-close').onclick=()=>push.hidden=true;
+  const openApprovals=()=>{state.tab='outbox';if(byId('inspect').hidden)byId('chat-info').click();api.navigate('mail')};
+  const top=document.createElement('button');top.id='mail-mockup-approval';top.type='button';top.innerHTML='<span class="mail-approval-label">Approvals</span><span class="mail-approval-icon" aria-hidden="true">✉</span><b>2</b>';top.setAttribute('aria-label','Mail approvals');top.onclick=openApprovals;byId('refresh').before(top);
+  const mobile=document.createElement('button');mobile.id='mail-mockup-approval-mobile';mobile.type='button';mobile.innerHTML='<span aria-hidden="true">✉</span><b>2</b>';mobile.setAttribute('aria-label','Mail approvals');mobile.onclick=openApprovals;byId('chat-info').before(mobile);
   installReview();
   mailPage.addEventListener('click',async event=>{
+   const tab=event.target.closest('[data-mail-tab]');if(tab){state.tab=tab.dataset.mailTab;renderMail();return}
    const mail=event.target.closest('[data-mail-id]');if(mail){state.mailId=mail.dataset.mailId;state.otpRevealed=false;api.navigate('mailDetail');return}
-   const filter=event.target.closest('[data-mail-filter]');if(filter){state.filter=filter.dataset.mailFilter;renderInbox();return}
+   const filter=event.target.closest('[data-mail-filter]');if(filter){state.filter=filter.dataset.mailFilter;renderMail();return}
+   const outboxTab=event.target.closest('[data-outbox-tab]');if(outboxTab){state.outboxTab=outboxTab.dataset.outboxTab;renderMail();return}
+   const item=event.target.closest('[data-outbox-id]');if(item){openReview(fixtureOutbox.find(entry=>entry.id===item.dataset.outboxId),item);return}
    const action=event.target.closest('[data-mail-action]')?.dataset.mailAction;if(!action)return;
-   if(action==='outbox')api.navigate('mailOutbox');
-   if(action==='retry'){state.error=false;renderInbox()}
+   if(action==='retry'){state.error=false;renderMail()}
    if(action==='copy'){try{await navigator.clipboard.writeText(address())}catch{}event.target.textContent='Copied';setTimeout(()=>{if(event.target.isConnected)event.target.textContent='Copy'},1400)}
   });
   mailPage.addEventListener('change',event=>{
-   if(event.target.id==='mail-enabled'){state.enabled=event.target.checked;renderInbox();updateSignals()}
-   if(event.target.id==='mail-subscribed'){state.subscribed=event.target.checked;renderInbox()}
+   if(event.target.id==='mail-enabled'){state.enabled=event.target.checked;renderMail();updateSignals()}
+   if(event.target.id==='mail-subscribed'){state.subscribed=event.target.checked;renderMail()}
    if(event.target.id==='mail-sender-filter')state.senderFilter=event.target.value;
    if(event.target.id==='mail-subject-filter')state.subjectFilter=event.target.value;
   });
   mailPage.addEventListener('input',event=>{if(event.target.id==='mail-sender-filter')state.senderFilter=event.target.value;if(event.target.id==='mail-subject-filter')state.subjectFilter=event.target.value});
   detailPage.addEventListener('click',event=>{
    const action=event.target.closest('[data-mail-action]')?.dataset.mailAction;if(!action)return;
-   if(action==='read'){const mail=fixtureMails.find(item=>item.id===state.mailId);mail.unread=false;renderDetail();updateSignals()}
+   if(action==='read'){const mail=fixtureMails.find(item=>item.id===state.mailId);mail.unread=false;renderDetail();renderMail();updateSignals()}
    if(action==='reveal'){state.otpRevealed=!state.otpRevealed;renderDetail();detailPage.querySelector('[data-mail-action="reveal"]').focus()}
    if(action==='save')detailPage.querySelector('.mail-inline-status').textContent='Mockup: launch-notes.pdf would be saved to this box’s workspace.';
   });
-  outboxPage.addEventListener('click',event=>{
-   const tab=event.target.closest('[data-outbox-tab]');if(tab){state.outboxTab=tab.dataset.outboxTab;renderOutbox();return}
-   const item=event.target.closest('[data-outbox-id]');if(item)openReview(fixtureOutbox.find(entry=>entry.id===item.dataset.outboxId),item);
-  });
   previewObserver=new MutationObserver(()=>{if(!byId('mail-mockup-chat-preview'))renderChatPreview()});previewObserver.observe(byId('chat-messages'),{childList:true});
-  renderInbox();renderOutbox();renderDetail();renderChatPreview();updateSignals();
-  return {backTarget:key=>key==='mailDetail'?'mail':'',onShow:key=>{if(key==='mail')renderInbox();if(key==='mailDetail')renderDetail();if(key==='mailOutbox')renderOutbox()},onBox:()=>updateSignals()};
+  renderMail();renderDetail();renderChatPreview();updateSignals();
+  return {backTarget:key=>key==='mailDetail'?'mail':'',onShow:key=>{if(key==='mail')renderMail();if(key==='mailDetail')renderDetail()},onBox:()=>updateSignals()};
  }
  window.VBoxMailMockup={enabled:true,mount};
 })();
