@@ -2,7 +2,7 @@
 // An owner-facing shortcut for the per-box create_agent_box quota.
 window.VMBoxCreateLimit = (() => {
  const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el};
- function mount(root,{boxId,request,onSaved}){
+ function mount(root,{boxId,request,onSaved,showWhenDisabled=false}){
   if(!root||root.dataset.createLimitBox===boxId)return;
   root.dataset.createLimitBox=boxId;root.hidden=true;root.replaceChildren();
   const card=text('section','');card.className='idle-policy box-create-limit';
@@ -23,8 +23,7 @@ window.VMBoxCreateLimit = (() => {
   function render(policy){
    const cap=policy.capabilities||{},grant=cap.createAgentBox||{};
    const allowed=!!grant.enabled&&!!cap.mcpTools?.enabled&&(cap.mcpTools.allowedTools||[]).includes('create_agent_box');
-   // The Access page must explain disabled creation as well as enabled quotas.
-   root.hidden=false;
+   root.hidden=!allowed&&!showWhenDisabled;
    count.value=String(grant.maxBoxes||1);count.disabled=!allowed;save.disabled=!allowed;
    badge.textContent=allowed?String(grant.maxBoxes)+' total':'Off';badge.dataset.enabled=String(allowed);
    status.textContent=allowed?'This box may create up to '+grant.maxBoxes+' boxes total.':'Box creation is off. Enable it in Permissions to edit this limit.';

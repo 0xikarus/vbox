@@ -3302,7 +3302,7 @@ function pairTileStatus(tile,mode,label){
    adjust:(action,seconds,expectedDeadlineAt)=>api(boxPath(box.id)+'/run-budget-policy/adjust','POST',{},{action,seconds,expectedDeadlineAt}),
    onPolicy:()=>queueMicrotask(()=>{if(inspectOpen&&selected===box.id)renderInspectPrototype(box)})});
   const limitRoot=$('#inspect-create-limit');
-  if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
+  if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,showWhenDisabled:true,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
   else limitRoot.hidden=true;
   maybeLoadInspectProfiles(box);
   if(inspectInstructionsFor!==box.id)void loadInspectInstructions(box);
