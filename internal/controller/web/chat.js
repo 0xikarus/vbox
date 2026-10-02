@@ -1495,7 +1495,7 @@
   imagePending.clear();
  }
  const questionSelections=new Map();// messageId -> Set of picked choices; survives live re-renders
- const replyParents=new Map(),replyParentRequests=new Set();
+ const replyParents=new Map(),replyParentRequests=new Set(),replyParentMisses=new Set();
  const replyParentKey=(box,id)=>box.id+':'+id;
  function replyQuoteText(parent){
   if(!parent)return 'Reply to an earlier message';
@@ -1505,7 +1505,9 @@
  }
  function rememberReplyParent(box,parent){
   if(!box.id)return;
-  replyParents.set(replyParentKey(box,parent.id),parent);
+  const key=replyParentKey(box,parent.id);
+  replyParentMisses.delete(key);
+  replyParents.set(key,parent);
   if(replyParents.size>500)replyParents.delete(replyParents.keys().next().value);
  }
  function fillReplyQuotes(box,parent){
@@ -1517,11 +1519,12 @@
  function loadReplyParent(box,message){
   if(!box.id||!boxes.has(box.id))return;
   const key=replyParentKey(box,message.parentMessageId);
-  if(replyParentRequests.has(key))return;
+  if(replyParentRequests.has(key)||replyParentMisses.has(key))return;
   replyParentRequests.add(key);
   void chatHistory(boxPath(box.id)+'/messages?limit=100&threadId='+encodeURIComponent(message.threadId||message.parentMessageId)).then(result=>{
    const parent=result.messages.find(value=>value.id===message.parentMessageId);
    if(parent)fillReplyQuotes(box,parent);
+   else replyParentMisses.add(key);
   }).catch(()=>{}).finally(()=>replyParentRequests.delete(key));
  }
  function highlightReplyTarget(parent){
@@ -2355,6 +2358,7 @@ function pairTileStatus(tile,mode,label){
   openingSelection='';rememberOpened(cacheKey);
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
+  if(selected||selectedPair!==key)replyParentMisses.clear();
   selected='';selectedPair=key;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);clearInspectMemory();renderResourceCard();selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();hideTvPreview();closeTakeover();stopPairHero();
   $('#chat-composer').classList.remove('is-processing');$('#chat-interrupt').disabled=true;
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
@@ -2442,6 +2446,7 @@ function pairTileStatus(tile,mode,label){
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
+  if(selected!==id||selectedPair)replyParentMisses.clear();
   if(selected!==id)cancelReply();clearInspectMemory();selected=id;resourceRequest++;resourceSnapshot=null;renderResourceCard();scheduleResources(0);lastSignature='';hideComposerPicker();
   selectedUsageProfile=null;renderChatUsage();if(owner)void loadChatUsageProfile(id);
   // Restore where this box was left instead of always jumping to the bottom;

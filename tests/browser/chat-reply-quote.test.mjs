@@ -27,7 +27,7 @@ async function source(name){
 }
 
 function serverFor(assets,posts){
- const messages=fixture.map(message=>({...message})),pending=[];
+ const messages=fixture.map(message=>({...message})),pending=[],threadRequests=new Map();
  const server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://local'),path=url.pathname;
   if(path==='/chat'){res.setHeader('Content-Type','text/html');return res.end(assets.get('chat.html'))}
@@ -47,6 +47,7 @@ function serverFor(assets,posts){
   if(path==='/v1/logical-boxes/builder/messages'&&url.searchParams.has('threadId')){
    await new Promise(done=>setTimeout(done,900));
    const id=url.searchParams.get('threadId');
+   threadRequests.set(id,(threadRequests.get(id)||0)+1);
    return res.end(JSON.stringify({messages:id===olderParent?[oldParent,messages[3]]:messages.filter(message=>message.threadId===id)}));
   }
   if(path==='/v1/logical-boxes/builder/messages')return res.end(JSON.stringify(messages));
@@ -54,8 +55,28 @@ function serverFor(assets,posts){
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   return res.end('{}');
  });
- return {server,messages,pending,release(){for(const res of pending.splice(0)){const body=posts.at(-1),message=msg('66666666-6666-4666-8666-666666666666','user',body.text,body.parentMessageId,agentParent);messages.push(message);res.end(JSON.stringify({message}))}}};
+ return {server,messages,pending,threadRequests,release(){for(const res of pending.splice(0)){const body=posts.at(-1),message=msg('66666666-6666-4666-8666-666666666666','user',body.text,body.parentMessageId,agentParent);messages.push(message);res.end(JSON.stringify({message}))}}};
 }
+
+test('absent reply parents are fetched once per chat despite repeated renders',async()=>{
+ const assetNames=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','ai-helper.js','ai-helper.css','sheet-scroll.js','sheet-scroll.css','workspace-nav.js','workspace-nav.css','dialog-theme.css','text-size.js','fonts.css','idle-policy.js','idle-policy.css'];
+ const assets=new Map(await Promise.all(assetNames.map(async name=>[name,await source(name)])));
+ const fixtureServer=serverFor(assets,[]),{server}=fixtureServer;
+ const missing='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ fixtureServer.messages.push(msg('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','agent','A reply to a deleted message.',missing,missing));
+ await new Promise(done=>server.listen(0,'127.0.0.1',done));
+ const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
+ try{
+  const page=await browser.newPage();await page.goto(`http://127.0.0.1:${server.address().port}/chat#box=builder`);
+  await page.waitForFunction(id=>document.querySelector('.msg[data-key="'+id+'"] .msg-parent')?.textContent==='Reply to an earlier message',{},'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+  for(let attempt=0;!fixtureServer.threadRequests.get(missing)&&attempt<100;attempt++)await new Promise(done=>setTimeout(done,20));
+  assert.equal(fixtureServer.threadRequests.get(missing),1);
+  for(let i=0;i<2;i++)await page.$eval('#refresh',button=>button.onclick());
+  await new Promise(done=>setTimeout(done,1100));
+  assert.equal(fixtureServer.threadRequests.get(missing),1);
+  await page.close();
+ }finally{await browser.close();server.closeAllConnections();await new Promise(done=>server.close(done))}
+});
 
 test('reply strips are immediate, short, and keep a fixed height while parent loads',async()=>{
  if(captureDir)await mkdir(captureDir,{recursive:true});
