@@ -160,13 +160,15 @@ func (s *Server) agentMailRead(w http.ResponseWriter, r *http.Request, p Princip
 	if !s.agentMailAllowed(w, r, p, "mark_email_read") {
 		return
 	}
-	s.ownerMailRead(w, r, ownerPrincipal(p))
+	r.SetPathValue("id", agentBoxID(p))
+	s.ownerMailRead(w, r, p)
 }
 func (s *Server) agentMailAttachment(w http.ResponseWriter, r *http.Request, p Principal) {
 	if !s.agentMailAllowed(w, r, p, "download_email_attachment") {
 		return
 	}
-	s.ownerMailAttachment(w, r, ownerPrincipal(p))
+	r.SetPathValue("id", agentBoxID(p))
+	s.ownerMailAttachment(w, r, p)
 }
 
 func (s *Server) agentMailSubscription(w http.ResponseWriter, r *http.Request, p Principal) {
