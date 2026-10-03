@@ -129,8 +129,6 @@ table.markets tr.row:hover{background:var(--vb-swatch-fafafa)}
 .role-scope{display:grid;gap:8px;border:1px solid var(--vb-swatch-e2e2e2);margin:12px 0;padding:10px}
 .role-scope label{display:flex!important;align-items:center;gap:7px;color:var(--vb-swatch-111)}
 .role-scope input{width:auto!important;margin:0}
-.role-editor-modal{justify-content:flex-end;align-items:stretch}
-.role-editor-modal .card{width:min(31rem,94vw);max-height:100vh;border-width:0 0 0 1px;padding:18px}
 .role-editor form{display:block}
 .role-editor .field{display:block}
 .role-editor .field input,.role-editor .field textarea{box-sizing:border-box;width:100%}

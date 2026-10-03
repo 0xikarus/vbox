@@ -629,7 +629,6 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize;user-select:none}
 .role-scope legend{padding:0 .25rem;color:var(--ink-soft);font-size:var(--vb-type-rem-0-8);font-weight:700}
 .role-scope label{display:flex;align-items:center;gap:.45rem;margin:.35rem 0;color:var(--ink)}
 .sheet-card .role-scope label>input{display:inline-block;width:auto;margin:0;padding:0;flex:none}
-#role-editor-modal{z-index:50}
 
 /* model picker + load older (kept from the previous chat UI) */
 .model-picker{display:block}

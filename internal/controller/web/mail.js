@@ -31,7 +31,6 @@
   if(mainRow){mainRow.hidden=!api.isOwner()||state.globalAvailable!==true||!state.settings;const value=mainRow.querySelector('.ip-row-value');if(value)value.textContent=state.settings?(state.settings.enabled?count()+' unread · '+pending()+' pending':'Off · '+pending()+' pending'):''}
   const n=Number(state.approvals.pending)||0;
   for(const id of ['mail-approval','mail-approval-mobile']){const button=$(id);if(!button)continue;button.hidden=!api.isOwner()||state.globalAvailable!==true||n===0;button.querySelector('b').textContent=String(n);button.setAttribute('aria-label',n+' mail '+(n===1?'approval':'approvals'))}
-  const access=$('mail-permissions');if(access)access.hidden=!api.isOwner()||state.globalAvailable!==true;
   for(const node of document.querySelectorAll('#role-editor-form [data-mail-feature]'))node.hidden=!api.isOwner()||state.globalAvailable!==true;
  }
  async function loadApprovals(){
@@ -227,34 +226,6 @@
   if($('inspect').hidden)$('chat-info').click();
   api.navigate('mailDetail');await loadDetail(id);
  }
- function renderPermissionGroup(){
-  const access=document.querySelector('[data-ip-page="access"]');if(!access)return;
-  const group=document.createElement('section');group.id='mail-permissions';group.className='ip-card mail-card mail-permissions';group.hidden=true;
-  group.innerHTML='<h3>Mail</h3><div class="mail-setting-row"><span>Read inbox</span><label class="mail-switch"><input id="mail-permission-read" type="checkbox" role="switch" aria-label="Read inbox"><span aria-hidden="true"></span></label></div><div class="mail-setting-row"><span>Draft emails for approval</span><label class="mail-switch"><input id="mail-permission-compose" type="checkbox" role="switch" aria-label="Draft emails for approval"><span aria-hidden="true"></span></label></div><p id="mail-permission-status" class="mail-inline-status" role="status"></p>';
-  access.append(group);
-  group.addEventListener('change',async event=>{
-   if(!event.target.matches('#mail-permission-read,#mail-permission-compose'))return;
-   const boxId=state.boxId;if(!boxId)return;
-   const read=$('mail-permission-read').checked,compose=$('mail-permission-compose').checked;
-   setStatus('mail-permission-status','Saving…');
-   try{
-    const policy=await api.request('/v1/logical-boxes/'+encodeURIComponent(boxId)+'/agent-policy');
-    const capabilities={...(policy.capabilities||{}),mail:{read,compose}};
-    const allowed=new Set(capabilities.mcpTools?.allowedTools||[]);
-    for(const name of readTools)read?allowed.add(name):allowed.delete(name);
-    for(const name of composeTools)compose?allowed.add(name):allowed.delete(name);
-    capabilities.mcpTools={...capabilities.mcpTools,enabled:true,allowedTools:[...allowed]};
-    await api.request('/v1/logical-boxes/'+encodeURIComponent(boxId)+'/agent-policy','PUT',{capabilities});
-    if(state.boxId===boxId){state.policy=capabilities;setStatus('mail-permission-status','Saved')}
-   }catch(error){setStatus('mail-permission-status',shortError(error));void loadPermissions()}
-  });
- }
- async function loadPermissions(){
-  if(!state.boxId||state.globalAvailable!==true)return;
-  const boxId=state.boxId;setStatus('mail-permission-status','Loading…');
-  try{const policy=await api.request('/v1/logical-boxes/'+encodeURIComponent(boxId)+'/agent-policy');if(boxId!==state.boxId)return;state.policy=policy.capabilities||{};$('mail-permission-read').checked=!!state.policy.mail?.read;$('mail-permission-compose').checked=!!state.policy.mail?.compose;setStatus('mail-permission-status','')}
-  catch(error){if(boxId===state.boxId)setStatus('mail-permission-status',shortError(error))}
- }
  function mount(options){
   api=options;mailPage=api.page('mail');detailPage=api.page('mailDetail');
   const group=document.createElement('section');mainGroup=group;group.className='ip-group mail-group';group.innerHTML='<h3 class="ip-heading">Mail</h3><div class="ip-card ip-list"></div>';group.hidden=true;
@@ -262,7 +233,7 @@
   group.querySelector('.ip-list').append(mainRow);$('inspect-prototype-resources').before(group);
   const top=document.createElement('a');top.id='mail-approval';top.href='/?mail=outbox#mail';top.innerHTML='<span class="mail-approval-label">Approvals</span><span class="mail-approval-icon" aria-hidden="true">✉</span><b>0</b>';top.hidden=true;$('refresh').before(top);
   const mobile=document.createElement('a');mobile.id='mail-approval-mobile';mobile.href='/?mail=outbox#mail';mobile.innerHTML='<span aria-hidden="true">✉</span><b>0</b>';mobile.hidden=true;$('chat-info').before(mobile);
-  renderPermissionGroup();installReview();
+  installReview();
   mailPage.addEventListener('click',async event=>{
    const tab=event.target.closest('[data-mail-tab]');if(tab){state.tab=tab.dataset.mailTab;renderMail();if(state.tab==='inbox'&&!state.messagesLoaded&&state.settings?.enabled)void loadMessages();if(state.tab==='outbox'&&!state.outboxLoaded)void loadOutbox();return}
    const folder=event.target.closest('[data-mail-filter]');if(folder){state.folder=folder.dataset.mailFilter;state.messagesLoaded=false;state.messagesLoading=false;state.messages=[];state.messagesCursor='';void loadMessages();return}
@@ -287,7 +258,7 @@
   });
   void loadApprovals();approvalTimer=setInterval(()=>{if(!document.hidden)void loadApprovals()},30000);
   signals();renderMail();
-  return {backTarget:key=>key==='mailDetail'?'mail':'',onShow:key=>{if(key==='mail'){renderMail();if(state.tab==='inbox'&&state.settings?.enabled)void loadMessages();if(state.tab==='outbox')void loadOutbox()}if(key==='access')void loadPermissions()},onBox:box=>{if(box?.id===state.boxId)return;requestEpoch++;state.boxId=box?.id||'';state.settings=null;state.alsoReads=[];state.messages=[];state.messagesLoaded=false;state.outbox=[];state.outboxLoaded=false;state.detail=null;state.policy=null;signals();renderMail();if(box&&state.globalAvailable===true)void loadSettings(box.id)},refreshApprovals:loadApprovals,openMessage,openApprovals};
+  return {backTarget:key=>key==='mailDetail'?'mail':'',onShow:key=>{if(key==='mail'){renderMail();if(state.tab==='inbox'&&state.settings?.enabled)void loadMessages();if(state.tab==='outbox')void loadOutbox()}},onBox:box=>{if(box?.id===state.boxId)return;requestEpoch++;state.boxId=box?.id||'';state.settings=null;state.alsoReads=[];state.messages=[];state.messagesLoaded=false;state.outbox=[];state.outboxLoaded=false;state.detail=null;signals();renderMail();if(box&&state.globalAvailable===true)void loadSettings(box.id)},refreshApprovals:loadApprovals,openMessage,openApprovals};
  }
  function notice(box,message){
   const mail=message?.mail;if(message?.direction!=='system'||!mail||!['mail_batch','outbox_status'].includes(mail.kind))return null;

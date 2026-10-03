@@ -42,7 +42,8 @@ test('Manage permission, version, and provider layouts retain their content',asy
   const phone=await browser.newPage();await phone.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await phone.goto(base+'#roles');await phone.waitForSelector('#roles .role-assignment-card');
   const name=await phone.$eval('#roles .role-assignment-identity strong',node=>({text:node.textContent,width:node.clientWidth,scroll:node.scrollWidth}));assert.equal(name.text,'reviewer');assert(name.scroll<=name.width+1,JSON.stringify(name));await phone.close();
   const desktop=await browser.newPage();await desktop.setViewport({width:1440,height:900});await desktop.goto(base+'#roles');await desktop.waitForSelector('#roles .role-assignment-toggle');await desktop.$eval('#roles .role-assignment-toggle',node=>node.click());
-  const color=await desktop.$eval('#role-editor-modal .mcp-tool-group strong',node=>getComputedStyle(node).color);assert.notEqual(color,'rgb(255, 255, 255)');
+  const color=await desktop.$eval('#role-editor-inline .ip-heading',node=>getComputedStyle(node).color);assert.notEqual(color,'rgb(255, 255, 255)');
+  assert.equal(await desktop.$eval('#roles .role-assignment-toggle',node=>node.textContent),'Hide permissions');
   await desktop.goto(base+'#profiles');await desktop.waitForSelector('#agent-cli-versions select');await desktop.waitForFunction(()=>document.querySelector('#agent-cli-versions select').selectedOptions[0]?.textContent.includes('1.0.0'));
   assert(await desktop.$eval('#agent-cli-versions select',node=>node.getBoundingClientRect().width)>=350);
   await desktop.goto(base+'#providers');await desktop.waitForFunction(()=>document.querySelectorAll('#provider-list .providers-table tbody tr').length===3&&document.querySelector('#provider-list .providers-row-error'));
@@ -61,7 +62,9 @@ test('Manage permission, version, and provider layouts retain their content',asy
   await desktop.$eval('.provider-delete-dialog button[aria-label="Close delete dialog"]',node=>node.click());
   const captureDir=process.env.VMBOX_CAPTURE_DIR;if(captureDir)await mkdir(captureDir,{recursive:true});
   for(const theme of ['light','dark'])for(const width of [1440,390]){
-   const page=await browser.newPage();await page.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);await page.goto(base+'#providers');await page.waitForFunction(()=>document.querySelectorAll('#provider-list .providers-table tbody tr').length===3&&document.querySelector('#provider-list .providers-row-error'));
+   const page=await browser.newPage();await page.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
+   if(captureDir){await page.goto(base+'#roles');await page.waitForSelector('#roles .role-assignment-toggle');await page.click('#roles .role-assignment-toggle');await page.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#role-editor-status').textContent==='');await page.screenshot({path:`${captureDir}/manage-permissions-${width}-${theme}.png`,fullPage:true})}
+   await page.goto(base+'#providers');await page.waitForFunction(()=>document.querySelectorAll('#provider-list .providers-table tbody tr').length===3&&document.querySelector('#provider-list .providers-row-error'));
    const layout=await page.$eval('#provider-list .providers-table tbody tr',row=>({display:getComputedStyle(row).display,width:document.documentElement.scrollWidth}));
    assert.equal(layout.width<=width,true,'page fits '+width+'px');if(width===390)assert.equal(layout.display,'grid','mobile rows become cards');
    if(captureDir)await page.screenshot({path:`${captureDir}/providers-page-${width}-${theme}.png`,fullPage:true});await page.close();
