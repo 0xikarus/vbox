@@ -1,6 +1,6 @@
-/* Fixture-only mail design. No selector is active without ?mailMockup=1. */
-#inspect.details-prototype .mail-mockup-group .ip-row-value{max-width:176px}
-#inspect.details-prototype .mail-mockup-tag{display:inline-block;margin-left:6px;padding:2px 6px;border-radius:6px;background:var(--vb-surface-2);color:var(--vb-ink-faint);font-size:10px;letter-spacing:0;text-transform:none}
+/* Mail pages and notices. */
+.mail-group[hidden],#mail-permissions[hidden],#role-editor-form [data-mail-feature][hidden]{display:none}
+#inspect.details-prototype .mail-group .ip-row-value{max-width:176px}
 #inspect.details-prototype .ip-page[data-ip-page^="mail"]{gap:12px}
 #inspect.details-prototype .mail-card{padding:0;overflow:hidden}
 #inspect.details-prototype .mail-card>h3{margin:0;padding:14px 15px 9px;color:var(--vb-ink-soft);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
@@ -13,6 +13,7 @@
 #inspect.details-prototype .mail-filter-details summary::marker,.mail-chat-line summary::marker{content:''}
 #inspect.details-prototype .mail-filter-details summary::-webkit-details-marker{display:none}
 #inspect.details-prototype .mail-filter-details .mail-filter-fields{padding:0 15px 15px}
+#inspect.details-prototype .mail-inline-status:empty{display:none}
 #inspect.details-prototype .mail-main-tabs{display:flex;gap:4px;padding:4px;border:1px solid var(--vb-line);border-radius:12px;background:var(--vb-surface-2)}
 #inspect.details-prototype .mail-main-tabs button{display:flex;align-items:center;justify-content:center;gap:7px;flex:1;min-height:40px;border:0;border-radius:9px;background:transparent;color:var(--vb-ink-soft);font:750 13px var(--vb-font);cursor:pointer}
 #inspect.details-prototype .mail-main-tabs button[aria-selected="true"]{background:var(--vb-surface);color:var(--vb-ink);box-shadow:0 1px 4px #0001}
@@ -92,14 +93,11 @@
 #inspect.details-prototype .mail-outbox-row strong{font-size:12px}
 #inspect.details-prototype .mail-outbox-row small{font-size:11px;color:var(--vb-ink-soft)}
 #inspect.details-prototype .mail-outbox-row em{font-size:11px;font-style:normal;color:var(--vb-ink-faint)}
-#mail-mockup-approval{display:inline-flex;align-items:center;gap:6px;min-height:40px;margin-right:8px;padding:0 10px;border:1px solid var(--vb-line);border-radius:var(--vb-radius-10);background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font);cursor:pointer}
-#mail-mockup-approval .mail-approval-icon{display:none}
-#mail-mockup-approval[hidden],#mail-mockup-approval-mobile[hidden]{display:none}
-#mail-mockup-approval b,#mail-mockup-approval-mobile b{display:grid;place-items:center;min-width:20px;height:20px;padding:0 4px;box-sizing:border-box;border-radius:99px;background:var(--vb-warn-soft,#fff3e5);color:var(--vb-warn-text,#a0520d);font-size:11px}
-#mail-mockup-approval-mobile{display:none}
-#mail-mockup-chat-preview{max-width:620px;margin:24px auto 20px;padding:0 9px}
-.mail-chat-label{display:flex;justify-content:space-between;margin:0 0 8px;color:var(--vb-ink-faint);font-size:10px;font-weight:800;letter-spacing:.08em}
-.mail-chat-label span{letter-spacing:0;font-weight:600}
+#mail-approval{display:inline-flex;align-items:center;gap:6px;min-height:40px;margin-right:8px;padding:0 10px;border:1px solid var(--vb-line);border-radius:var(--vb-radius-10);background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font);cursor:pointer}
+#mail-approval .mail-approval-icon{display:none}
+#mail-approval[hidden],#mail-approval-mobile[hidden]{display:none}
+#mail-approval b,#mail-approval-mobile b{display:grid;place-items:center;min-width:20px;height:20px;padding:0 4px;box-sizing:border-box;border-radius:99px;background:var(--vb-warn-soft,#fff3e5);color:var(--vb-warn-text,#a0520d);font-size:11px}
+#mail-approval-mobile{display:none}
 .mail-chat-line{margin-bottom:5px;border:1px solid var(--vb-line);border-radius:10px;background:var(--vb-surface);color:var(--vb-ink);font-size:12px}
 .mail-chat-line summary{display:flex;align-items:center;min-height:40px;padding:0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;list-style:none}
 .mail-chat-line summary::-webkit-details-marker{display:none}
@@ -123,11 +121,11 @@
 .mail-review footer [data-review="approve"]{border-color:var(--vb-ink);background:var(--vb-ink);color:var(--vb-bg)}
 .mail-review footer button[hidden]{display:none}
 @media(max-width:600px){
- #mail-mockup-approval{min-height:40px;margin-right:4px;padding:0 7px}
- #mail-mockup-approval .mail-approval-label{display:none}
- #mail-mockup-approval .mail-approval-icon{display:inline;font-size:17px}
- #mail-mockup-approval-mobile{display:inline-flex;align-items:center;gap:5px;min-width:40px;min-height:40px;padding:0 7px;border:1px solid var(--vb-line);border-radius:10px;background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font)}
- #mail-mockup-approval-mobile span{font-size:16px}
+ #mail-approval{min-height:40px;margin-right:4px;padding:0 7px}
+ #mail-approval .mail-approval-label{display:none}
+ #mail-approval .mail-approval-icon{display:inline;font-size:17px}
+ #mail-approval-mobile{display:inline-flex;align-items:center;gap:5px;min-width:40px;min-height:40px;padding:0 7px;border:1px solid var(--vb-line);border-radius:10px;background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font)}
+ #mail-approval-mobile span{font-size:16px}
  .mail-review{top:0;left:0;right:0;bottom:0;width:100%;height:100dvh;max-height:100dvh;margin:0;border:0;border-radius:0;transform:none}
  .mail-review-shell{height:100%;max-height:none}
  .mail-review-scroll{flex:1;min-height:0;align-content:start}
@@ -138,6 +136,23 @@
  #inspect.details-prototype .mail-setting-address code{flex:1}
 }
 @media(max-width:420px){
- #chat-header:has(#mail-mockup-approval-mobile) #chat-usage{display:none}
+ #chat-header:has(#mail-approval-mobile) #chat-usage{display:none}
 }
 @media(prefers-reduced-motion:reduce){#inspect.details-prototype .mail-switch span,#inspect.details-prototype .mail-switch span::after{transition:none}}
+
+#inspect.details-prototype .mail-load-more{display:block;width:100%;min-height:44px;border:0;border-top:1px solid var(--vb-line);background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font);cursor:pointer}
+#inspect.details-prototype .mail-download{display:grid;place-items:center;min-height:40px;padding:0 12px;border:1px solid var(--vb-line-strong);border-radius:10px;background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font);text-decoration:none}
+#inspect.details-prototype .mail-permissions{flex:none}
+#inspect.details-prototype .mail-permissions .mail-setting-row:last-of-type{border-bottom:0}
+#inspect.details-prototype .mail-permissions .mail-inline-status{padding:0 15px 10px}
+.msg.system.mail-system-row{align-self:center;max-width:min(100%,620px);width:100%;margin:3px auto;padding:0 9px;box-sizing:border-box;border:0;border-radius:0;background:transparent;box-shadow:none}
+.mail-system-row .mail-chat-line{width:100%;margin:0}
+.mail-chat-line summary>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-system-row .mail-status-link{display:flex;align-items:center;width:100%;min-height:42px;padding:0 12px;border:1px solid var(--vb-line);border-radius:10px;background:var(--vb-surface);color:var(--vb-ink);font:12px var(--vb-font);text-align:left;cursor:pointer}
+.mail-system-row .mail-status-link span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-system-row .mail-status-link::after{content:'›';margin-left:auto;padding-left:8px;color:var(--vb-ink-faint);font-size:18px}
+.mail-notice-items{display:grid;gap:0}
+.mail-notice-items p{margin:0 0 5px;font-size:11px}
+.mail-notice-items button{display:block;width:100%;min-height:40px;padding:8px 0;border:0;border-top:1px solid var(--vb-line);background:transparent;color:var(--vb-ink);font:12px var(--vb-font);text-align:left;cursor:pointer}
+.mail-notice-items small{padding:8px 0;color:var(--vb-ink-soft)}
+.mail-chat-line>div>button{min-height:40px;padding:0 8px;margin-top:6px;border:1px solid var(--vb-line);border-radius:8px;background:var(--vb-surface-2);color:var(--vb-ink);font:700 12px var(--vb-font)}

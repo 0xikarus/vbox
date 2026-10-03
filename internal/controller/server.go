@@ -52,11 +52,14 @@ type Server struct {
 	Resolve              ProviderResolver
 	Bootstrap            func(context.Context, provider.Provider, provider.Box, []string) error
 	HTTP                 *http.Client
-	ReconcileEvery       time.Duration
-	DefaultRunBudget     time.Duration
-	EmailProvisionURL    string
-	EmailProvisionToken  string
-	Deliver              NotificationSink
+	// ResendURL is replaceable by an httptest server; production uses Resend's
+	// HTTPS API. The API key always comes from the controller environment.
+	ResendURL           string
+	ReconcileEvery      time.Duration
+	DefaultRunBudget    time.Duration
+	EmailProvisionURL   string
+	EmailProvisionToken string
+	Deliver             NotificationSink
 	// StartTask hands a freshly created task to its agent. It is a field so
 	// that tests can observe the hand-off instead of racing a detached
 	// goroutine against their fixtures.
@@ -104,6 +107,8 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("POST /v1/railway-webhooks/{secret}", s.RailwayWebhooks)
 	}
 	mux.HandleFunc("POST /v1/worker-slots/{slot}/enrollment", s.owner(s.installWorkerAgent))
+	mux.HandleFunc("POST /v1/inbound-mail/recipient", s.inboundMailRecipient)
+	mux.HandleFunc("POST /v1/inbound-mail", s.inboundMailMessage)
 	mux.HandleFunc("POST /v1/worker-slots/{slot}/activate", s.owner(s.activateWorkerAgent))
 	mux.HandleFunc("POST /v1/worker-slots/{slot}/recover", s.owner(s.recoverWorkerAgent))
 	mux.HandleFunc("POST /v1/workers/enroll", s.exchangeWorkerEnrollment)
@@ -168,6 +173,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-desktop/run-budget/extend", s.desktopAgentAuth(s.agentRunBudgetHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/followups", s.desktopAgentAuth(s.agentFollowupHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/tool-policy", s.desktopAgentAuth(s.agentToolPolicyHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/mail/messages", s.desktopAgentAuth(s.agentMailMessages))
+	mux.HandleFunc("GET /v1/agent-desktop/mail/messages/{mid}", s.desktopAgentAuth(s.agentMailMessage))
+	mux.HandleFunc("POST /v1/agent-desktop/mail/messages/{mid}/read", s.desktopAgentAuth(s.agentMailRead))
+	mux.HandleFunc("GET /v1/agent-desktop/mail/messages/{mid}/attachments/{aid}", s.desktopAgentAuth(s.agentMailAttachment))
+	mux.HandleFunc("PUT /v1/agent-desktop/mail/subscription", s.desktopAgentAuth(s.agentMailSubscription))
+	mux.HandleFunc("DELETE /v1/agent-desktop/mail/subscription", s.desktopAgentAuth(s.agentMailSubscription))
+	mux.HandleFunc("POST /v1/agent-desktop/mail/outbox", s.desktopAgentAuth(s.agentMailSend))
+	mux.HandleFunc("GET /v1/agent-desktop/mail/outbox", s.desktopAgentAuth(s.agentMailOutbox))
+	mux.HandleFunc("GET /v1/agent-desktop/mail/outbox/{oid}", s.desktopAgentAuth(s.agentMailOutboxStatus))
 	mux.HandleFunc("GET /v1/agent-desktop/thread-history", s.desktopAgentAuth(s.agentThreadHistoryHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/shared-chats", s.desktopAgentAuth(s.agentSharedChatsHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/shared-chats", s.desktopAgentAuth(s.agentSharedChatsHandler))
@@ -195,6 +209,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/request", s.desktopAgentAuth(s.requestDesktopSecret))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/imported-credentials", s.owner(s.importedCredentials))
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/login-profiles", s.owner(s.putBoxLoginProfiles))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/mail", s.owner(s.mailConfigured(s.ownerMailSettings)))
+	mux.HandleFunc("PUT /v1/logical-boxes/{id}/mail", s.owner(s.mailConfigured(s.ownerMailSettings)))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/mail/messages", s.owner(s.mailConfigured(s.ownerMailMessages)))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/mail/messages/{mid}", s.owner(s.mailConfigured(s.ownerMailMessage)))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/mail/messages/{mid}/read", s.owner(s.mailConfigured(s.ownerMailRead)))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/mail/messages/{mid}/attachments/{aid}", s.owner(s.mailConfigured(s.ownerMailAttachment)))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/mail/outbox", s.owner(s.mailConfigured(s.ownerMailOutbox)))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/mail/outbox/{oid}", s.owner(s.mailConfigured(s.ownerMailOutboxItem)))
+	mux.HandleFunc("PUT /v1/logical-boxes/{id}/mail/outbox/{oid}", s.owner(s.mailConfigured(s.ownerMailOutboxItem)))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/mail/outbox/{oid}/approve", s.owner(s.mailConfigured(s.ownerMailApprove)))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/mail/outbox/{oid}/reject", s.owner(s.mailConfigured(s.ownerMailReject)))
+	mux.HandleFunc("GET /v1/mail/approvals", s.owner(s.mailConfigured(s.ownerMailApprovals)))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/secret-requests", s.owner(s.desktopSecretRequests))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/secret-requests/{key}", s.owner(s.desktopSecretRequests))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/browser/imports", s.owner(s.browserStateImports))
@@ -750,6 +776,12 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileAgentFollowupsNow(ctx); err != nil {
 		s.Logger.Error("initial agent follow-up reconciliation failed", "error", err)
 	}
+	if err := s.ReconcileMailNoticesNow(ctx); err != nil {
+		s.Logger.Error("initial mail notice reconciliation failed", "error", err)
+	}
+	if err := s.ReconcileStaleMailSendsNow(ctx); err != nil {
+		s.Logger.Error("initial stale mail send reconciliation failed", "error", err)
+	}
 	if err := s.ReconcileLogicalBoxDeletesNow(ctx); err != nil {
 		s.Logger.Error("initial logical box deletion reconciliation failed", "error", err)
 	}
@@ -794,6 +826,12 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 				}
 				if err := s.ReconcileAgentFollowupsNow(ctx); err != nil {
 					s.Logger.Error("agent follow-up reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileMailNoticesNow(ctx); err != nil {
+					s.Logger.Error("mail notice reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileStaleMailSendsNow(ctx); err != nil {
+					s.Logger.Error("stale mail send reconciliation failed", "error", err)
 				}
 				if err := s.ReconcileLogicalBoxHibernatesNow(ctx); err != nil {
 					s.Logger.Error("logical box hibernate reconciliation failed", "error", err)

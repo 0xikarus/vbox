@@ -134,11 +134,15 @@ func (s *Server) boxMessageReplyPointer(ctx context.Context, accountID string, m
 }
 
 func (s *Server) boxMessagePromptWithLinks(ctx context.Context, accountID, agent string, message v1.BoxMessage, includeImageLinks bool) (string, error) {
+	promptText := message.Text
+	if message.Mail != nil {
+		promptText = renderBoxMailPrompt(*message.Mail)
+	}
 	if s.Store == nil || s.Store.DB == nil {
 		if message.SenderBoxID != "" {
-			return message.Text + s.contactChatInstruction(chatReference(message), message.SenderBoxID, "", agent), nil
+			return promptText + s.contactChatInstruction(chatReference(message), message.SenderBoxID, "", agent), nil
 		}
-		return message.Text + s.chatInstruction(chatReference(message), agent, 1), nil
+		return promptText + s.chatInstruction(chatReference(message), agent, 1), nil
 	}
 	replyPointer, err := s.boxMessageReplyPointer(ctx, accountID, message)
 	if err != nil {
@@ -162,7 +166,7 @@ func (s *Server) boxMessagePromptWithLinks(ctx context.Context, accountID, agent
 		return "", err
 	}
 	defer rows.Close()
-	prompt := message.Text
+	prompt := promptText
 	count := 0
 	for rows.Next() {
 		var id, token, media string

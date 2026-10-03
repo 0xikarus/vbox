@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','box-create-limit.js','idle-policy.css'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','box-create-limit.js','idle-policy.css','mail.css'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 
 test('chat details edits one box creation limit without changing its other permissions',async()=>{
  const box={id:'builder',name:'Builder',state:'running',defaultAgent:'claude'};
@@ -55,13 +55,13 @@ test('chat details edits one box creation limit without changing its other permi
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='Off');
   assert.equal(await page.$eval('#inspect-create-limit',root=>root.hidden),false);
   assert.equal(await page.$eval('#inspect-create-limit input[type=number]',input=>input.disabled),true);
-  assert.equal(await page.$eval('#inspect-create-limit .idle-policy-switch input',input=>input.disabled&&!input.checked),true);
+  assert.equal(await page.$eval('#inspect-create-limit .mail-switch input',input=>input.disabled&&!input.checked),true);
   await page.$eval('[data-box-id="builder"]',row=>row.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='5 total');
-  assert.equal(await page.$eval('#inspect-create-limit .idle-policy-switch input',input=>input.checked&&!input.disabled),true);
-  await page.$eval('#inspect-create-limit .idle-policy-switch input',input=>{input.checked=false;input.dispatchEvent(new Event('change',{bubbles:true}))});
+  assert.equal(await page.$eval('#inspect-create-limit .mail-switch input',input=>input.checked&&!input.disabled),true);
+  await page.$eval('#inspect-create-limit .mail-switch input',input=>{input.checked=false;input.dispatchEvent(new Event('change',{bubbles:true}))});
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='Off');
-  assert.equal(await page.$eval('#inspect-create-limit .idle-policy-switch input',input=>input.disabled&&!input.checked),true);
+  assert.equal(await page.$eval('#inspect-create-limit .mail-switch input',input=>input.disabled&&!input.checked),true);
   assert.deepEqual(updates.at(-1).capabilities,{...capabilities,createAgentBox:{...capabilities.createAgentBox,maxBoxes:5,enabled:false},mcpTools:{...capabilities.mcpTools,allowedTools:['take_screenshot']}});
   await page.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}

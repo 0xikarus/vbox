@@ -135,6 +135,8 @@ func loadRoleCapabilities(ctx context.Context, q interface {
 			target = &role.Capabilities.CreateEmail
 		case v1.RolePermissionSharedChats:
 			target = &role.Capabilities.SharedChats
+		case v1.RolePermissionMail:
+			target = &role.Capabilities.Mail
 		case v1.RolePermissionMCPTools:
 			target = &role.Capabilities.MCPTools
 		default:
@@ -213,6 +215,7 @@ func putAgentRolePermission(ctx context.Context, tx *sql.Tx, accountID, roleID s
 		{v1.RolePermissionManageAgentBoxes, request.Capabilities.ManageAgentBoxes.List || request.Capabilities.ManageAgentBoxes.Inspect || request.Capabilities.ManageAgentBoxes.Tag || request.Capabilities.ManageAgentBoxes.Restart || request.Capabilities.ManageAgentBoxes.Delete, request.Capabilities.ManageAgentBoxes},
 		{v1.RolePermissionCreateEmail, request.Capabilities.CreateEmail.Enabled, request.Capabilities.CreateEmail},
 		{v1.RolePermissionSharedChats, request.Capabilities.SharedChats.Discover || request.Capabilities.SharedChats.Read || request.Capabilities.SharedChats.Subscribe || request.Capabilities.SharedChats.Create || request.Capabilities.SharedChats.Invite, request.Capabilities.SharedChats},
+		{v1.RolePermissionMail, request.Capabilities.Mail.Read || request.Capabilities.Mail.Compose, request.Capabilities.Mail},
 		{v1.RolePermissionMCPTools, request.Capabilities.MCPTools.Enabled, request.Capabilities.MCPTools},
 	}
 	for _, permission := range permissions {

@@ -62,6 +62,26 @@ type BoxMessageQuestion struct {
 	Multiple bool     `json:"multiple,omitempty"`
 }
 
+type BoxMessageMailItem struct {
+	ID          string `json:"id"`
+	From        string `json:"from"`
+	FromName    string `json:"fromName"`
+	Subject     string `json:"subject"`
+	Preview     string `json:"preview"`
+	Quarantined bool   `json:"quarantined"`
+}
+
+type BoxMessageMail struct {
+	Kind     string               `json:"kind"`
+	Items    []BoxMessageMailItem `json:"items,omitempty"`
+	More     int                  `json:"more,omitempty"`
+	OutboxID string               `json:"outboxId,omitempty"`
+	To       string               `json:"to,omitempty"`
+	Subject  string               `json:"subject,omitempty"`
+	Status   string               `json:"status,omitempty"`
+	Reason   string               `json:"reason,omitempty"`
+}
+
 type TerminalInputRequest struct {
 	Text   string   `json:"text,omitempty"`
 	Keys   []string `json:"keys,omitempty"`
@@ -83,6 +103,7 @@ type BoxMessage struct {
 	UpdatedAt       time.Time           `json:"updatedAt"`
 	Images          []BoxMessageImage   `json:"images,omitempty"`
 	Question        *BoxMessageQuestion `json:"question,omitempty"`
+	Mail            *BoxMessageMail     `json:"mail,omitempty"`
 }
 
 type TerminalSnapshot struct {
