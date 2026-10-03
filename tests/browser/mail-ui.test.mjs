@@ -133,7 +133,7 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    assert.equal(await page.$$eval('.mail-system-row',nodes=>nodes.length),2);
    assert.equal(await page.$eval('.mail-system-row',node=>node.textContent.includes('new mails')),true);
    await save('chat-notices');
-   if(width===390){assert.equal(await page.$eval('#chat-header-name',node=>node.scrollWidth<=node.clientWidth),true);assert.equal(await page.$eval('#chat-usage',node=>getComputedStyle(node).display),'none')}
+   if(width===390){assert.equal(await page.$eval('#chat-header-name',node=>node.scrollWidth<=node.clientWidth),true);assert.deepEqual(await page.evaluate(()=>{const badge=document.querySelector('#mail-approval-mobile'),usage=document.querySelector('#chat-usage'),initial=badge.hidden,state=hidden=>{badge.hidden=hidden;return getComputedStyle(usage).display!=='none'};const result={withoutPending:state(true),withPending:state(false)};badge.hidden=initial;return result}),{withoutPending:true,withPending:false},'phone header keeps the usage meter unless an approval badge needs the space')}
    if(width===390&&theme==='light'){await page.click('.mail-chat-line summary');await page.click('.mail-notice-items button');await page.waitForSelector('[data-ip-page="mailDetail"] .mail-body');assert.equal(await page.$eval('#inspect-title',node=>node.textContent),'Email');await page.click('#inspect-close')}
    await page.click('.mail-status-link');await page.waitForFunction(()=>document.querySelector('[data-mail-tab="outbox"]')?.getAttribute('aria-selected')==='true');
    assert.deepEqual(errors,[]);await page.close();
