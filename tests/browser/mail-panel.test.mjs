@@ -28,6 +28,11 @@ async function serve(data,{disabled=false,role='owner'}={}){
    if(path==='/v1/whoami')return send({role,accountId:'acct'});
    if(path==='/v1/capabilities')return send({providerEdits:role==='owner'});
    if(path==='/v1/logical-boxes'||path==='/v1/grid-boxes')return send(boxes);
+   if(path==='/v1/chat-sidebar-layout')return send({exists:true,groups:[],members:{}});
+   if(path==='/v1/box-conversations'||path==='/v1/chat-commands')return send([]);
+   if(path.startsWith('/v1/logical-boxes/')&&(path.endsWith('/messages')||path.endsWith('/contacts')))return send([]);
+   if(path.endsWith('/desktop'))return send({enabled:false});
+   if(path==='/v1/logical-boxes/builder/mail')return send({enabled:true,unread:1,pending:1,address:'builder@example.test',subscribed:true,filters:{sender:'',subject:''}});
    if(path==='/v1/instruction-presets')return send({defaultName:'',presets:[]});
    if(path==='/v1/provider-credentials'||path==='/v1/notifications'||path==='/v1/login-profiles'||path==='/v1/tool-presets')return send([]);
    if(path==='/v1/controller-defaults')return send({provider:'railway',providerCredential:'primary'});
@@ -66,7 +71,7 @@ async function serve(data,{disabled=false,role='owner'}={}){
    if(draft){const item=data.outbox.find(item=>item.outboxId===draft[2]&&item.boxId===draft[1]);if(!item)return send({error:'missing'},404);if(request.method==='GET')return send(item);const value=await body();data.writes.push({path,method:request.method,body:value});if(value.version!==item.version)return send({error:'changed'},409);if(draft[3]==='approve')item.status='sent';else if(draft[3]==='reject'){item.status='rejected';item.reason=value.reason}else{Object.assign(item,value);item.version++}return send(item)}
    return send({});
   }
-  const file=path==='/'?'index.html':path.slice(1);if(file.includes('..')){response.statusCode=404;response.end();return}
+  const file=path==='/'?'index.html':path==='/chat'?'chat.html':path.slice(1);if(file.includes('..')){response.statusCode=404;response.end();return}
   try{response.setHeader('Content-Type',types[extname(file)]||'application/octet-stream');response.end(await readFile(resolve(web,file)))}catch{response.statusCode=404;response.end()}
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));return server;
@@ -113,6 +118,44 @@ test('account Mail panel supports folders, search, message detail, quarantine an
    assert.deepEqual(errors,[]);await page.close();
   }finally{await chrome.close();await new Promise(resolve=>server.close(resolve))}
  }
+});
+
+test('chat mobile menu links to configured owner Mail with unread count and usable 390 flows',async()=>{
+ const capture=process.env.MAIL_PANEL_CAPTURE_DIR;if(capture)await mkdir(capture,{recursive:true});
+ const chrome=await browser();
+ try{
+  for(const scenario of [{role:'owner',disabled:false},{role:'owner',disabled:true},{role:'viewer',disabled:false}]){
+   const data=fixture(),server=await serve(data,scenario);
+   try{
+    const page=await chrome.newPage();await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+    await page.goto(base(server)+'/chat');await page.waitForSelector('#chat-menu');
+    await page.click('#chat-menu');await page.waitForFunction(()=>!document.querySelector('#chat-menu-sheet').hidden);
+    const nav='#chat-menu-sheet [data-mail-nav]';
+    if(scenario.role==='owner'&&!scenario.disabled){
+     await page.waitForFunction(()=>document.querySelector('#chat-mail-count')?.textContent==='2'&&!document.querySelector('#chat-mail-count').hidden);
+     assert.equal(await page.$eval(nav,node=>node.hidden),false);
+     assert.equal(await page.$eval(nav,node=>new URL(node.href).pathname+new URL(node.href).hash),'/#mail');
+     if(capture)await page.screenshot({path:resolve(capture,'chat-menu-mail-390-light.png')});
+     await page.click(nav);await page.waitForFunction(()=>location.hash==='#mail'&&!document.querySelector('#mail').hidden&&document.querySelector('#mail-panel [data-folder="all"]'));
+     assert.equal(await page.$eval('#mail-panel',()=>document.documentElement.scrollWidth<=innerWidth),true);
+     if(capture)await page.screenshot({path:resolve(capture,'from-menu-folders-390-light.png')});
+     await page.click('[data-folder="all"]');await page.waitForSelector('.mail-panel-row[data-item="m1"]');
+     if(capture)await page.screenshot({path:resolve(capture,'from-menu-list-390-light.png')});
+     await page.click('.mail-panel-row[data-item="m1"]');await page.waitForSelector('.mail-panel-body');
+     if(capture)await page.screenshot({path:resolve(capture,'from-menu-detail-390-light.png')});
+     await page.click('[data-back="list"]');await page.waitForSelector('.mail-panel-row[data-item="m1"]');await page.click('[data-back="folders"]');
+     await page.click('[data-folder="outbox"]');await page.waitForSelector('.mail-panel-row[data-item="o1"]');await page.click('.mail-panel-row[data-item="o1"]');await page.waitForSelector('#mail-panel [data-action="review"]');await page.click('#mail-panel [data-action="review"]');await page.waitForSelector('#mail-panel-review[open]');
+     assert.equal(await page.$eval('#mail-panel-review',node=>node.getBoundingClientRect().width<=innerWidth),true);
+     if(capture)await page.screenshot({path:resolve(capture,'from-menu-review-390-light.png')});
+     await page.click('#mail-panel-review [data-review="close"]');await page.click('[data-back="list"]');await page.click('[data-back="folders"]');
+     await page.click('[data-action="addresses"]');await page.waitForSelector('#mail-address-dialog[open]');
+     assert.equal(await page.$eval('#mail-address-dialog',node=>node.getBoundingClientRect().width<=innerWidth),true);
+     if(capture)await page.screenshot({path:resolve(capture,'from-menu-addresses-390-light.png')});
+    }else assert.equal(await page.$eval(nav,node=>node.hidden),true,scenario.role+' '+(scenario.disabled?'unconfigured':'non-owner')+' hides Mail');
+    await page.close();
+   }finally{await new Promise(done=>server.close(done))}
+  }
+ }finally{await chrome.close()}
 });
 
 test('address filters and address grants support create, edit, revoke, delete and keep-unknown',async()=>{

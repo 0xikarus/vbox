@@ -158,3 +158,5 @@
 .mail-notice-items button{display:block;width:100%;min-height:40px;padding:8px 0;border:0;border-top:1px solid var(--vb-line);background:transparent;color:var(--vb-ink);font:12px var(--vb-font);text-align:left;cursor:pointer}
 .mail-notice-items small{padding:8px 0;color:var(--vb-ink-soft)}
 .mail-chat-line>div>button{min-height:40px;padding:0 8px;margin-top:6px;border:1px solid var(--vb-line);border-radius:8px;background:var(--vb-surface-2);color:var(--vb-ink);font:700 12px var(--vb-font)}
+#chat-menu-sheet [data-mail-nav][hidden],#chat-menu-sheet .mail-nav-count[hidden]{display:none!important}
+#chat-menu-sheet .mail-nav-count{display:grid;place-items:center;min-width:18px;height:18px;margin-left:auto;padding:0 4px;border-radius:99px;background:var(--vb-warn-soft);color:var(--vb-warn-text);font-size:10px;font-weight:800}
