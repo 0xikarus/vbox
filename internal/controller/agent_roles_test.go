@@ -110,6 +110,9 @@ func TestTeamRolePresetUsesEditableExplicitCapabilities(t *testing.T) {
 	if !manage.List || !manage.Inspect || !manage.Tag || !manage.Restart || !manage.Delete {
 		t.Fatalf("manager lifecycle grant=%+v", manage)
 	}
+	if manage.Control || slices.Contains(manager.Capabilities.MCPTools.AllowedTools, "remote_control_box") {
+		t.Fatalf("manager preset unexpectedly grants remote control: %+v", manager)
+	}
 	for _, tool := range []string{"list_agent_boxes", "get_agent_box", "get_agent_box_screenshot", "create_agent_box", "set_agent_box_tags", "set_agent_box_run_budget", "restart_agent_box", "wake_agent_box", "delete_agent_box"} {
 		if !slices.Contains(manager.Capabilities.MCPTools.AllowedTools, tool) {
 			t.Fatalf("manager preset lacks %s: %+v", tool, manager)

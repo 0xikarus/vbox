@@ -105,6 +105,15 @@ type LogicalBox struct {
 	FailureReason        string             `json:"failureReason,omitempty"`
 	CreatedAt            time.Time          `json:"createdAt,omitempty"`
 	UpdatedAt            time.Time          `json:"updatedAt,omitempty"`
+	LastRemoteControl    *LastRemoteControl `json:"lastRemoteControl,omitempty"`
+}
+
+type LastRemoteControl struct {
+	ActorBoxID string    `json:"actorBoxId"`
+	ActorName  string    `json:"actorName"`
+	Actions    int       `json:"actions"`
+	StartedAt  time.Time `json:"startedAt"`
+	EndedAt    time.Time `json:"endedAt"`
 }
 
 type Allocation struct {

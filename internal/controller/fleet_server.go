@@ -251,6 +251,16 @@ func (s *Server) listLogicalBoxes(w http.ResponseWriter, r *http.Request, p Prin
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if p.Role == "owner" {
+		last, historyErr := s.Store.lastRemoteControls(r.Context(), p.AccountID)
+		if historyErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("remote control history unavailable"))
+			return
+		}
+		for i := range boxes {
+			boxes[i].LastRemoteControl = last[boxes[i].ID]
+		}
+	}
 	writeJSON(w, http.StatusOK, boxes)
 }
 
@@ -259,6 +269,13 @@ func (s *Server) getLogicalBox(w http.ResponseWriter, r *http.Request, p Princip
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
+	}
+	if p.Role == "owner" {
+		box.LastRemoteControl, err = s.Store.lastRemoteControl(r.Context(), p.AccountID, box.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("remote control history unavailable"))
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, box)
 }

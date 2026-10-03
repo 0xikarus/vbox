@@ -82,6 +82,15 @@ type BoxMessageMail struct {
 	Reason   string               `json:"reason,omitempty"`
 }
 
+type BoxMessageControl struct {
+	Kind       string    `json:"kind"`
+	ActorBoxID string    `json:"actorBoxId"`
+	ActorName  string    `json:"actorName"`
+	Actions    int       `json:"actions"`
+	FirstAt    time.Time `json:"firstAt"`
+	LastAt     time.Time `json:"lastAt"`
+}
+
 type TerminalInputRequest struct {
 	Text   string   `json:"text,omitempty"`
 	Keys   []string `json:"keys,omitempty"`
@@ -104,6 +113,7 @@ type BoxMessage struct {
 	Images          []BoxMessageImage   `json:"images,omitempty"`
 	Question        *BoxMessageQuestion `json:"question,omitempty"`
 	Mail            *BoxMessageMail     `json:"mail,omitempty"`
+	Control         *BoxMessageControl  `json:"control,omitempty"`
 }
 
 type TerminalSnapshot struct {
