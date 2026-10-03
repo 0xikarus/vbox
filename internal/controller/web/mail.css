@@ -13,6 +13,7 @@
 #inspect.details-prototype .mail-filter-details summary::marker,.mail-chat-line summary::marker{content:''}
 #inspect.details-prototype .mail-filter-details summary::-webkit-details-marker{display:none}
 #inspect.details-prototype .mail-filter-details .mail-filter-fields{padding:0 15px 15px}
+#inspect.details-prototype .mail-inline-status:empty{display:none}
 #inspect.details-prototype .mail-main-tabs{display:flex;gap:4px;padding:4px;border:1px solid var(--vb-line);border-radius:12px;background:var(--vb-surface-2)}
 #inspect.details-prototype .mail-main-tabs button{display:flex;align-items:center;justify-content:center;gap:7px;flex:1;min-height:40px;border:0;border-radius:9px;background:transparent;color:var(--vb-ink-soft);font:750 13px var(--vb-font);cursor:pointer}
 #inspect.details-prototype .mail-main-tabs button[aria-selected="true"]{background:var(--vb-surface);color:var(--vb-ink);box-shadow:0 1px 4px #0001}

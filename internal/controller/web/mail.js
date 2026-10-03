@@ -9,7 +9,18 @@
  const base=()=>'/v1/logical-boxes/'+encodeURIComponent(state.boxId)+'/mail';
  const count=()=>Number(state.settings?.unread)||0;
  const pending=()=>Number(state.settings?.pending)||0;
- const when=value=>{if(!value)return '—';const date=new Date(value);return Number.isNaN(+date)?String(value):new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(date)};
+ const when=value=>{
+  if(!value)return '—';
+  const date=new Date(value);if(Number.isNaN(+date))return String(value);
+  const now=new Date(),minutes=Math.floor((now-date)/60000);
+  if(minutes>=0&&minutes<1)return 'Just now';
+  if(minutes>=0&&minutes<60)return minutes+' min ago';
+  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const yesterday=new Date(today);yesterday.setDate(today.getDate()-1);
+  if(date>=yesterday&&date<today)return 'Yesterday';
+  if(minutes>=0&&date>=today&&minutes<1440)return Math.floor(minutes/60)+' hr ago';
+  return new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',...(date.getFullYear()===now.getFullYear()?{}:{year:'numeric'})}).format(date);
+ };
  const card=(title,body,extra='')=>`<section class="ip-card mail-card ${extra}"><h3>${esc(title)}</h3>${body}</section>`;
  const pill=(label,kind='')=>`<span class="mail-pill ${kind}">${esc(label)}</span>`;
  const otpMail=mail=>/\b(verification|one.time|security|otp|passcode|sign.in code)\b/i.test([mail?.subject,mail?.text].join(' '))&&/\b\d{4,8}\b/.test(mail?.text||mail?.preview||'');
@@ -70,7 +81,7 @@
    const query=new URLSearchParams({folder});if(cursor)query.set('cursor',cursor);
    const result=await api.request(base()+'/messages?'+query);
    if(epoch!==requestEpoch||boxId!==state.boxId||folder!==state.folder)return;
-   const items=Array.isArray(result?.messages)?result.messages:[];
+   const items=(Array.isArray(result?.messages)?result.messages:[]).filter(item=>folder==='quarantine'?item.quarantined:!item.quarantined);
    state.messages=append?[...state.messages,...items]:items;
    state.messagesCursor=result?.nextCursor||'';state.messagesLoaded=true;
   }catch(error){if(epoch===requestEpoch&&boxId===state.boxId)state.messagesError=shortError(error)}

@@ -9,7 +9,7 @@ window.VMBoxCreateLimit = (() => {
   const top=text('div','');top.className='idle-policy-top';
   const name=text('strong','Created-box limit');
   const badge=text('span','Loading…');badge.className='idle-policy-badge';top.append(name,badge);
-  const switchLabel=text('label','');switchLabel.className='idle-policy-switch';
+  const switchLabel=text('label','');switchLabel.className=showStateToggle?'mail-switch':'idle-policy-switch';
   const toggle=document.createElement('input');toggle.type='checkbox';toggle.disabled=true;toggle.setAttribute('aria-label','Allow this box to create boxes');
   switchLabel.append(toggle,text('span',''));if(showStateToggle)top.append(switchLabel);
   const controls=text('div','');controls.className='idle-policy-controls';

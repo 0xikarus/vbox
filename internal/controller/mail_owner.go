@@ -187,7 +187,7 @@ func (s *Server) ownerMailMessages(w http.ResponseWriter, r *http.Request, p Pri
 		return
 	}
 	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT `+mailMessageFields+` FROM mail_messages WHERE account_id=$1 AND box_id=$2 AND expires_at>now()
-  AND ($3='all' OR ($3='unread' AND read_at IS NULL AND NOT quarantined) OR ($3='quarantine' AND quarantined))
+  AND (($3='all' AND NOT quarantined) OR ($3='unread' AND read_at IS NULL AND NOT quarantined) OR ($3='quarantine' AND quarantined))
   AND ($4::timestamptz IS NULL OR (received_at,id::text)<($4::timestamptz,$5)) ORDER BY received_at DESC,id DESC LIMIT 51`, p.AccountID, box.ID, folder, nullableMailCursorTime(cursor.At), cursor.ID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("mail list unavailable"))

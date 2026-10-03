@@ -8,12 +8,13 @@ import puppeteer from 'puppeteer-core';
 const web=resolve('internal/controller/web');
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
 const box={id:'builder',name:'BossDev',state:'running',defaultAgent:'claude',provider:'shared-worker',providerCredential:'pool',slotId:'slot-1',assignmentGeneration:3};
-const stamp='2026-10-03T00:00:00Z';
+const stamp=new Date(Date.now()-2*60000).toISOString();
+const yesterday=(()=>{const date=new Date();date.setDate(date.getDate()-1);date.setHours(12,0,0,0);return date.toISOString()})();
 function fixture(){return {
  settings:{enabled:true,address:'builder-ab12@example.test',subscribed:true,filters:{sender:'',subject:''},unread:2,pending:2},
  messages:[
   {id:'m1',from:'accounts@northstar.dev',fromName:'Northstar',subject:'Your verification code',preview:'Your code is 483921.',text:'Your code is 483921. It expires in 10 minutes.',receivedAt:stamp,unread:true,hasAttachments:false,quarantined:false,spf:'pass',dkim:'pass',attachments:[]},
-  {id:'m2',from:'mara@example.com',fromName:'Mara Chen',subject:'Launch checklist',preview:'Please check the new draft.',text:'Please check the new draft.',receivedAt:stamp,unread:true,hasAttachments:true,quarantined:false,spf:'pass',dkim:'pass',attachments:[{id:'a1',name:'draft.pdf',contentType:'application/pdf',size:1234}]},
+  {id:'m2',from:'mara@example.com',fromName:'Mara Chen',subject:'Launch checklist',preview:'Please check the new draft.',text:'Please check the new draft.',receivedAt:yesterday,unread:true,hasAttachments:true,quarantined:false,spf:'pass',dkim:'pass',attachments:[{id:'a1',name:'draft.pdf',contentType:'application/pdf',size:1234}]},
   {id:'m3',from:'spam@example.com',fromName:'Unknown',subject:'Urgent verify',preview:'Suspicious link removed.',text:'Suspicious link removed.',receivedAt:stamp,unread:false,hasAttachments:false,quarantined:true,spf:'fail',dkim:'fail',attachments:[]},
  ],
  outbox:[
@@ -40,7 +41,7 @@ async function serve(data,{disabled=false,role='owner'}={}){
     return send(data.settings);
    }
    if(path==='/v1/logical-boxes/builder/mail/messages'){
-    const folder=url.searchParams.get('folder')||'all';const messages=data.messages.filter(item=>folder==='quarantine'?item.quarantined:folder==='unread'?item.unread&&!item.quarantined:true).map(({text,attachments,...rest})=>rest);
+    const folder=url.searchParams.get('folder')||'all';const messages=data.messages.filter(item=>folder==='quarantine'?item.quarantined:folder==='unread'?item.unread&&!item.quarantined:!item.quarantined).map(({text,attachments,...rest})=>rest);
     return send({messages,nextCursor:''});
    }
    const detail=path.match(/^\/v1\/logical-boxes\/builder\/mail\/messages\/([^/]+)$/);
@@ -87,7 +88,16 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    await page.click('[data-ip-row="mail"]');await page.waitForSelector('[data-mail-id="m1"]');
    assert.equal(await page.$eval('[data-ip-page="mail"]',node=>node.textContent.indexOf('Messages')<node.textContent.indexOf('Settings')),true);
    assert.equal(await page.$eval('[data-mail-id="m1"]',node=>node.textContent.includes('483921')),false);
+   assert.equal(await page.$('[data-mail-id="m3"]'),null);
+   assert.match(await page.$eval('[data-mail-id="m1"] time',node=>node.textContent),/min ago/);
+   assert.equal(await page.$eval('[data-mail-id="m2"] time',node=>node.textContent),'Yesterday');
+   assert.equal(await page.$eval('#mail-settings-status',node=>getComputedStyle(node).display),'none');
    await save('inbox');
+   await page.click('[data-mail-filter="quarantine"]');await page.waitForSelector('[data-mail-id="m3"]');
+   assert.equal(await page.$('[data-mail-id="m1"]'),null);
+   await page.click('[data-mail-filter="unread"]');await page.waitForSelector('[data-mail-id="m1"]');
+   assert.equal(await page.$('[data-mail-id="m3"]'),null);
+   await page.click('[data-mail-filter="all"]');await page.waitForSelector('[data-mail-id="m1"]');
    await page.click('[data-mail-id="m1"]');await page.waitForSelector('.mail-body');
    assert.equal(await page.$eval('.mail-body',node=>node.textContent.includes('483921')),false);
    await page.click('[data-mail-action="reveal"]');assert.equal(await page.$eval('.mail-body',node=>node.textContent.includes('483921')),true);
@@ -105,7 +115,10 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    await page.waitForSelector('[data-outbox-id="o2"]');await page.click('[data-outbox-id="o2"]');await page.click('[data-review="reject"]');await page.type('#mail-review [name="reason"]','Not appropriate.');await page.click('[data-review="reject"]');
    await page.waitForFunction(()=>!document.querySelector('#mail-review').open);
    assert.equal(data.writes.some(write=>write.path.endsWith('/o2/reject')&&write.body.reason==='Not appropriate.'&&write.body.version===1),true);
-   await page.click('#inspect-prototype-back');await page.click('[data-ip-row="access"]');await page.waitForSelector('#mail-permissions:not([hidden])');await save('access');
+   await page.click('#inspect-prototype-back');await page.click('[data-ip-row="access"]');await page.waitForSelector('#mail-permissions:not([hidden])');
+   await page.waitForSelector('#inspect-create-limit .mail-switch span');
+   assert.equal(await page.$eval('#inspect-create-limit .mail-switch span',node=>{const rect=node.getBoundingClientRect(),style=getComputedStyle(node);return rect.width>=40&&rect.height>=24&&style.backgroundColor!=='rgba(0, 0, 0, 0)'}),true);
+   await save('access');
    await page.click('#mail-permission-read');await page.waitForFunction(()=>document.querySelector('#mail-permission-status').textContent==='Saved');
    assert.equal(data.writes.some(write=>write.path.endsWith('/agent-policy')&&write.body.capabilities.mail.read===true&&write.body.capabilities.mcpTools.allowedTools.includes('list_emails')),true);
    await page.click('#inspect-edit-roles');await page.waitForSelector('#role-editor-modal:not([hidden])');
