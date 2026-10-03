@@ -17,6 +17,7 @@ window.VBoxMailPanel=(()=>{
  const mask=text=>String(text||'').replace(/\b\d{4,8}\b/g,'••••••');
  const boxId=item=>item?.boxId||item?.id||item?.box?.id||'';
  const boxName=item=>item?.boxName||item?.name||item?.box?.name||'Box';
+ const icon=name=>{const paths={read:'<path d="M3 5h18v14H3zM3 7l9 7 9-7"/>',archive:'<path d="M3 4h18v5H3zM5 9v11h14V9M9 13h6"/>',delete:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7M14 10v7"/>',chat:'<path d="M4 5h16v12H8l-4 3zM8 9h8M8 12h5"/>',release:'<path d="M5 20h14V9M10 14 20 4M13 4h7v7"/>',unarchive:'<path d="M3 4h18v5H3zM5 9v11h14V9M15 15H9m0 0 3-3m-3 3 3 3"/>',review:'<path d="m5 12 5 5L20 6"/>'};return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]||paths.read}</svg>`};
  async function request(path,method='GET',body){
   const response=await fetch(path,{method,credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});
   const value=await response.json().catch(()=>({}));
@@ -25,7 +26,7 @@ window.VBoxMailPanel=(()=>{
  }
  function init(){
   const root=$('#mail-panel'),section=$('#mail'),folders=root.querySelector('.mail-panel-folders'),list=root.querySelector('.mail-panel-list-pane'),detail=root.querySelector('.mail-panel-detail-pane');
-  const state={owner:false,available:false,summary:null,summaryError:'',addresses:[],address:'',keepUnknown:false,folder:new URLSearchParams(location.search).get('mail')==='outbox'?'outbox':'all',box:'',q:'',status:'pending_approval',items:[],cursor:'',loading:false,error:'',selected:null,detail:null,detailError:'',detailLoading:false,revealed:false,mobilePage:'folders',sequence:0};
+  const state={owner:false,available:false,summary:null,summaryError:'',addresses:[],address:'',keepUnknown:false,folder:new URLSearchParams(location.search).get('mail')==='outbox'?'outbox':'all',box:'',q:'',status:'pending_approval',items:[],checked:new Set(),bulkBusy:false,bulkError:'',cursor:'',loading:false,error:'',selected:null,detail:null,detailError:'',detailLoading:false,revealed:false,mobilePage:'folders',sequence:0};
   let searchTimer,reviewItem,reviewFocus;
   const review=document.createElement('dialog');review.className='mail-review mail-panel-review';review.id='mail-panel-review';
   review.innerHTML='<form method="dialog" class="mail-review-shell"><header><div><small>OUTBOX APPROVAL</small><h2>Review email</h2></div><button type="button" data-review="close" aria-label="Close review">×</button></header><div class="mail-review-scroll"><p class="mail-review-status" role="status"></p><label>To<input name="to" type="email" multiple required></label><label>Subject<input name="subject" required></label><label>Body<textarea name="text" rows="9" required></textarea></label><div class="mail-reject-reason" hidden><label>Reason for rejection<textarea name="reason" rows="3" placeholder="Tell the agent why this should not be sent"></textarea></label></div></div><footer><button type="button" data-review="reject">Reject</button><button type="button" data-review="approve">Approve and send</button></footer></form>';
@@ -44,17 +45,18 @@ window.VBoxMailPanel=(()=>{
   }
   function renderFolders(){
    const summary=state.summary||{},boxes=Array.isArray(summary.boxes)?summary.boxes:[];
-   const folderRows=[['all','Inbox',summary.inbox],['unread','Unread',summary.unread],['quarantine','Quarantine',summary.quarantine],['outbox','Outbox · pending',summary.pending]];
+   const folderRows=[['all','Inbox',summary.inbox],['unread','Unread',summary.unread],['quarantine','Quarantine',summary.quarantine],['outbox','Outbox',summary.pending],['archive','Archive',summary.archive]];
    const addresses=state.addresses.filter(item=>item.address);
-   folders.innerHTML=`<header class="mail-panel-pane-head"><h3>Folders</h3></header><div class="mail-panel-folder-rows">${folderRows.map(([key,label,count])=>`<button type="button" data-folder="${key}" aria-current="${state.folder===key?'page':'false'}"><span>${esc(label)}</span>${count?`<b>${esc(count)}</b>`:''}</button>`).join('')}</div><h3 class="mail-panel-subhead">Boxes</h3><div class="mail-panel-box-rows"><button type="button" data-box="" aria-current="${state.box?'false':'page'}"><span>All boxes</span></button>${boxes.map(box=>`<button type="button" data-box="${esc(boxId(box))}" aria-current="${state.box===boxId(box)?'page':'false'}"><span><strong>${esc(boxName(box))}</strong><small>${esc(box.address||'Inbox off')}</small></span>${box.unread?`<b>${esc(box.unread)}</b>`:''}</button>`).join('')}</div><h3 class="mail-panel-subhead">Addresses</h3><div class="mail-panel-box-rows mail-panel-address-rows"><button type="button" data-address="" aria-current="${state.address?'false':'page'}"><span>All addresses</span></button>${addresses.map(item=>`<button type="button" data-address="${esc(item.address)}" aria-current="${state.address===item.address?'page':'false'}"><span><strong>${esc(item.label||item.address)}</strong><small>${esc(item.address)}</small></span>${item.unread?`<b>${esc(item.unread)}</b>`:''}</button>`).join('')}</div><button type="button" class="mail-panel-manage-addresses" data-action="addresses">Manage addresses</button>${boxes.length?'':'<p class="mail-panel-side-note">No box inboxes yet. Enable mail in a box’s Details.</p>'}`;
+   folders.innerHTML=`<header class="mail-panel-pane-head"><h3>Mail</h3></header><div class="mail-panel-folder-rows">${folderRows.map(([key,label,count])=>`<button type="button" data-folder="${key}" aria-current="${state.folder===key?'page':'false'}"><span>${esc(label)}</span>${count?`<b>${esc(count)}</b>`:''}</button>`).join('')}</div><h3 class="mail-panel-subhead">Boxes</h3><div class="mail-panel-box-rows"><button type="button" data-box="" aria-current="${state.box?'false':'page'}"><span>All boxes</span></button>${boxes.map(box=>`<button type="button" data-box="${esc(boxId(box))}" aria-current="${state.box===boxId(box)?'page':'false'}"><span><strong>${esc(boxName(box))}</strong><small>${esc(box.address||'Inbox off')}</small></span>${box.unread?`<b>${esc(box.unread)}</b>`:''}</button>`).join('')}</div><h3 class="mail-panel-subhead">Addresses</h3><div class="mail-panel-box-rows mail-panel-address-rows"><button type="button" data-address="" aria-current="${state.address?'false':'page'}"><span>All addresses</span></button>${addresses.map(item=>`<button type="button" data-address="${esc(item.address)}" aria-current="${state.address===item.address?'page':'false'}"><span><strong>${esc(item.label||item.address)}</strong><small>${esc(item.address)}</small></span>${item.unread?`<b>${esc(item.unread)}</b>`:''}</button>`).join('')}</div><button type="button" class="mail-panel-manage-addresses" data-action="addresses">Manage addresses</button>${boxes.length?'':'<p class="mail-panel-side-note">No box inboxes yet. Enable mail in a box’s Details.</p>'}`;
   }
   function renderList(){
    const isOutbox=state.folder==='outbox';
-   const title=isOutbox?'Outbox':state.folder==='quarantine'?'Quarantine':state.folder==='unread'?'Unread':'Inbox';
+   const title=isOutbox?'Outbox':state.folder==='quarantine'?'Quarantine':state.folder==='archive'?'Archive':state.folder==='unread'?'Unread':'Inbox';
    const box=selectedBox();
    const heading=`<header class="mail-panel-pane-head"><button class="mail-panel-back" type="button" data-back="folders" aria-label="Back to folders">‹</button><div><h3>${esc(title)}</h3><small>${esc(state.address|| (box?boxName(box):'All boxes'))}</small></div></header>`;
    const search=isOutbox?'':`<label class="mail-panel-search"><span>Search mail</span><input type="search" placeholder="Search sender or subject" value="${esc(state.q)}" aria-label="Search mail"></label>`;
    const statusTabs=isOutbox?`<div class="mail-panel-status-tabs" role="tablist" aria-label="Outbox status">${[['pending_approval','Pending'],['sent','Sent'],['rejected','Rejected']].map(([key,label])=>`<button type="button" role="tab" data-status="${key}" aria-selected="${state.status===key}">${label}</button>`).join('')}</div>`:'';
+   const bulk=!isOutbox?`<div class="mail-panel-bulk" ${state.checked.size?'':'hidden'}><strong>${state.checked.size} selected</strong><button type="button" data-bulk="read">Mark read</button><button type="button" data-bulk="unread">Mark unread</button><button type="button" data-bulk="archive" ${state.folder==='quarantine'||state.folder==='archive'?'hidden':''}>Archive</button><button type="button" data-bulk="unarchive" ${state.folder==='archive'?'':'hidden'}>Move to Inbox</button><button type="button" data-bulk="release" ${state.folder==='quarantine'?'':'hidden'}>Release</button><button type="button" data-bulk="delete">Delete</button><button type="button" data-bulk="clear" aria-label="Clear selection">×</button></div>${state.bulkError?`<p class="mail-panel-bulk-error" role="alert">${esc(state.bulkError)}</p>`:''}`:'';
    let rows='';
    if(state.error)rows=`<div class="mail-panel-state" role="alert">${esc(state.error)}<button type="button" data-action="retry">Retry</button></div>`;
    else if(state.loading&&!state.items.length)rows='<div class="mail-panel-state">Loading mail…</div>';
@@ -63,24 +65,26 @@ window.VBoxMailPanel=(()=>{
     const key=isOutbox?item.outboxId:item.id,from=isOutbox?'To '+(Array.isArray(item.to)?item.to.join(', '):item.to||''):item.fromName||item.from;
     const preview=isOutbox?item.text||item.reason||'':otp(item)?mask(item.preview):item.preview;
     const selected=state.selected?.key===key&&state.selected?.kind===(isOutbox?'outbox':'message');
-    return `<button type="button" class="mail-panel-row ${item.unread?'is-unread':''}" data-item="${esc(key)}" aria-current="${selected?'true':'false'}"><span class="mail-panel-row-top"><strong>${esc(from)}</strong><time>${esc(stamp(item.receivedAt||item.submittedAt))}</time></span><span class="mail-panel-row-subject">${esc(item.subject||'(No subject)')}${item.hasAttachments?' <span title="Has attachments">⌕</span>':''}</span><span class="mail-panel-row-preview">${esc(preview)}</span><span class="mail-panel-row-box">${esc(boxName(item))}${item.address||item.boxAddress?' · '+esc(item.address||item.boxAddress):''}${isOutbox?' · '+esc(item.status.replaceAll('_',' ')):''}</span></button>`;
+    const meta=`${esc(boxName(item))}${item.address||item.boxAddress?' · '+esc(item.address||item.boxAddress):''}${isOutbox?' · '+esc(item.status.replaceAll('_',' ')):''}`;
+    return `<div class="mail-panel-row ${item.unread?'is-unread':''}" data-item="${esc(key)}" aria-current="${selected?'true':'false'}">${isOutbox?'':`<input class="mail-panel-row-check" type="checkbox" data-select="${esc(key)}" aria-label="Select ${esc(item.subject||'(No subject)')}" ${state.checked.has(key)?'checked':''}>`}<span class="mail-panel-row-avatar" aria-hidden="true">${esc((from||'?').trim().charAt(0).toUpperCase())}</span><button type="button" class="mail-panel-row-open" data-item-open="${esc(key)}"><span class="mail-panel-row-sender">${esc(from)}</span><span class="mail-panel-row-subject">${esc(item.subject||'(No subject)')}</span><span class="mail-panel-row-preview">${esc(preview)}</span><span class="mail-panel-row-box">${meta}</span>${item.hasAttachments?'<span class="mail-panel-row-attachment" title="Has attachments" aria-label="Has attachments">▣</span>':''}<time>${esc(stamp(item.receivedAt||item.submittedAt))}</time></button>${isOutbox?'':`<span class="mail-panel-row-actions"><button type="button" data-row-action="${item.unread?'read':'unread'}" data-mail-id="${esc(key)}" aria-label="Mark ${item.unread?'read':'unread'}" title="Mark ${item.unread?'read':'unread'}">${icon('read')}</button>${item.quarantined?`<button type="button" data-row-action="release" data-mail-id="${esc(key)}" aria-label="Release from quarantine" title="Release from quarantine">${icon('release')}</button>`:state.folder==='archive'?`<button type="button" data-row-action="unarchive" data-mail-id="${esc(key)}" aria-label="Move to Inbox" title="Move to Inbox">${icon('unarchive')}</button>`:`<button type="button" data-row-action="archive" data-mail-id="${esc(key)}" aria-label="Archive" title="Archive">${icon('archive')}</button>`}<button type="button" data-row-action="delete" data-mail-id="${esc(key)}" aria-label="Delete" title="Delete">${icon('delete')}</button></span>`}</div>`;
    }).join('');
-   list.innerHTML=heading+search+statusTabs+`<div class="mail-panel-list-scroll">${rows}${state.cursor?'<button type="button" class="mail-panel-more" data-action="more">Load more</button>':''}</div>`;
+   list.innerHTML=heading+search+statusTabs+bulk+`<div class="mail-panel-list-scroll">${rows}${state.cursor?'<button type="button" class="mail-panel-more" data-action="more">Load more</button>':''}</div>`;
   }
   function renderDetail(){
    const entry=state.detail;
-   const heading='<header class="mail-panel-pane-head"><button class="mail-panel-back" type="button" data-back="list" aria-label="Back to list">‹</button><div><h3>Message</h3><small>Details</small></div></header>';
+   const toolbar=entry?state.selected?.kind==='outbox'?`${entry.status==='pending_approval'?`<button type="button" data-action="review" aria-label="Review draft" title="Review draft">${icon('review')}<span>Review draft</span></button>`:''}${boxId(entry)?`<a href="/chat#box=${id(boxId(entry))}" aria-label="Open box chat" title="Open box chat">${icon('chat')}<span>Open box chat</span></a>`:''}`:`<button type="button" data-action="read" aria-label="Mark ${entry.unread?'read':'unread'}" title="Mark ${entry.unread?'read':'unread'}">${icon('read')}<span>Mark ${entry.unread?'read':'unread'}</span></button>${entry.quarantined?`<button type="button" data-action="release" aria-label="Release from quarantine" title="Release from quarantine">${icon('release')}<span>Release from quarantine</span></button>`:state.folder==='archive'?`<button type="button" data-action="unarchive" aria-label="Move to Inbox" title="Move to Inbox">${icon('unarchive')}<span>Move to Inbox</span></button>`:`<button type="button" data-action="archive" aria-label="Archive" title="Archive">${icon('archive')}<span>Archive</span></button>`}<button type="button" data-action="delete" aria-label="Delete" title="Delete">${icon('delete')}<span>Delete</span></button>${boxId(entry)?`<a href="/chat#box=${id(boxId(entry))}" aria-label="Open box chat" title="Open box chat">${icon('chat')}<span>Open box chat</span></a>`:''}`:'';
+   const heading=`<header class="mail-panel-pane-head mail-panel-detail-head"><button class="mail-panel-back" type="button" data-back="list" aria-label="Back to list">‹</button><div><h3>Message</h3></div><nav class="mail-panel-detail-tools" aria-label="Message actions">${toolbar}</nav></header>`;
    if(state.detailError){detail.innerHTML=heading+`<div class="mail-panel-state" role="alert">${esc(state.detailError)}<button type="button" data-action="retry-detail">Retry</button></div>`;return}
    if(state.detailLoading){detail.innerHTML=heading+'<div class="mail-panel-state">Loading details…</div>';return}
    if(!entry){detail.innerHTML=heading+'<div class="mail-panel-state">Select a message to read it here.</div>';return}
    if(state.selected.kind==='outbox'){
     const recipients=Array.isArray(entry.to)?entry.to.join(', '):entry.to||'';
-    detail.innerHTML=heading+`<div class="mail-panel-detail-scroll"><article class="mail-panel-detail-card"><div class="mail-panel-detail-meta"><span class="mail-panel-pill">${esc(entry.status?.replaceAll('_',' ')||'Draft')}</span><time>${esc(stamp(entry.submittedAt))}</time></div><h2>${esc(entry.subject||'(No subject)')}</h2><p class="mail-panel-field"><span>To</span><strong>${esc(recipients)}</strong></p><p class="mail-panel-field"><span>Box</span><strong>${esc(boxName(entry))}</strong></p></article><article class="mail-panel-detail-card"><h3>Message</h3><div class="mail-panel-body">${esc(entry.text)}</div></article>${entry.reason?`<p class="mail-panel-note">Reason: ${esc(entry.reason)}</p>`:''}<div class="mail-panel-actions">${entry.status==='pending_approval'?'<button type="button" data-action="review">Review draft</button>':''}${boxId(entry)?`<a href="/chat#box=${id(boxId(entry))}">Open box chat</a>`:''}</div></div>`;
+    detail.innerHTML=heading+`<div class="mail-panel-detail-scroll"><article class="mail-panel-detail-card"><h2>${esc(entry.subject||'(No subject)')}</h2><div class="mail-panel-detail-meta"><strong>To ${esc(recipients)}</strong><time>${esc(stamp(entry.submittedAt))}</time></div><p class="mail-panel-detail-context">${esc(boxName(entry))} · ${esc(entry.status?.replaceAll('_',' ')||'Draft')}</p></article><article class="mail-panel-detail-card"><div class="mail-panel-body">${esc(entry.text)}</div></article>${entry.reason?`<p class="mail-panel-note">Reason: ${esc(entry.reason)}</p>`:''}</div>`;
     return;
    }
    const secret=otp(entry),body=secret&&!state.revealed?mask(entry.text):entry.text;
    const files=(entry.attachments||[]).map(file=>`<div class="mail-panel-attachment"><span>▣</span><strong>${esc(file.name)}</strong><small>${esc(Math.ceil((file.size||0)/1024))} KB</small><a href="/v1/mail/messages/${id(entry.id)}/attachments/${id(file.id)}" download="${esc(file.name)}">Download</a></div>`).join('');
-   detail.innerHTML=heading+`<div class="mail-panel-detail-scroll"><div class="mail-panel-untrusted">Untrusted external content · Check links and attachments.</div><article class="mail-panel-detail-card"><div class="mail-panel-detail-meta"><span class="mail-panel-pill ${entry.quarantined?'danger':''}">${entry.quarantined?'Quarantined':'Received '+esc(stamp(entry.receivedAt))}</span></div><h2>${esc(entry.subject||'(No subject)')}</h2><p class="mail-panel-field"><span>From</span><strong>${esc(entry.fromName||entry.from)} &lt;${esc(entry.from)}&gt;</strong></p><p class="mail-panel-field"><span>To</span><strong>${esc(entry.address||entry.boxAddress||entry.to||'—')}</strong></p><p class="mail-panel-field"><span>Box</span><strong>${esc(boxName(entry))}</strong></p><div class="mail-panel-auth"><span>SPF ${esc(entry.spf||'unknown')}</span><span>DKIM ${esc(entry.dkim||'unknown')}</span></div></article><article class="mail-panel-detail-card"><h3>Message</h3>${secret?`<div class="mail-panel-secret"><span>Verification code ${state.revealed?'shown':'hidden'}</span><button type="button" data-action="reveal">${state.revealed?'Hide':'Reveal'}</button></div>`:''}<div class="mail-panel-body">${esc(body)}</div></article>${files?`<article class="mail-panel-detail-card"><h3>Attachments</h3>${files}</article>`:''}<div class="mail-panel-actions"><button type="button" data-action="read">Mark ${entry.unread?'read':'unread'}</button>${entry.quarantined?'<button type="button" data-action="release">Release from quarantine</button>':''}${boxId(entry)?`<a href="/chat#box=${id(boxId(entry))}">Open box chat</a>`:''}</div><p class="mail-panel-detail-status" role="status"></p></div>`;
+   detail.innerHTML=heading+`<div class="mail-panel-detail-scroll"><article class="mail-panel-detail-card mail-panel-message-header"><h2>${esc(entry.subject||'(No subject)')}</h2><div class="mail-panel-detail-meta"><strong>${esc(entry.fromName||entry.from)} &lt;${esc(entry.from)}&gt;</strong><time>${esc(stamp(entry.receivedAt))}</time></div><p class="mail-panel-detail-context">To ${esc(entry.address||entry.boxAddress||entry.to||'—')} · ${esc(boxName(entry))}${entry.quarantined?' · Quarantined':''}</p><div class="mail-panel-auth"><span>SPF ${esc(entry.spf||'unknown')}</span><span>DKIM ${esc(entry.dkim||'unknown')}</span></div></article><div class="mail-panel-untrusted">Untrusted external content · Check links and attachments.</div><article class="mail-panel-detail-card mail-panel-message-body">${secret?`<div class="mail-panel-secret"><span>Verification code ${state.revealed?'shown':'hidden'}</span><button type="button" data-action="reveal">${state.revealed?'Hide':'Reveal'}</button></div>`:''}<div class="mail-panel-body">${esc(body)}</div></article>${files?`<article class="mail-panel-detail-card mail-panel-attachment-strip"><h3>Attachments</h3>${files}</article>`:''}<p class="mail-panel-detail-status" role="status"></p></div>`;
   }
   function render(){if(!state.available)return;showNav();renderFolders();renderList();renderDetail();root.dataset.mobilePage=state.mobilePage}
   async function loadAddresses(){
@@ -136,7 +140,7 @@ window.VBoxMailPanel=(()=>{
    if(!state.available||!state.owner)return;
    const seq=++state.sequence,folder=state.folder,box=state.box,address=state.address,q=state.q,status=state.status;
    const searchFocused=document.activeElement?.matches('.mail-panel-search input');
-   state.loading=true;state.error='';if(!append){state.items=[];state.cursor='';state.selected=null;state.detail=null}render();
+   state.loading=true;state.error='';if(!append){state.items=[];state.checked.clear();state.cursor='';state.selected=null;state.detail=null}render();
    if(searchFocused){const input=list.querySelector('.mail-panel-search input');input?.focus({preventScroll:true});input?.setSelectionRange(input.value.length,input.value.length)}
    const params=new URLSearchParams();if(box)params.set('box',box);if(address&&folder!=='outbox')params.set('address',address);
    if(folder==='outbox'){params.set('status',status)}else{params.set('folder',folder);if(q)params.set('q',q)}
@@ -161,6 +165,27 @@ window.VBoxMailPanel=(()=>{
   function chooseFolder(folder){state.folder=folder;state.mobilePage='list';state.q='';state.status='pending_approval';void loadList()}
   function chooseBox(box){state.box=box;state.mobilePage='list';void loadList()}
   function chooseAddress(address){state.address=address;if(state.folder==='outbox')state.folder='all';state.mobilePage='list';void loadList()}
+  async function changeMessages(keys,action){
+   if(state.bulkBusy||!keys.length)return;
+   state.bulkBusy=true;state.bulkError='';renderList();
+   try{
+    for(const key of keys){
+     const item=state.items.find(value=>value.id===key);if(!item)continue;
+     const path='/v1/mail/messages/'+id(key);
+     if(action==='read'||action==='unread'){await request(path+'/read','POST',{read:action==='read'});item.unread=action==='unread';if(state.detail?.id===key)state.detail.unread=item.unread}
+     else if(action==='release'){await request(path+'/release','POST',{});item.quarantined=false;item.unread=true}
+     else if(action==='archive'||action==='unarchive')await request(path+'/archive','POST',{archived:action==='archive'});
+     else if(action==='delete')await request(path,'DELETE');
+     if(['release','archive','unarchive','delete'].includes(action)||state.folder==='unread'&&action==='read'){
+      state.items=state.items.filter(value=>value.id!==key);
+      if(state.selected?.key===key){state.selected=null;state.detail=null;state.mobilePage='list';root.dataset.mobilePage='list'}
+     }
+     state.checked.delete(key);
+    }
+    void summary(false,false);
+   }catch(error){state.bulkError=errorText(error)}
+   finally{state.bulkBusy=false;renderList();renderDetail()}
+  }
   function fillReview(item){
    reviewItem=item;const fields=review.querySelector('form').elements;
    fields.to.value=Array.isArray(item.to)?item.to.join(', '):item.to||'';fields.subject.value=item.subject||'';fields.text.value=item.text||'';fields.reason.value='';
@@ -195,6 +220,9 @@ window.VBoxMailPanel=(()=>{
   review.addEventListener('close',()=>{reviewFocus?.focus?.({preventScroll:true});reviewFocus=null});
   root.addEventListener('click',event=>{
    const target=event.target.closest('button');if(!target)return;
+   if(target.dataset.itemOpen){void openItem(target.dataset.itemOpen);return}
+   if(target.dataset.rowAction){void changeMessages([target.dataset.mailId],target.dataset.rowAction);return}
+   if(target.dataset.bulk){if(target.dataset.bulk==='clear'){state.checked.clear();renderList()}else void changeMessages([...state.checked],target.dataset.bulk);return}
    if(target.dataset.folder){chooseFolder(target.dataset.folder);return}
    if(target.hasAttribute('data-box')){chooseBox(target.dataset.box);return}
    if(target.hasAttribute('data-address')){chooseAddress(target.dataset.address);return}
@@ -210,13 +238,9 @@ window.VBoxMailPanel=(()=>{
    if(action==='reveal'){state.revealed=!state.revealed;renderDetail();detail.querySelector('[data-action="reveal"]')?.focus();return}
    if(action==='review'&&state.detail){reviewFocus=target;fillReview(state.detail);review.showModal();review.querySelector('[name="to"]').focus();return}
    if(!state.detail||state.selected?.kind!=='message')return;
-   if(action==='read'||action==='release')void (async()=>{try{const path='/v1/mail/messages/'+id(state.detail.id);if(action==='read'){
-    const wasUnread=!!state.detail.unread;await request(path+'/read','POST',{read:wasUnread});state.detail.unread=!wasUnread;
-    const item=state.items.find(item=>item.id===state.detail.id);if(item)item.unread=state.detail.unread;
-    if(!state.detail.quarantined){const delta=wasUnread?-1:1;state.summary.unread=Math.max(0,(state.summary.unread||0)+delta);const box=state.summary.boxes.find(box=>boxId(box)===boxId(state.detail));if(box)box.unread=Math.max(0,(box.unread||0)+delta);const address=state.addresses.find(address=>address.address===(state.detail.address||state.detail.boxAddress));if(address)address.unread=Math.max(0,(address.unread||0)+delta)}
-    renderFolders();renderList();renderDetail();
-   }else{await request(path+'/release','POST',{});state.detail.quarantined=false;state.mobilePage='list';root.dataset.mobilePage='list';void summary(true,false)} }catch(error){detail.querySelector('.mail-panel-detail-status').textContent=errorText(error)}})();
+   if(['read','release','archive','unarchive','delete'].includes(action))void changeMessages([state.detail.id],action==='read'?(state.detail.unread?'read':'unread'):action);
   });
+  root.addEventListener('change',event=>{const input=event.target.closest('.mail-panel-row-check');if(!input)return;if(input.checked)state.checked.add(input.dataset.select);else state.checked.delete(input.dataset.select);renderList()});
   root.addEventListener('input',event=>{if(!event.target.matches('.mail-panel-search input'))return;state.q=event.target.value;clearTimeout(searchTimer);searchTimer=setTimeout(()=>void loadList(),250)});
   function setOwner(value){state.owner=!!value;if(!state.owner){state.available=false;state.summary=null;showNav();closeReview();return}void summary()}
   function onRoute(){if(location.hash==='#mail'&&state.owner&&state.available){render();void loadList()}}

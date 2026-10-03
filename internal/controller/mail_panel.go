@@ -44,7 +44,7 @@ func (s *Server) ownerMailPanelMessages(w http.ResponseWriter, r *http.Request, 
 	if folder == "" {
 		folder = "all"
 	}
-	if folder != "all" && folder != "unread" && folder != "quarantine" {
+	if folder != "all" && folder != "unread" && folder != "quarantine" && folder != "archive" {
 		writeError(w, 400, fmt.Errorf("invalid mail folder"))
 		return
 	}
@@ -67,7 +67,7 @@ func (s *Server) ownerMailPanelMessages(w http.ResponseWriter, r *http.Request, 
  FROM mail_messages m LEFT JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id
  LEFT JOIN box_mail_settings ms ON ms.box_id=m.box_id AND ms.account_id=m.account_id
  WHERE m.account_id=$1 AND m.expires_at>now() AND ($2='' OR m.box_id::text=$2)
- AND (($3='all' AND NOT m.quarantined) OR ($3='unread' AND m.read_at IS NULL AND NOT m.quarantined) OR ($3='quarantine' AND m.quarantined))
+ AND (($3='all' AND NOT m.quarantined AND m.archived_at IS NULL) OR ($3='unread' AND m.read_at IS NULL AND NOT m.quarantined AND m.archived_at IS NULL) OR ($3='quarantine' AND m.quarantined) OR ($3='archive' AND NOT m.quarantined AND m.archived_at IS NOT NULL))
  AND ($4='' OR position(lower($4) in lower(m.header_from||' '||m.from_name||' '||m.subject||' '||m.text_body))>0)
  AND ($5::timestamptz IS NULL OR (m.received_at,m.id::text)<($5::timestamptz,$6))
  AND ($7='' OR ($7='unassigned' AND m.address_id IS NULL) OR lower(m.envelope_to)=$7 OR m.address_id::text=$7)
@@ -165,6 +165,31 @@ func (s *Server) ownerMailPanelRead(w http.ResponseWriter, r *http.Request, p Pr
 		return
 	}
 	writeJSON(w, 200, map[string]any{"id": r.PathValue("mid"), "unread": unread})
+}
+
+func (s *Server) ownerMailPanelArchive(w http.ResponseWriter, r *http.Request, p Principal) {
+	if !mailUUIDPattern.MatchString(r.PathValue("mid")) {
+		writeError(w, 404, fmt.Errorf("mail message unavailable"))
+		return
+	}
+	var request struct {
+		Archived *bool `json:"archived"`
+	}
+	if err := decodeJSON(r, &request); err != nil || request.Archived == nil {
+		writeError(w, 400, fmt.Errorf("archived must be true or false"))
+		return
+	}
+	var archived string
+	err := s.Store.DB.QueryRowContext(r.Context(), `UPDATE mail_messages SET archived_at=CASE WHEN $3::bool THEN now() ELSE NULL END WHERE account_id=$1 AND id=$2 AND expires_at>now() AND NOT quarantined RETURNING id::text`, p.AccountID, r.PathValue("mid"), *request.Archived).Scan(&archived)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, 404, fmt.Errorf("mail message unavailable"))
+		return
+	}
+	if err != nil {
+		writeError(w, 500, fmt.Errorf("mail archive unavailable"))
+		return
+	}
+	writeJSON(w, 200, map[string]any{"id": archived, "archived": *request.Archived})
 }
 
 func (s *Server) ownerMailPanelAttachment(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -281,7 +306,7 @@ func (s *Server) ownerMailPanelOutbox(w http.ResponseWriter, r *http.Request, p 
 }
 
 func (s *Server) ownerMailPanelSummary(w http.ResponseWriter, r *http.Request, p Principal) {
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT b.id::text,b.name,COALESCE(ms.address,''),COALESCE(ms.enabled,false),count(m.id) FILTER (WHERE m.read_at IS NULL AND NOT m.quarantined AND m.expires_at>now()),count(m.id) FILTER (WHERE m.quarantined AND m.expires_at>now()) FROM logical_boxes b LEFT JOIN box_mail_settings ms ON ms.box_id=b.id AND ms.account_id=b.account_id LEFT JOIN mail_messages m ON m.box_id=b.id AND m.account_id=b.account_id WHERE b.account_id=$1 AND b.state NOT IN ('deleting','deleted') GROUP BY b.id,b.name,ms.address,ms.enabled ORDER BY b.name,b.id`, p.AccountID)
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT b.id::text,b.name,COALESCE(ms.address,''),COALESCE(ms.enabled,false),count(m.id) FILTER (WHERE m.read_at IS NULL AND NOT m.quarantined AND m.archived_at IS NULL AND m.expires_at>now()),count(m.id) FILTER (WHERE m.quarantined AND m.expires_at>now()) FROM logical_boxes b LEFT JOIN box_mail_settings ms ON ms.box_id=b.id AND ms.account_id=b.account_id LEFT JOIN mail_messages m ON m.box_id=b.id AND m.account_id=b.account_id WHERE b.account_id=$1 AND b.state NOT IN ('deleting','deleted') GROUP BY b.id,b.name,ms.address,ms.enabled ORDER BY b.name,b.id`, p.AccountID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
@@ -295,7 +320,7 @@ func (s *Server) ownerMailPanelSummary(w http.ResponseWriter, r *http.Request, p
 		Unread  int    `json:"unread"`
 	}
 	boxes := []summaryBox{}
-	unread, quarantine, inbox := 0, 0, 0
+	unread, quarantine, inbox, archive := 0, 0, 0, 0
 	for rows.Next() {
 		var item summaryBox
 		var quarantined int
@@ -310,7 +335,7 @@ func (s *Server) ownerMailPanelSummary(w http.ResponseWriter, r *http.Request, p
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
 	}
-	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT count(*) FILTER (WHERE read_at IS NULL AND NOT quarantined),count(*) FILTER (WHERE quarantined),count(*) FILTER (WHERE NOT quarantined) FROM mail_messages WHERE account_id=$1 AND expires_at>now()`, p.AccountID).Scan(&unread, &quarantine, &inbox); err != nil {
+	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT count(*) FILTER (WHERE read_at IS NULL AND NOT quarantined AND archived_at IS NULL),count(*) FILTER (WHERE quarantined),count(*) FILTER (WHERE NOT quarantined AND archived_at IS NULL),count(*) FILTER (WHERE NOT quarantined AND archived_at IS NOT NULL) FROM mail_messages WHERE account_id=$1 AND expires_at>now()`, p.AccountID).Scan(&unread, &quarantine, &inbox, &archive); err != nil {
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
 	}
@@ -319,5 +344,5 @@ func (s *Server) ownerMailPanelSummary(w http.ResponseWriter, r *http.Request, p
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
 	}
-	writeJSON(w, 200, map[string]any{"inbox": inbox, "unread": unread, "quarantine": quarantine, "pending": pending, "boxes": boxes})
+	writeJSON(w, 200, map[string]any{"inbox": inbox, "unread": unread, "quarantine": quarantine, "archive": archive, "pending": pending, "boxes": boxes})
 }
