@@ -64,6 +64,8 @@ test('send, quiet heartbeat, stale busy signal, and reply keep every activity su
    for(const width of [1440,390])for(const theme of ['light','dark']){
    await page.setViewport({width,height:width===390?844:900,deviceScaleFactor:1});
    await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
+   const headerHeight=await page.$eval('#chat-header',el=>el.getBoundingClientRect().height);
+   assert.ok(Math.abs(headerHeight-(width===390?56.1875:72.625))<0.5,`the ${width}px chat header keeps main's height`);
     if(width===390){
      const expected=phase==='before'?'idle':'working';
      await page.waitForFunction(value=>document.querySelector('#chat-header-state')?.innerText.trim()===value,{},expected);
