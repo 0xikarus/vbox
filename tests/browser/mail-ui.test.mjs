@@ -104,7 +104,7 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    await page.click('[data-mail-id="m1"]');await page.waitForSelector('.mail-body');
    assert.equal(await page.$eval('.mail-body',node=>node.textContent.includes('483921')),false);
    await page.click('[data-mail-action="reveal"]');assert.equal(await page.$eval('.mail-body',node=>node.textContent.includes('483921')),true);
-   await page.click('[data-mail-action="read"]');assert.equal(data.writes.some(write=>write.path.endsWith('/m1/read')&&write.body.read===true),true);
+   await page.click('[data-mail-action="read"]');await page.waitForFunction(()=>document.querySelector('[data-mail-action="read"]')?.textContent==='Marked as read');assert.equal(data.writes.some(write=>write.path.endsWith('/m1/read')&&write.body.read===true),true);
    await page.click('#inspect-prototype-back');await page.waitForSelector('[data-mail-id="m2"]');
    await page.click('#mail-enabled');await page.waitForFunction(()=>document.querySelector('#mail-enabled').checked===false&&!document.querySelector('#mail-enabled').disabled);
    assert.equal(data.writes.some(write=>write.path.endsWith('/mail')&&write.body.enabled===false),true);

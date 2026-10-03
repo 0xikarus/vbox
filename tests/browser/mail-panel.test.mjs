@@ -158,6 +158,7 @@ test('account Mail search and outbox review edit, approve and reject use per-box
   await page.click('#mail-panel-review [data-review="reject"]');await page.type('#mail-panel-review [name="reason"]','Wrong recipient.');await page.click('#mail-panel-review [data-review="reject"]');
   await page.waitForFunction(()=>!document.querySelector('#mail-panel-review').open);
   assert(data.writes.some(write=>write.path.endsWith('/o2/reject')&&write.body.version===1&&write.body.reason==='Wrong recipient.'));
+  await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="o2"]')&&document.querySelector('.mail-panel-list-scroll')?.textContent.includes('No drafts'));
   await page.click('[data-status="sent"]');await page.waitForSelector('.mail-panel-row[data-item="o1"]');
   await page.click('[data-status="rejected"]');await page.waitForSelector('.mail-panel-row[data-item="o2"]');
   await page.close();
