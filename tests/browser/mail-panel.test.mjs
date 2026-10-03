@@ -17,7 +17,7 @@ function fixture(){return {
   {id:'m3',boxId:'builder',boxName:'BossDev',address:'builder@example.test',from:'spam@example.com',fromName:'Unknown',subject:'Urgent verify',preview:'Suspicious link removed.',text:'Suspicious link removed.',receivedAt:stamp,unread:false,quarantined:true,spf:'fail',dkim:'fail',attachments:[]},
  ],
  outbox:[{outboxId:'o1',boxId:'builder',boxName:'BossDev',to:['mara@example.com'],subject:'Launch checklist',text:'Looks ready.',status:'pending_approval',version:1,submittedAt:stamp},{outboxId:'o2',boxId:'reviewer',boxName:'Reviewer',to:['support@example.com'],subject:'A question',text:'Can you help?',status:'pending_approval',version:1,submittedAt:stamp},{outboxId:'o3',boxId:'builder',boxName:'BossDev',to:['team@example.com'],subject:'Thanks',text:'Thanks!',status:'sent',version:1,submittedAt:yesterday}],
- addresses:[{id:'a1',localPart:'b',address:'b@example.test',label:'Team',boxIds:['reviewer'],enabled:true,unread:1},{id:'builder',localPart:'builder',address:'builder@example.test',label:'',owningBoxId:'builder',boxIds:['builder'],enabled:true,unread:1}],keepUnknown:false,writes:[],queries:[],
+ addresses:[{id:'a1',localPart:'b',address:'b@example.test',label:'Team',boxIds:['reviewer'],enabled:true,primary:false,unread:1},{id:'builder',localPart:'builder',address:'builder@example.test',label:'',owningBoxId:'builder',boxIds:['builder'],enabled:true,primary:true,unread:1}],keepUnknown:false,writes:[],queries:[],
 }}
 async function serve(data,{disabled=false,role='owner'}={}){
  const server=http.createServer(async(request,response)=>{
@@ -108,6 +108,7 @@ test('account Mail panel supports folders, search, message detail, quarantine an
    await page.click('#mail-panel-review [data-review="close"]');
    if(width===390){await page.click('[data-back="list"]');await page.click('[data-back="folders"]')}
    await page.click('[data-action="addresses"]');await page.waitForSelector('#mail-address-dialog[open]');await save('addresses');
+   await page.click('[data-address-grants="builder"]');await save('address-grants');
    await page.click('#mail-address-dialog [data-address-action="close"]');
    assert.deepEqual(errors,[]);await page.close();
   }finally{await chrome.close();await new Promise(resolve=>server.close(resolve))}
