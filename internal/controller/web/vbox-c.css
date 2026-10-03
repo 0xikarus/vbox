@@ -3064,3 +3064,4 @@ dialog:not([open]){display:none}
 #inspect.details-prototype .ip-page #inspect-attachment-empty,
 #inspect.details-prototype .ip-page .inspect-attachment-help{margin:0;padding:10px 14px;color:var(--vb-ink-soft);font-size:var(--vb-type-px-11);line-height:1.4}
 #inspect.details-prototype .ip-page #inspect-attachment-empty[hidden]{display:none}
+#role-editor-form [data-mail-feature][hidden]{display:none}
