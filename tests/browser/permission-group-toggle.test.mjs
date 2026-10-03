@@ -16,15 +16,8 @@ const baseline={
 const clone=value=>structuredClone(value);
 const groups=[['manage-boxes','manage'],['mail','mail'],['computer-use','computer'],['passwords','passwords'],['all-contacts','contacts']];
 const quickRows=[
- ['see-boxes',['list_agent_boxes','get_agent_box'],['list','inspect']],
- ['see-box-screens',['get_agent_box_screenshot'],['inspect']],
- ['restart-boxes',['restart_agent_box','wake_agent_box','clear_agent_box_context','compact_agent_box_context'],['restart']],
- ['tag-budget',['set_agent_box_tags','set_agent_box_run_budget'],['tag','restart']],
- ['delete-boxes',['delete_agent_box'],['delete']],
- ['heartbeat',['heartbeat'],[]],
- ['see-screen',['take_screenshot','capture_window'],[]],
- ['mouse-keyboard',['move_mouse','click_mouse','drag_mouse','scroll_mouse','type_text','press_keys'],[]],
- ['ask-password',['secret_request'],[]],['generate-password',['generate_password'],[]],['type-password',['type_secret'],[]]
+ ['admin',['list_agent_boxes','get_agent_box','set_agent_box_tags','set_agent_box_run_budget','restart_agent_box','wake_agent_box','clear_agent_box_context','compact_agent_box_context','delete_agent_box','heartbeat'],['list','inspect','tag','restart','delete']],
+ ['remote-control',['get_agent_box_screenshot','remote_control_box'],['inspect','control']]
 ];
 function expected(group,on,tools){
  const cap=clone(baseline);cap.mcpTools.allowedTools=on?tools:[];
@@ -110,11 +103,13 @@ test('Details and Manage group switches save all, none, and mixed grants in one 
     assert.equal(await page.$eval(master,node=>node.checked||node.indeterminate),false);
     assert.deepEqual(writes.at(-1),expected(id,false,tools),view+' '+id+' exact off body');
    }
+   assert.deepEqual(await page.$$eval('.inline-permission-quick-row',nodes=>nodes.map(node=>node.dataset.quickPermission)),['admin','remote-control'],view+' only has two manage quick rows');
+   assert.equal(await page.$eval('[data-permission-group="manage-boxes"] [name=controlOtherDesktops]',node=>node.closest('.role-capability').hidden),true,view+' hides the separate control switch');
    for(const [key,tools,caps] of quickRows){
     const quick=`[data-quick-permission="${key}"] .inline-permission-quick`;
     assert.ok(await page.$(quick),view+' has '+key+' quick row');
     if(tools.length>1){
-     const partial=key==='restart-boxes'?'wake_agent_box':tools[0];
+     const partial=tools[0];
      await page.$eval(`#role-editor-form input[name=mcpTools][value=${partial}]`,node=>node.click());
      await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
      assert.equal(await page.$eval(quick,node=>node.indeterminate),true,view+' '+key+' mixed quick row');
@@ -124,7 +119,8 @@ test('Details and Manage group switches save all, none, and mixed grants in one 
     assert.equal(writes.length,beforeOn+1,view+' '+key+' quick on writes once');
     const expectedOn=expected('',true,tools);for(const cap of caps)expectedOn.capabilities.manageAgentBoxes[cap]=true;
     assert.deepEqual(writes.at(-1),expectedOn,view+' '+key+' exact on body');
-    if(key==='see-box-screens')assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',node=>node.checked),false,'quick screenshot stays independent');
+    if(key==='remote-control'){assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',node=>node.checked),true,'remote quick grants control');assert.equal(await page.$eval('#role-editor-form input[value=get_agent_box_screenshot]',node=>node.checked),true,'remote quick grants screenshot')}
+    if(key==='admin'){assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',node=>node.checked),false,'admin quick excludes remote control');assert.equal(await page.$eval('#role-editor-form input[value=create_agent_box]',node=>node.checked),false,'admin quick excludes Create agents')}
     const beforeOff=writes.length;await page.$eval(quick,node=>node.click());
     await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
     assert.equal(writes.length,beforeOff+1,view+' '+key+' quick off writes once');
@@ -160,7 +156,7 @@ test('Details and Manage group switches save all, none, and mixed grants in one 
      if(view==='chat'){await shot.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);await shot.click('#chat-info');await shot.waitForSelector('[data-ip-row="access"]');await shot.$eval('[data-ip-row="access"]',node=>node.click())}
      else{await shot.waitForSelector('#roles .role-assignment-toggle');await shot.click('#roles .role-assignment-toggle')}
      await shot.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#role-editor-status').textContent==='');
-     assert.equal(await shot.$eval('[data-quick-permission="see-box-screens"] .inline-permission-quick',node=>node.disabled),false,view+' captured quick switches remain enabled');
+     assert.equal(await shot.$eval('[data-quick-permission="remote-control"] .inline-permission-quick',node=>node.disabled),false,view+' captured quick switches remain enabled');
      await shot.screenshot({path:resolve(capture,`${view}-groups-${width}-${theme}.png`)});
      if(view==='chat'&&width===390){await shot.$eval('#inspect-prototype-page',node=>node.scrollTop=node.scrollHeight/2);await shot.screenshot({path:resolve(capture,`${view}-groups-middle-${width}-${theme}.png`)});await shot.$eval('#inspect-prototype-page',node=>node.scrollTop=node.scrollHeight);await shot.screenshot({path:resolve(capture,`${view}-groups-bottom-${width}-${theme}.png`)})}
      if(view==='manage'&&width===390){await shot.evaluate(()=>window.scrollTo(0,document.body.scrollHeight/2));await shot.screenshot({path:resolve(capture,`${view}-groups-middle-${width}-${theme}.png`)});await shot.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await shot.screenshot({path:resolve(capture,`${view}-groups-bottom-${width}-${theme}.png`)})}

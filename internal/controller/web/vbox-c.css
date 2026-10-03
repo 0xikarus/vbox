@@ -3099,7 +3099,13 @@ dialog:not([open]){display:none}
 .inline-permission-master-switch input:disabled+span{opacity:.55}
 .inline-permission-card{min-width:0;margin:0!important;padding:0!important;border:1px solid var(--vb-line)!important;border-radius:12px!important;background:var(--vb-surface)!important;box-shadow:none!important;overflow:hidden}
 .inline-permission-card>.role-capability{display:block!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+.inline-permission-card>.role-capability[hidden]{display:none!important}
 .inline-permission-card .role-capability-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;margin:0;padding:9px 15px;border-bottom:1px solid var(--vb-line)}
+.inline-permission-card .inline-permission-quick-row{min-height:44px;padding:5px 14px}
+.inline-permission-card .inline-permission-quick-row>span{gap:0}
+.inline-permission-card .inline-permission-quick-row small{font-size:10px;line-height:1.25}
+.inline-permission-card>.role-capability[data-mail-feature] .role-capability-toggle{min-height:44px;padding:5px 14px}
+.inline-permission-card>.role-capability[data-mail-feature] .role-capability-toggle small{font-size:10px;line-height:1.25}
 .inline-permission-card .role-capability-toggle>span{min-width:0;display:grid;gap:2px}
 .inline-permission-card .role-capability-toggle strong{color:var(--vb-ink);font-size:13px}
 .inline-permission-card .role-capability-toggle small{color:var(--vb-ink-soft);line-height:1.4}

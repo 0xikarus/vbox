@@ -38,34 +38,27 @@
    else{const heading=section.querySelector('.inline-permission-group-heading'),tools=members.filter(member=>member.name==='mcpTools');if(tools.length){const count=document.createElement('span');count.className='inline-permission-group-count';heading.append(count)}heading.append(label);}
    section.permissionMembers=members;return input;
   }
-  function addQuick(surface,key,title,values){
-   const members=[...surface.querySelectorAll('input[name=mcpTools]')].filter(input=>values.includes(input.value));
+  function addQuick(surface,key,title,description,values,names=[]){
+   const members=[...surface.querySelectorAll('input[name]')].filter(input=>values.includes(input.value)||names.includes(input.name));
    const row=document.createElement('label');row.className='role-capability-toggle inline-permission-quick-row';row.dataset.quickPermission=key;
-   const text=document.createElement('span');const strong=document.createElement('strong');strong.textContent=title;text.append(strong);
+   const text=document.createElement('span');const strong=document.createElement('strong');strong.textContent=title;
+   const detail=document.createElement('small');detail.textContent=description;text.append(strong,detail);
    const input=document.createElement('input');input.type='checkbox';input.className='inline-permission-quick';input.dataset.quickPermission=key;input.setAttribute('aria-label',title);
    row.append(text,input);surface.querySelector('.inline-permission-tools').before(row);row.permissionMembers=members;return input;
   }
   if(create){create.classList.add('inline-create');create.hidden=false;create.querySelector('.role-capability-options')?.removeAttribute('open');create.querySelector('.role-capability-options>summary').textContent='Advanced limits';}
   for(const field of [control,mail]){const legend=field?.querySelector('legend');if(legend)legend.remove();}
+  if(control)control.hidden=true;
   const manage=card('Manage boxes',[control,create,tools('Tools',false,group('admin_work'),group('lifecycle'))]);
   addMaster(manage,'Manage boxes',['controlOtherDesktops','createAgentBoxEnabled','mcpTools']);
-  addQuick(manage,'see-boxes','See other boxes',['list_agent_boxes','get_agent_box']);
-  addQuick(manage,'see-box-screens',"See other boxes' screens",['get_agent_box_screenshot']);
-  addQuick(manage,'restart-boxes','Restart, wake and reset boxes',['restart_agent_box','wake_agent_box','clear_agent_box_context','compact_agent_box_context']);
-  addQuick(manage,'tag-budget','Tag boxes and set run budgets',['set_agent_box_tags','set_agent_box_run_budget']);
-  addQuick(manage,'delete-boxes','Delete boxes',['delete_agent_box']);
-  addQuick(manage,'heartbeat','Heartbeat',['heartbeat']);
+  addQuick(manage,'admin','Admin','Inspect and manage other boxes.',['list_agent_boxes','get_agent_box','restart_agent_box','wake_agent_box','clear_agent_box_context','compact_agent_box_context','set_agent_box_tags','set_agent_box_run_budget','delete_agent_box','heartbeat']);
+  addQuick(manage,'remote-control','Remote control','Control desktops and capture screens.',['remote_control_box','get_agent_box_screenshot'],['controlOtherDesktops']);
   const mailCard=card('Mail',[mail,tools('Tools',false,group('mail'))],true);
   addMaster(mailCard,'Mail',['mailRead','mailCompose','mcpTools']);
   const computer=card('Computer use',[tools('Tools',false,group('computer_use'))]);
   addMaster(computer,'Computer use',['mcpTools']);
-  addQuick(computer,'see-screen',"See this box's screen",['take_screenshot','capture_window']);
-  addQuick(computer,'mouse-keyboard','Use mouse and keyboard',['move_mouse','click_mouse','drag_mouse','scroll_mouse','type_text','press_keys']);
   const passwords=card('Passwords',[tools('Tools',false,group('passwords'))]);
   addMaster(passwords,'Passwords',['mcpTools']);
-  addQuick(passwords,'ask-password','Ask me for a password',['secret_request']);
-  addQuick(passwords,'generate-password','Generate passwords',['generate_password']);
-  addQuick(passwords,'type-password','Type saved passwords',['type_secret']);
   const allContacts=card('All contacts',[contacts]);
   addMaster(allContacts,'All contacts',['allContactsEnabled'],false,contacts.querySelector('input[name=allContactsEnabled]'));
   form.replaceChildren(...[...form.querySelectorAll('input[type=hidden],textarea[hidden]')],status,...sections);
