@@ -141,7 +141,7 @@ func TestRemoteControlHandlerRefusesSelfProtectedAndSleepingTargets(t *testing.T
 	}
 }
 
-func TestRemoteControlPolicyAddsScreenshotCompanion(t *testing.T) {
+func TestRemoteControlPolicyKeepsScreenshotSeparate(t *testing.T) {
 	store, mock := testStore(t)
 	manage, _ := json.Marshal(v1.ManageAgentBoxesGrant{Control: true})
 	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"remote_control_box"}})
@@ -150,13 +150,12 @@ func TestRemoteControlPolicyAddsScreenshotCompanion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"remote_control_box", "get_agent_box_screenshot"} {
-		if !slicesContains(tools, name) {
-			t.Fatalf("missing %s in %v", name, tools)
-		}
+	if !slicesContains(tools, "remote_control_box") {
+		t.Fatalf("missing remote_control_box in %v", tools)
 	}
-	if slicesContains(tools, "get_agent_box") {
-		t.Fatalf("inspection granted unexpectedly: %v", tools)
+	// The owner toggles get_agent_box_screenshot on its own; control must not imply it.
+	if slicesContains(tools, "get_agent_box_screenshot") || slicesContains(tools, "get_agent_box") {
+		t.Fatalf("control granted inspection tools: %v", tools)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

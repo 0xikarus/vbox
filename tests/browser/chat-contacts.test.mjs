@@ -276,7 +276,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(await p.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),false,'remote control is off by default');
   await p.click('#role-editor-form [name=controlOtherDesktops]');
   assert.equal(await p.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),true);
-  assert.equal(await p.$eval('#role-editor-form input[value=get_agent_box_screenshot]',input=>input.checked),true,'control adds screenshot access');
+  assert.equal(await p.$eval('#role-editor-form input[value=get_agent_box_screenshot]',input=>input.checked),false,'screenshot access is a separate toggle');
   await p.click('#role-editor-form [name=controlOtherDesktops]');
   assert.equal(await p.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),false);
   await p.click('#role-editor-form .mcp-tool-group-toggle[value=admin_work]');
