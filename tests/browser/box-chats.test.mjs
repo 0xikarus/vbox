@@ -47,7 +47,8 @@ async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null,boxMe
   if(path==='/v1/logical-boxes/'+b+'/messages')return response.end(JSON.stringify(boxMessagesB||[]));
   if(path==='/v1/tool-presets')return response.end('[]');
   if(path==='/v1/login-profiles')return response.end('[]');
-  if(path==='/v1/controller-defaults')return response.end('{}');
+  if(path==='/v1/controller-defaults')return response.end(JSON.stringify({provider:'railway',providerCredential:'primary'}));
+  if(path==='/v1/provider-credentials')return response.end(JSON.stringify([{provider:'railway',name:'primary'}]));
   if(path==='/v1/chat-commands')return response.end('[]');
   if(path==='/v1/push/vapid-key'){response.statusCode=404;return response.end('{}')}
   if(path.endsWith('/messages'))return response.end('[]');

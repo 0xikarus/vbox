@@ -39,7 +39,29 @@ func (s *Server) defaultProviderHandler(w http.ResponseWriter, r *http.Request, 
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("could not read controller provider default; retry later"))
 			return
 		}
-		writeError(w, 409, fmt.Errorf("controller provider default not configured; use providers default PROVIDER NAME"))
+		// A single configured provider is unambiguous even before an explicit
+		// default has been saved. Resolve it for reads without changing settings.
+		rows, queryErr := s.Store.DB.QueryContext(r.Context(), `SELECT provider,name FROM provider_credentials WHERE account_id=$1 AND deleting=false ORDER BY provider,name LIMIT 2`, p.AccountID)
+		if queryErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("could not read providers; retry later"))
+			return
+		}
+		defer rows.Close()
+		if rows.Next() {
+			if queryErr = rows.Scan(&value.Provider, &value.ProviderCredential); queryErr != nil {
+				writeError(w, http.StatusInternalServerError, fmt.Errorf("could not read providers; retry later"))
+				return
+			}
+			if !rows.Next() && rows.Err() == nil {
+				writeJSON(w, 200, map[string]any{"provider": value.Provider, "providerCredential": value.ProviderCredential, "inferred": true})
+				return
+			}
+		}
+		if rows.Err() != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("could not read providers; retry later"))
+			return
+		}
+		writeError(w, http.StatusConflict, fmt.Errorf("Choose a default provider in Providers"))
 		return
 	}
 	writeJSON(w, 200, value)

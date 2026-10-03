@@ -63,8 +63,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/v1/tasks/real-thread-task')return res.end(JSON.stringify({id:'real-thread-task',agent:'opencode'}));
   if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'claude',name:'personal',model:'sonnet'},{application:'claude',name:'other',model:'opus'},{application:'opencode',name:'openrouter',model:'openrouter/saved'},{application:'github',name:'gh-work'}]));
   if(path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/live-model',label:'Live model'}]}));
-  if(path==='/v1/controller-defaults')return res.end('{}');
-  if(path==='/v1/provider-credentials')return res.end('[]');
+  if(path==='/v1/controller-defaults')return res.end(JSON.stringify({provider:'railway',providerCredential:'cloud'}));
+  if(path==='/v1/provider-credentials')return res.end(JSON.stringify([{provider:'railway',name:'cloud'}]));
   if(path==='/v1/instruction-presets')return res.end(JSON.stringify({defaultName:'',presets:[]}));
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   if(path.endsWith('/desktop/screenshot')){
@@ -340,6 +340,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.$eval('#create-box',form=>form.requestSubmit());
   await created;
   await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden);
+  assert.equal(creations.at(-1).provider,'railway');
+  assert.equal(creations.at(-1).providerCredential,'cloud');
   assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'haiku'},{application:'github',name:'gh-work'}]);
   assert.equal('roleIds' in creations.at(-1),false,'new boxes do not inherit a role bundle');
   const threadTime=new Date().toISOString();
