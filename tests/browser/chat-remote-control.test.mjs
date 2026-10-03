@@ -58,19 +58,16 @@ test('remote control notice links to the actor and Technical shows the last sess
    await save('technical');
    await page.$eval('#inspect-prototype-back',button=>button.click());
    await page.$eval('[data-ip-row="access"]',row=>row.click());
-   await page.click('#inspect-edit-roles');
    await page.waitForFunction(()=>document.querySelector('#role-editor-status')?.textContent==='');
    assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),false);
    await page.click('#role-editor-form [name=controlOtherDesktops]');
    assert.equal(await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),true);
    assert.equal(await page.$eval('#role-editor-form input[value=get_agent_box_screenshot]',input=>input.checked),false,'screenshot access is a separate toggle');
    await save('permissions');
-   await page.click('#role-editor-form .mcp-tool-options summary');
-   await page.click('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) .role-capability-options summary');
-   assert.match(await page.$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work])',group=>group.textContent),/remote_control_box/);
+   await page.click('[data-permission-group="manage-boxes"] .inline-permission-tools summary');
+   assert.match(await page.$eval('[data-permission-group="manage-boxes"]',group=>group.textContent),/remote_control_box/);
    await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.scrollIntoView({block:'center'}));
    await save('tool-picker');
-   await page.$eval('#role-editor-modal',dialog=>dialog.hidden=true);
    await page.keyboard.press('Escape');
    if(width===390&&theme==='light'){
     messages[0].control.actions=4;

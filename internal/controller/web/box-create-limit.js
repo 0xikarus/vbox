@@ -17,22 +17,22 @@ window.VMBoxCreateLimit = (() => {
   const count=document.createElement('input');count.type='number';count.min='1';count.max='100';count.step='1';count.disabled=true;
   count.setAttribute('aria-label','Maximum boxes this box can create');
   const countSuffix=document.createTextNode(' boxes total');label.append(count,countSuffix);
-  const save=text('button','Save limit');save.type='button';save.disabled=true;controls.append(label,save);
+  const save=text('button',showStateToggle?'Save':'Save limit');save.type='button';save.disabled=true;controls.append(label,save);
   const note=text('p','Completed creations still count toward this total.');note.className='idle-policy-note';
   const status=text('p','Loading creation limit…');status.className='idle-policy-status';status.setAttribute('role','status');
   const retry=text('button','Retry');retry.type='button';retry.className='idle-policy-retry';retry.hidden=true;
   card.append(top,controls,note,status,retry);root.append(card);
   const current=()=>root.isConnected&&root.dataset.createLimitBox===boxId;
-  const updateCountSuffix=()=>{countSuffix.textContent=Number(count.value)===1?' box total':' boxes total'};
+  const updateCountSuffix=()=>{countSuffix.textContent=showStateToggle?(Number(count.value)===1?' box':' boxes'):(Number(count.value)===1?' box total':' boxes total')};
   count.addEventListener('input',updateCountSuffix);
   function render(policy){
    const cap=policy.capabilities||{},grant=cap.createAgentBox||{};
    const allowed=!!grant.enabled&&!!cap.mcpTools?.enabled&&(cap.mcpTools.allowedTools||[]).includes('create_agent_box');
    root.hidden=!allowed&&!showWhenDisabled;
    count.value=String(grant.maxBoxes||1);updateCountSuffix();count.disabled=!allowed;save.disabled=!allowed;
-   toggle.checked=allowed;toggle.disabled=!allowed;switchLabel.title=allowed?'Turn off box creation':'Enable box creation in Permissions';
+   toggle.checked=allowed;toggle.disabled=!allowed;switchLabel.title=allowed?'Turn off box creation':'Enable Create agents above';
    badge.textContent=allowed?String(grant.maxBoxes)+' total':'Off';badge.dataset.enabled=String(allowed);
-   status.textContent=allowed?'This box may create up to '+grant.maxBoxes+' '+(grant.maxBoxes===1?'box':'boxes')+' total.':'Box creation is off. Enable it in Permissions to edit this limit.';
+   status.textContent=allowed?'This box may create up to '+grant.maxBoxes+' '+(grant.maxBoxes===1?'box':'boxes')+' total.':'Box creation is off. Enable Create agents above to edit this limit.';
   }
   toggle.addEventListener('change',async()=>{
    if(toggle.checked)return;

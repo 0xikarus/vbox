@@ -299,22 +299,22 @@ test('direct per-box permissions can be edited without a role matrix',async()=>{
  await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='');
  assert.equal(await page.$eval('#role-editor-form',form=>form.checkValidity()),true,'disabled zero limits must not block permission saving');
  await page.click('#role-editor-form input[name=allContactsEnabled]');
- await page.click('#role-editor-form .mcp-tool-options summary');
  assert.equal(await page.$('#role-editor-form .mcp-tool-group-toggle[value=coordination]'),null);
  assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),false);
- await page.click('#role-editor-form .mcp-tool-group-toggle[value=admin_work]');
+ await page.$eval('#role-editor-form',form=>{
+  for(const name of ['list_agent_boxes','get_agent_box','get_agent_box_screenshot','remote_control_box','create_agent_box','set_agent_box_tags','set_agent_box_run_budget','restart_agent_box','delete_agent_box','take_screenshot','capture_window','move_mouse','click_mouse','drag_mouse','scroll_mouse','type_text','press_keys']){
+   const input=form.querySelector('input[name=mcpTools][value='+name+']');if(!input.checked)input.click();
+  }
+ });
  assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),true);
- assert.equal(await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),true);
  assert.equal(await page.$eval('#role-editor-form input[value=get_agent_box_screenshot]',input=>input.checked),true);
  assert.equal(await page.$eval('#role-editor-form input[name=mcpTools][value=wake_agent_box]',input=>input.checked&&input.disabled),true,'restart includes wake permission');
- await page.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
- await page.click('#role-editor-form button.primary');
- await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Permissions updated'));
+ for(let i=0;i<50&&!fixturePolicy.capabilities?.mcpTools?.allowedTools?.includes('press_keys');i++)await new Promise(resolve=>setTimeout(resolve,100));
  assert.equal(fixturePolicy.capabilities.allContacts.enabled,true);
- assert.deepEqual(fixturePolicy.capabilities.createAgentBox,{enabled:true,maxBoxes:3,maxDiskGiB:50,allowedAgents:['codex','claude','opencode'],assignableRoleIds:[]});
- assert.equal(fixturePolicy.capabilities.requestMoreTime,undefined);
- assert.equal(fixturePolicy.capabilities.queueFollowup,undefined);
- assert.equal(fixturePolicy.capabilities.sharedChats,undefined);
+ assert.deepEqual(fixturePolicy.capabilities.createAgentBox,{enabled:true,maxBoxes:3,maxDiskGiB:50,allowedAgents:['codex','claude','opencode']});
+ assert.deepEqual(fixturePolicy.capabilities.requestMoreTime,{maxExtensionMinutes:0,maxTotalMinutes:0});
+ assert.deepEqual(fixturePolicy.capabilities.queueFollowup,{maxPending:0});
+ assert.deepEqual(fixturePolicy.capabilities.createEmailAddress,{maxAddresses:0});
  assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('press_keys'),true);
  assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('get_agent_box_screenshot'),true);
  assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('remote_control_box'),true);
@@ -326,10 +326,8 @@ test('direct per-box permissions can be edited without a role matrix',async()=>{
  await page.setViewport({width:1280,height:900});
  await page.$eval('a[href="#roles"]',link=>link.click());
  await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/permissions-desktop.png')});
- await page.click('#role-assignments .role-assignment-card[data-role-box-id="box-1"] button');
  await page.setViewport({width:1280,height:1200});
- await (await page.$('#role-editor-modal .card')).screenshot({path:resolve('docs/screenshots/agent-roles/permission-editor.png')});
- await page.click('#role-editor-modal header [data-close="role-editor-modal"]');
+ await (await page.$('#role-editor-inline')).screenshot({path:resolve('docs/screenshots/agent-roles/permission-editor.png')});
  await page.setViewport({width:390,height:844});
  assert.equal(await page.$('#role-assignments table'),null,'permissions should not fall back to a matrix on mobile');
  assert.equal(await page.$eval('#role-assignments .role-assignment-list',element=>getComputedStyle(element).display),'grid');

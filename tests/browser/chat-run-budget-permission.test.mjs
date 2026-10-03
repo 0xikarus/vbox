@@ -35,12 +35,11 @@ test('run-budget admin tool is selectable and saves its typed grant',async()=>{
   await page.$eval('#roles-toggle',button=>button.click());
   await page.waitForSelector('.role-assignment-toggle');
   await page.click('.role-assignment-toggle');
-  await page.waitForFunction(()=>!document.querySelector('#role-editor-modal').hidden);
+  await page.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#role-editor-status').textContent==='');
   const selector='#role-editor-form input[name=mcpTools][value=set_agent_box_run_budget]';
   assert.equal(await page.$eval(selector,input=>input.checked),false);
   await page.$eval(selector,input=>input.click());
-  await page.$eval('#role-editor-form',form=>form.requestSubmit());
-  await page.waitForFunction(()=>document.querySelector('#role-editor-modal').hidden);
+  await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
   assert.equal(saved.capabilities.manageAgentBoxes.restart,true);
   assert.equal(saved.capabilities.mcpTools.allowedTools.includes('set_agent_box_run_budget'),true);
   await page.close();

@@ -8,7 +8,7 @@ import puppeteer from 'puppeteer-core';
 const web=resolve('internal/controller/web');
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
 
-test('mobile menu and Permissions sheets scroll natively with a visible position cue',async()=>{
+test('mobile menu scrolls natively and inline permission tools keep touch targets',async()=>{
  const server=http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;
   if(path.startsWith('/v1/')){
@@ -52,27 +52,14 @@ test('mobile menu and Permissions sheets scroll natively with a visible position
   assert.equal((await menu()).below,false);
   assert.ok(await page.$eval('#chat-menu-sheet .menu-logout',el=>el.getBoundingClientRect().bottom<=el.closest('.sheet-scroll-body').getBoundingClientRect().bottom+1));
 
-  await page.evaluate(()=>{document.querySelector('#chat-menu-sheet').hidden=true;document.querySelector('#role-editor-modal').hidden=false;document.querySelector('.mcp-tool-options').open=true});
-  const permissions=async()=>page.$eval('#role-editor-modal .sheet-scroll-body',el=>({top:el.scrollTop,client:el.clientHeight,total:el.scrollHeight,indicator:getComputedStyle(el.parentElement.querySelector('.sheet-scroll-indicator')).display,below:el.parentElement.classList.contains('sheet-has-below')}));
-  await page.waitForFunction(()=>document.querySelector('#role-editor-modal .sheet-scroll-frame').classList.contains('sheet-can-scroll'));
-  const pTop=await permissions();assert.ok(pTop.total>pTop.client+100);assert.equal(pTop.indicator,'block');assert.equal(pTop.below,true);
-  await page.mouse.move(190,580);await page.mouse.wheel({deltaY:430});await page.waitForFunction(()=>document.querySelector('#role-editor-modal .sheet-scroll-body').scrollTop>50);
-  await page.evaluate(()=>{const body=document.querySelector('#role-editor-modal .sheet-scroll-body');body.scrollTop=body.scrollHeight});
-  await page.waitForFunction(()=>!document.querySelector('#role-editor-modal .sheet-scroll-frame').classList.contains('sheet-has-below'));
-  assert.ok(await page.$eval('#role-editor-status',el=>el.getBoundingClientRect().bottom<=el.closest('.sheet-scroll-body').getBoundingClientRect().bottom+1));
-  await page.evaluate(()=>{const option=document.querySelector('.mcp-tool-group .role-capability-options');option.open=true;option.scrollIntoView({block:'center'})});
-  const tool=await page.$eval('input[name=mcpTools]',input=>({width:input.getBoundingClientRect().width,height:input.getBoundingClientRect().height,radius:getComputedStyle(input).borderRadius,before:input.checked,row:input.closest('label').getBoundingClientRect().height}));
+  await page.evaluate(()=>{document.querySelector('#chat-menu-sheet').hidden=true;const editor=document.querySelector('#role-editor-inline');editor.hidden=false;document.body.append(editor);document.querySelector('.inline-permission-tools').open=true});
+  const tool=await page.$eval('input[name=mcpTools]',input=>({width:input.getBoundingClientRect().width,height:input.getBoundingClientRect().height,before:input.checked,row:input.closest('label').getBoundingClientRect().height}));
   assert.ok(tool.width>=18&&tool.height>=18,'MCP choices keep a visible checkbox');
-  assert.equal(tool.radius,'6px','tool choices use the shared rounded square checkbox');
   assert.ok(tool.row>=44,'the whole tool row is a tap target');
   await page.$eval('input[name=mcpTools]',input=>input.closest('label').click());
   assert.equal(await page.$eval('input[name=mcpTools]',input=>input.checked),!tool.before,'tapping the row toggles its checkbox');
-  assert.equal(await page.$eval('.mcp-tool-group .role-capability-options',option=>getComputedStyle(option.querySelector('summary'),'::after').transform==='none'),false,'the expanded chevron rotates');
-  await page.evaluate(()=>{document.querySelector('.mcp-tool-options').open=false});
-  await page.waitForFunction(()=>!document.querySelector('#role-editor-modal .sheet-scroll-frame').classList.contains('sheet-can-scroll'));
-  assert.equal((await permissions()).indicator,'none');
   await page.evaluate(()=>{
-   document.querySelector('#role-editor-modal').hidden=true;
+   document.querySelector('#role-editor-inline').hidden=true;
    const input=document.createElement('textarea');document.body.append(input);
    const helper=window.VMBoxAIHelper.attach({input});
    helper.button.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));

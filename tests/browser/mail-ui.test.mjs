@@ -119,19 +119,20 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    await page.waitForSelector('[data-outbox-id="o2"]');await page.click('[data-outbox-id="o2"]');await page.click('[data-review="reject"]');await page.type('#mail-review [name="reason"]','Not appropriate.');await page.click('[data-review="reject"]');
    await page.waitForFunction(()=>!document.querySelector('#mail-review').open);
    assert.equal(data.writes.some(write=>write.path.endsWith('/o2/reject')&&write.body.reason==='Not appropriate.'&&write.body.version===1),true);
-   await page.click('#inspect-prototype-back');await page.click('[data-ip-row="access"]');await page.waitForSelector('#mail-permissions:not([hidden])');
+   await page.click('#inspect-prototype-back');await page.click('[data-ip-row="access"]');await page.waitForSelector('#role-editor-inline:not([hidden])');
    await page.waitForSelector('#inspect-create-limit .mail-switch span');
    assert.equal(await page.$eval('#inspect-create-limit .mail-switch span',node=>{const rect=node.getBoundingClientRect(),style=getComputedStyle(node);return rect.width>=40&&rect.height>=24&&style.backgroundColor!=='rgba(0, 0, 0, 0)'}),true);
    await save('access');
-   await page.click('#mail-permission-read');await page.waitForFunction(()=>document.querySelector('#mail-permission-status').textContent==='Saved');
+   await page.$eval('#inspect-prototype-page',node=>node.scrollTop=node.scrollHeight);await save('access-bottom');
+   await page.$eval('#inspect-prototype-page',node=>node.scrollTop=0);
+   await page.click('#role-editor-form [name=mailRead]');await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
    assert.equal(data.writes.some(write=>write.path.endsWith('/agent-policy')&&write.body.capabilities.mail.read===true&&write.body.capabilities.mcpTools.allowedTools.includes('list_emails')),true);
-   await page.click('#inspect-edit-roles');await page.waitForSelector('#role-editor-modal:not([hidden])');
    assert.equal(await page.$eval('#role-editor-form [name="mailRead"]',node=>node.checked),true);
    assert.equal(await page.$$eval('#role-editor-form [name="mcpTools"]',nodes=>nodes.filter(node=>['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox','send_email','list_outbox','get_outbox_status'].includes(node.value)).length),10);
    assert.equal(await page.$('#role-editor-form [value="reply_email"]'),null);assert.equal(await page.$('#role-editor-form [value="set_busy"]'),null);
    await page.click('#role-editor-form [name="mailCompose"]');
    assert.equal(await page.$eval('#role-editor-form [value="send_email"]',node=>node.checked),true);
-   await page.click('#role-editor-form [type="submit"]');await page.waitForFunction(()=>document.querySelector('#role-editor-modal').hidden);
+   await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
    assert.equal(data.writes.some(write=>write.path.endsWith('/agent-policy')&&write.body.capabilities.mail.compose===true&&write.body.capabilities.mcpTools.allowedTools.includes('send_email')),true);
    await page.click('#inspect-close');
    assert.equal(await page.$$eval('.mail-system-row',nodes=>nodes.length),2);
@@ -147,7 +148,7 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
 
 test('Mail UI is absent when the feature is off and tool lists omit retired tools',async()=>{
  const data=fixture(),server=await serve(data,{disabled:true}),chrome=await browser();
- try{const page=await chrome.newPage();await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);await page.click('#chat-info');await page.waitForFunction(()=>document.querySelector('.mail-group')?.hidden===true);assert.equal(await page.$eval('#mail-approval',node=>node.hidden),true);assert.equal(await page.$eval('#mail-permissions',node=>node.hidden),true);assert.equal(await page.$eval('#role-editor-form [data-mail-feature]',node=>node.hidden),true);await page.close()}finally{await chrome.close();await new Promise(resolve=>server.close(resolve))}
+ try{const page=await chrome.newPage();await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);await page.click('#chat-info');await page.waitForFunction(()=>document.querySelector('.mail-group')?.hidden===true);assert.equal(await page.$eval('#mail-approval',node=>node.hidden),true);assert.equal(await page.$eval('#role-editor-form [data-mail-feature]',node=>node.hidden),true);assert.equal(await page.$eval('#role-editor-form [data-mail-feature]',node=>node.hidden),true);await page.close()}finally{await chrome.close();await new Promise(resolve=>server.close(resolve))}
  const manage=await readFile(resolve(web,'index.html'),'utf8');assert.match(manage,/value="list_emails"/);assert.doesNotMatch(manage,/value="reply_email"|value="set_busy"/);
 });
 

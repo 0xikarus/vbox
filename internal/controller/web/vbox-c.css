@@ -2752,9 +2752,6 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 }
 
 /* Use shared ink and accent text in the Manage permission editor. */
-#role-editor-modal .role-capability h3,#role-editor-modal .role-capability strong{color:var(--vb-ink)}
-#role-editor-modal .role-capability small,#role-editor-modal .role-capability p{color:var(--vb-ink-soft)}
-#role-editor-modal .role-capability-options>summary{color:var(--vb-accent-text)}
 
 /* Native selectors size to their content on wide screens. */
 #agent-cli-versions select{width:max-content;min-width:min(100%,25rem);max-width:100%}
@@ -3066,3 +3063,74 @@ dialog:not([open]){display:none}
 #inspect.details-prototype .ip-page .inspect-attachment-help{margin:0;padding:10px 14px;color:var(--vb-ink-soft);font-size:var(--vb-type-px-11);line-height:1.4}
 #inspect.details-prototype .ip-page #inspect-attachment-empty[hidden]{display:none}
 #role-editor-form [data-mail-feature][hidden]{display:none}
+
+/* The same inline policy rows are used in Details and Manage. */
+.inline-permission-editor{width:100%;min-width:0}
+.inline-permission-editor[hidden],.inline-permission-group[hidden],.inline-permission-card[hidden]{display:none!important}
+.inline-permission-editor form,#role-editor-form{display:grid;gap:12px;margin:0}
+.inline-permission-group{display:grid;gap:6px;min-width:0;margin:0!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important}
+.inline-permission-group .ip-heading{margin:0;padding:0 2px;color:var(--vb-ink-soft);font-size:11px;font-weight:750;letter-spacing:.09em;line-height:1.5;text-transform:uppercase}
+.inline-permission-card{min-width:0;margin:0!important;padding:0!important;border:1px solid var(--vb-line)!important;border-radius:12px!important;background:var(--vb-surface)!important;box-shadow:none!important;overflow:hidden}
+.inline-permission-card>.role-capability{display:block!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+.inline-permission-card .role-capability-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;margin:0;padding:9px 15px;border-bottom:1px solid var(--vb-line)}
+.inline-permission-card .role-capability-toggle>span{min-width:0;display:grid;gap:2px}
+.inline-permission-card .role-capability-toggle strong{color:var(--vb-ink);font-size:13px}
+.inline-permission-card .role-capability-toggle small{color:var(--vb-ink-soft);line-height:1.4}
+.inline-permission-card .role-capability-toggle input[type=checkbox]{appearance:none!important;position:relative;width:42px!important;height:25px!important;min-width:42px;min-height:25px;margin:0;flex:none;border:0!important;border-radius:99px!important;background:color-mix(in srgb,var(--vb-ink) 30%,var(--vb-surface))!important;opacity:1!important;cursor:pointer}
+.inline-permission-card .role-capability-toggle input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:var(--vb-surface);box-shadow:0 1px 3px #0003;transition:transform .18s}
+.inline-permission-card .role-capability-toggle input[type=checkbox]:checked{background:var(--vb-ink)!important}
+.inline-permission-card .role-capability-toggle input[type=checkbox]:checked::after{transform:translateX(17px)}
+.inline-permission-card .role-capability-toggle input[type=checkbox]:disabled{opacity:.55!important;cursor:default}
+.inline-permission-card .role-capability-toggle input[type=checkbox]:focus-visible{outline:2px solid var(--vb-ink);outline-offset:3px}
+.inline-permission-card .inline-permission-tool-list input[type=checkbox]{width:18px!important;height:18px!important;min-width:18px;flex:none;accent-color:var(--vb-ink)}
+.inline-permission-card .role-capability-options{margin:0;padding:0;border:0;border-bottom:1px solid var(--vb-line);background:transparent}
+.inline-permission-card .role-capability-options>summary{min-height:44px;display:flex;align-items:center;padding:0 15px;color:var(--vb-ink);font-size:13px;font-weight:600;text-transform:none;cursor:pointer}
+.inline-permission-card .role-capability-options>summary::after{color:var(--vb-ink-soft)}
+.inline-permission-card .role-capability-fields{padding:0 15px 12px}
+.inline-permission-card .role-capability-fields input[type=number]{max-width:100%;min-height:38px}
+.inline-permission-tools{border-bottom:1px solid var(--vb-line)}
+.inline-permission-tools:last-child{border-bottom:0}
+.inline-permission-tools>summary{min-height:48px;display:flex;align-items:center;gap:8px;padding:0 15px;color:var(--vb-ink);font-size:13px;font-weight:600;cursor:pointer;list-style:none}
+.inline-permission-tools>summary::-webkit-details-marker{display:none}
+.inline-permission-tools>summary::marker{content:''}
+.inline-permission-tools>summary::before{display:none!important}
+.inline-permission-tools>summary::after{content:none!important}
+.inline-permission-tools-label{flex:1}
+.inline-permission-count{color:var(--vb-ink-soft);font-size:12px;font-weight:500;white-space:nowrap}
+.inline-permission-chevron{width:7px;height:7px;flex:none;margin-left:4px;border-right:1.5px solid var(--vb-ink-soft);border-bottom:1.5px solid var(--vb-ink-soft);transform:rotate(45deg);transition:transform .15s}
+.inline-permission-tools[open] .inline-permission-chevron{transform:rotate(225deg)}
+.inline-permission-tool-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 14px;padding:0 15px 12px;border-top:1px solid var(--vb-line)}
+.inline-permission-tool-list label{display:flex;align-items:center;gap:9px;min-height:44px;min-width:0;overflow-wrap:anywhere;color:var(--vb-ink);font-size:12px}
+.inline-permission-editor #role-editor-status{margin:0;padding:8px 12px;border:1px solid var(--vb-line);border-radius:9px;background:var(--vb-surface);color:var(--vb-ink-soft);font-size:12px}
+.inline-permission-editor #role-editor-status:empty{display:none}
+.inline-permission-editor #role-editor-status[data-state=error]{color:var(--vb-danger-text);border-color:currentColor}
+.inline-permission-retry{justify-self:start;min-height:36px;padding:0 12px;border:1px solid var(--vb-line);border-radius:8px;background:var(--vb-surface);color:var(--vb-ink);font-weight:700}
+.inline-permission-retry[hidden]{display:none}
+#inspect.details-prototype #inspect-inline-permissions{display:block}
+#inspect.details-prototype .ip-page #inspect-access{border:0;border-radius:0;background:transparent;box-shadow:none;overflow:visible}
+#inspect.details-prototype .ip-page #inspect-access .inspect-access-rows{display:grid;gap:12px;padding:0;border:0}
+#inspect.details-prototype .ip-page #inspect-access .inspect-access-meta-card{border:1px solid var(--vb-line);border-radius:12px;background:var(--vb-surface);overflow:hidden}
+#role-assignments .inline-permission-editor{padding:12px;box-sizing:border-box}
+@media(max-width:600px){.inline-permission-tool-list{grid-template-columns:1fr}}
+/* Created-box limit is three ordinary rows inside Manage boxes. */
+.inline-permission-card #inspect-create-limit,.inline-permission-card #role-create-limit{display:block;margin:0!important;padding:0!important;border:0!important;border-top:1px solid var(--vb-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;overflow:visible!important}
+.inline-permission-card #inspect-create-limit[hidden],.inline-permission-card #role-create-limit[hidden]{display:none!important}
+.inline-permission-card .box-create-limit{margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+.inline-permission-card .box-create-limit .idle-policy-top{min-height:48px;margin:0;padding:4px 15px;border-bottom:1px solid var(--vb-line)}
+.inline-permission-card .box-create-limit .idle-policy-top strong{color:var(--vb-ink);font-size:13px}
+.inline-permission-card .box-create-limit .idle-policy-badge{display:none}
+.inline-permission-card .box-create-limit .idle-policy-controls{display:flex;align-items:center;gap:8px;min-height:54px;margin:0;padding:5px 15px;border-bottom:1px solid var(--vb-line)}
+.inline-permission-card .box-create-limit .idle-policy-controls label{display:flex;align-items:center;gap:6px;min-width:0;color:var(--vb-ink);font-size:12px;white-space:nowrap}
+.inline-permission-card .box-create-limit .idle-policy-controls input{width:56px;min-height:36px;background:var(--vb-surface-2);color:var(--vb-ink)}
+.inline-permission-card .box-create-limit .idle-policy-controls button{min-height:36px;margin-left:auto;padding:5px 10px;border:1px solid var(--vb-line-strong);border-radius:8px;background:var(--vb-surface-2);color:var(--vb-ink);font-size:12px;font-weight:700}
+.inline-permission-card .box-create-limit .idle-policy-note{margin:0;padding:9px 15px 0;color:var(--vb-ink-soft);font-size:11px}
+.inline-permission-card .box-create-limit .idle-policy-status{margin:0;padding:3px 15px 10px;color:var(--vb-ink-soft);font-size:11px}
+.inline-permission-card .box-create-limit .idle-policy-retry{margin:0 15px 10px}
+.inline-permission-card .box-create-limit .mail-switch{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:52px;height:44px;margin-left:auto;cursor:pointer}
+.inline-permission-card .box-create-limit .mail-switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.inline-permission-card .box-create-limit .mail-switch span{position:relative;width:42px;height:25px;border-radius:99px;background:color-mix(in srgb,var(--vb-ink) 30%,var(--vb-surface))}
+.inline-permission-card .box-create-limit .mail-switch span::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:var(--vb-surface);box-shadow:0 1px 3px #0003}
+.inline-permission-card .box-create-limit .mail-switch input:checked+span{background:var(--vb-ink)}
+.inline-permission-card .box-create-limit .mail-switch input:checked+span::after{transform:translateX(17px)}
+.inline-permission-card .box-create-limit .mail-switch input:focus-visible+span{outline:2px solid var(--vb-ink);outline-offset:3px}
+.inline-permission-card .box-create-limit .mail-switch input:disabled+span{opacity:.55}

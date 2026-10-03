@@ -10,7 +10,7 @@ const box={id:'builder',name:'builder',state:'running',defaultAgent:'claude',pro
 const contact={contactBoxId:'reviewer',contactName:'reviewer',contactState:'running',contactAgent:'codex',override:'allow',canMessage:true};
 
 test('Details keeps direct contacts separate from Access actions',async()=>{
- let protectedBox=false,protectionWrites=0;
+ let protectedBox=false,protectionWrites=0,failPolicyOnce=true,policy={capabilities:{mcpTools:{enabled:true,allowedTools:[]},requestMoreTime:{maxExtensionMinutes:7,maxTotalMinutes:14}}};
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0];
   if(path.startsWith('/v1/')){
@@ -27,7 +27,7 @@ test('Details keeps direct contacts separate from Access actions',async()=>{
     if(req.method==='PUT'){let body='';for await(const chunk of req)body+=chunk;protectedBox=!!JSON.parse(body).protected;protectionWrites++}
     return res.end(JSON.stringify({protected:protectedBox}));
    }
-   if(path.endsWith('/agent-policy'))return res.end('{"capabilities":{"mcpTools":{"enabled":true,"allowedTools":[]}}}');
+   if(path.endsWith('/agent-policy')){if(req.method==='PUT'){let body='';for await(const chunk of req)body+=chunk;if(failPolicyOnce){failPolicyOnce=false;res.statusCode=503;return res.end('{"error":"Try again"}')}policy=JSON.parse(body)}return res.end(JSON.stringify(policy))}
    if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
    return res.end('{}');
   }
@@ -45,18 +45,24 @@ test('Details keeps direct contacts separate from Access actions',async()=>{
   await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#inspect-access').hidden&&document.querySelector('#inspect-tags').textContent==='backend');
   assert.equal(await page.$eval('#inspect-contacts',section=>!!section.querySelector('#inspect-contact-list')&&!section.querySelector('.contact-policy')),true);
-  assert.deepEqual(await page.$eval('#inspect-access',section=>[...section.querySelectorAll('.inspect-access-copy strong')].map(node=>node.textContent)),['Permissions','Labels','Protection']);
+  assert.deepEqual(await page.$eval('#inspect-access',section=>[...section.querySelectorAll('.inspect-access-copy strong')].map(node=>node.textContent)),['Labels','Protection']);
   const captureDir='/data/workspace/captures/details-redesign';await mkdir(captureDir,{recursive:true});
   await page.$eval('[data-ip-row="access"]',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-title').textContent==='Access & permissions'&&!document.querySelector('[data-ip-page="access"]').hidden);
   assert.equal(await page.$eval('#inspect-access',node=>getComputedStyle(node).display),'block');
-  assert.ok(await page.evaluate(()=>['#inspect-toggle-protection','#inspect-create-limit .idle-policy-switch input','#inspect-create-limit input[type=number]','#inspect-create-limit .idle-policy-controls button'].every(selector=>{const rect=document.querySelector(selector).getBoundingClientRect();return rect.width>=40&&rect.height>=40})),'Access controls have at least 40px tap targets');
+  assert.deepEqual(await page.evaluate(()=>['#inspect-toggle-protection','#inspect-create-limit .mail-switch','#inspect-create-limit input[type=number]','#inspect-create-limit .idle-policy-controls button'].map(selector=>{const rect=document.querySelector(selector).getBoundingClientRect();return [selector,rect.width>=40&&rect.height>=40]})),[['#inspect-toggle-protection',true],['#inspect-create-limit .mail-switch',true],['#inspect-create-limit input[type=number]',true],['#inspect-create-limit .idle-policy-controls button',true]],'Access controls have at least 40px tap targets');
   await page.screenshot({path:captureDir+'/access-390.png'});
   await page.setViewport({width:1440,height:900,isMobile:true,hasTouch:true});await page.screenshot({path:captureDir+'/access-1440.png'});
   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
-  await page.$eval('#inspect-edit-roles',button=>button.click());
-  await page.waitForFunction(()=>!document.querySelector('#role-editor-modal').hidden);
-  await page.$eval('#role-editor-modal [data-close]',button=>button.click());
+  await page.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden);
+  assert.equal(await page.$eval('#role-editor-form',form=>form.querySelectorAll('.inline-permission-card').length),5);
+  await page.$eval('#role-editor-form [name=allContactsEnabled]',input=>input.click());
+  await page.waitForFunction(()=>document.querySelector('.inline-permission-retry').hidden===false);
+  assert.match(await page.$eval('#role-editor-status',node=>node.textContent),/Try again/);
+  await page.click('.inline-permission-retry');
+  await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
+  assert.equal(policy.capabilities.allContacts.enabled,true);
+  assert.deepEqual(policy.capabilities.requestMoreTime,{maxExtensionMinutes:7,maxTotalMinutes:14});
   await page.$eval('#inspect-toggle-protection',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-toggle-protection').getAttribute('aria-checked')==='true');
   assert.equal(protectionWrites,1);
@@ -67,7 +73,7 @@ test('Details keeps direct contacts separate from Access actions',async()=>{
   await page.screenshot({path:captureDir+'/contacts-390.png'});
   await page.setViewport({width:1440,height:900,isMobile:true,hasTouch:true});await page.screenshot({path:captureDir+'/contacts-1440.png'});
   await page.$eval('#inspect-contact-permissions',button=>button.click());
-  await page.waitForFunction(()=>!document.querySelector('#role-editor-modal').hidden);
+  await page.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden);
   await page.close();
  }finally{await browser.close();server.close()}
 });
