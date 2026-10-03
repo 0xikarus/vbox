@@ -72,6 +72,11 @@ test('remote control notice links to the actor and Technical shows the last sess
    await save('tool-picker');
    await page.$eval('#role-editor-modal',dialog=>dialog.hidden=true);
    await page.keyboard.press('Escape');
+   if(width===390&&theme==='light'){
+    messages[0].control.actions=4;
+    await page.waitForFunction(()=>document.querySelector('.remote-control-link')?.textContent.includes('4 actions'),{timeout:8000});
+    messages[0].control.actions=3;
+   }
    await page.click('.remote-control-link');
    await page.waitForFunction(()=>location.hash==='#box=manager');
    assert.deepEqual(errors,[]);await page.close();
