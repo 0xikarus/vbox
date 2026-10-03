@@ -184,6 +184,7 @@ test('box Mail details can grant read permission and manage its addresses',async
   await page.click('[data-ip-row="mail"]');
   await page.waitForFunction(()=>document.querySelector('#mail-read-permission')?.disabled===false);
   assert.match(await page.$eval('.mail-agent-read-row',node=>node.textContent),/Needs permission to read mail/);
+  assert.deepEqual(await page.$$eval('.mail-agent-read-row .mail-switch',nodes=>nodes.filter(node=>{const rect=node.getBoundingClientRect();return rect.width<40||rect.height<40}).map(node=>node.outerHTML)),[]);
   if(capture)await page.screenshot({path:resolve(capture,'box-mail-permission-390.png'),fullPage:true});
   await page.click('#mail-read-permission');
   await page.waitForFunction(()=>document.querySelector('#mail-read-permission')?.checked&&document.querySelector('.mail-access-status')?.textContent==='Saved');
@@ -200,6 +201,7 @@ test('box Mail details can grant read permission and manage its addresses',async
   assert.equal(revoked.body.capabilities.mcpTools.allowedTools.includes('send_email'),true);
   await page.click('.mail-manage-addresses');
   await page.waitForSelector('[data-mail-address-id="available-1"]');
+  assert.deepEqual(await page.$$eval('.mail-address-manager .mail-switch,.mail-address-manager .mail-address-edit,.mail-address-manager input,.mail-address-manager button',nodes=>nodes.filter(node=>{const rect=node.getBoundingClientRect();return rect.width<40||rect.height<40}).map(node=>node.outerHTML)),[]);
   if(capture){await page.$eval('#inspect-prototype-page',node=>node.scrollTop=node.scrollHeight);await page.screenshot({path:resolve(capture,'box-mail-addresses-390.png'),fullPage:true})}
   assert.equal(await page.$eval('[data-mail-address-id="own-builder"]',node=>node.checked&&node.disabled),true);
   await page.click('[data-mail-address-id="available-1"]');
