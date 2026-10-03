@@ -1368,7 +1368,7 @@
    if(event.touches.length!==1){cleanup();return}
    const touch=event.touches[0];cleanup();row.draggable=false;
    gesture={id:touch.identifier,x:touch.clientX,y:touch.clientY,armed:false,dragging:false};
-   timer=setTimeout(()=>{if(!gesture)return;gesture.armed=true;row.classList.add('drag-armed');if(row._chatTap)row._chatTap.invalid=true;suppressGestureClick()},450);
+   timer=setTimeout(()=>{if(!gesture)return;gesture.armed=true;navSwipe=null;row.classList.add('drag-armed');if(row._chatTap)row._chatTap.invalid=true;suppressGestureClick()},450);
   },{passive:true});
   row.addEventListener('touchmove',event=>{
    if(!gesture)return;
@@ -1377,11 +1377,9 @@
    const dx=touch.clientX-gesture.x,dy=touch.clientY-gesture.y;
    if(!gesture.armed){if(Math.hypot(dx,dy)>8)cleanup();return}
    if(!gesture.dragging&&Math.hypot(dx,dy)>8){
-    // A sideways swipe remains navigation; vertical movement after the hold
-    // takes ownership of this touch sequence for the chat drag.
-    if(Math.abs(dx)>Math.abs(dy)*1.25){cleanup();return}
-   gesture.dragging=true;navSwipe=null;row.classList.remove('pressing','drag-armed');row.classList.add('touch-chat-dragging');
-   const before=row.getBoundingClientRect().top;showPinDrop();gesture.layoutShift=before-row.getBoundingClientRect().top;
+    // Once the hold arms a row drag, it owns this touch in every direction.
+    gesture.dragging=true;navSwipe=null;row.classList.remove('pressing','drag-armed');row.classList.add('touch-chat-dragging');
+    const before=row.getBoundingClientRect().top;showPinDrop();gesture.layoutShift=before-row.getBoundingClientRect().top;
    }
    if(!gesture.dragging)return;
    if(event.cancelable)event.preventDefault();event.stopPropagation();
@@ -2965,7 +2963,9 @@ function pairTileStatus(tile,mode,label){
   if(gesture.direction==='back')endHorizontalGesture();
  }
  function canStartNavSwipe(target,root,direction){
-  if(direction==='forward'&&!target.closest?.('li[data-box-id],li[data-pair-key]')&&target.closest?.('button,a,input,textarea,select,[role="slider"]'))return false;
+  // Keep controls outside the scrolling list interactive; list header buttons
+  // also start a swipe when the touch moves horizontally.
+  if(direction==='forward'&&!target.closest?.('#chat-entries')&&target.closest?.('button,a,input,textarea,select,[role="slider"]'))return false;
   for(let node=target;node&&node!==root;node=node.parentElement){
    const style=getComputedStyle(node);
    if(node.scrollWidth>node.clientWidth+2&&/auto|scroll/.test(style.overflowX)&&(direction==='forward'||node.scrollLeft>1))return false;
