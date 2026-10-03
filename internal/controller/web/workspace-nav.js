@@ -27,7 +27,13 @@ window.VMBoxWorkspaceNav=(()=>{
    const otherBlockers=plan.blockers.filter(blocker=>!boxCount||!blocker.startsWith('Delete or move every box'));
    if(otherBlockers.length){const list=el('ul');list.className='provider-delete-blockers';for(const blocker of otherBlockers)list.append(el('li',blocker));body.append(list)}
    if(plan.canDelete){
-    if(plan.isDefault){const label=el('label','New default');const prompt=el('option','Choose a replacement');prompt.value='';replacement.append(prompt);const clear=el('option','No default');clear.value='clear';replacement.append(clear);const providers=await read('/v1/provider-credentials');for(const candidate of providers){if(candidate.provider===provider.provider&&candidate.name===provider.name)continue;const option=el('option',candidate.provider+' / '+candidate.name);option.value=JSON.stringify({provider:candidate.provider,name:candidate.name});replacement.append(option)}label.append(replacement);body.append(label)}
+    if(plan.isDefault){
+     const label=el('label','New default'),providers=(await read('/v1/provider-credentials')).filter(candidate=>candidate.provider!==provider.provider||candidate.name!==provider.name);
+     if(providers.length>1){const prompt=el('option','Choose a replacement');prompt.value='';replacement.append(prompt)}
+     if(providers.length!==1){const clear=el('option','No default — choose later in Providers');clear.value='clear';replacement.append(clear)}
+     for(const candidate of providers){const option=el('option',candidate.provider+' / '+candidate.name);option.value=JSON.stringify({provider:candidate.provider,name:candidate.name});replacement.append(option)}
+     label.append(replacement);body.append(label)
+    }
     const label=el('label','Type '+provider.name+' to confirm');label.append(input);body.append(label);
    }else{confirm.remove();cancel.textContent='Close'}
    ready();
@@ -103,12 +109,12 @@ window.VMBoxWorkspaceNav=(()=>{
     const [providers,defaultResult]=await Promise.all([read('/v1/provider-credentials'),read('/v1/controller-defaults').catch(()=>null)]);
     if(request!==generation||!dialog.open)return;
     if(!Array.isArray(providers))throw Error('Provider list unavailable');
-    status.textContent=providers.length?'':'No providers configured.';table.hidden=!providers.length;
+    status.textContent=providers.length?defaultResult?.inferred?'Using the sole provider. Choose it as default in Providers.':defaultResult?.provider?'':'Choose a default provider in Providers.':'No providers configured.';table.hidden=!providers.length;
     await Promise.all(providers.map(async provider=>{
      const row=el('tr');rows.append(row);const identity=providerCell('Provider',provider.name||'Default');identity.className='providers-identity';row.append(identity,providerCell('Status','Loading capacity…'));
      const snapshot=await providerSnapshot(provider);
      if(request!==generation||!dialog.open)return;
-     renderProviderRow(row,provider,defaultResult?.provider===provider.provider&&defaultResult?.providerCredential===(provider.name||''),snapshot);
+     renderProviderRow(row,provider,!defaultResult?.inferred&&defaultResult?.provider===provider.provider&&defaultResult?.providerCredential===(provider.name||''),snapshot);
     }));
    }catch(error){if(request===generation&&dialog.open){status.textContent=error.message;table.hidden=true}}
    finally{if(request===generation)refresh.disabled=false}

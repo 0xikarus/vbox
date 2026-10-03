@@ -275,6 +275,30 @@ func (s *Server) deleteProviderCredential(w http.ResponseWriter, r *http.Request
 	}
 	if plan.IsDefault {
 		if choice == nil {
+			// Clearing a default must not strand the account when exactly one
+			// usable provider remains. Resolve inside the deletion transaction.
+			rows, listErr := tx.QueryContext(ctx, `SELECT provider,name FROM provider_credentials WHERE account_id=$1 AND NOT (provider=$2 AND name=$3) AND deleting=false ORDER BY provider,name LIMIT 2`, p.AccountID, name, alias)
+			if listErr != nil {
+				writeError(w, 500, listErr)
+				return
+			}
+			var remaining providerDefaultChoice
+			if rows.Next() {
+				listErr = rows.Scan(&remaining.Provider, &remaining.Name)
+				if listErr == nil && !rows.Next() && rows.Err() == nil {
+					choice = &remaining
+				}
+			}
+			if listErr == nil {
+				listErr = rows.Err()
+			}
+			rows.Close()
+			if listErr != nil {
+				writeError(w, 500, listErr)
+				return
+			}
+		}
+		if choice == nil {
 			_, err = tx.ExecContext(ctx, `DELETE FROM controller_defaults WHERE account_id=$1 AND provider=$2 AND provider_credential=$3`, p.AccountID, name, alias)
 		} else {
 			result, updateErr := tx.ExecContext(ctx, `UPDATE controller_defaults SET provider=$4,provider_credential=$5 WHERE account_id=$1 AND provider=$2 AND provider_credential=$3 AND EXISTS(SELECT 1 FROM provider_credentials WHERE account_id=$1 AND provider=$4 AND name=$5 AND deleting=false)`, p.AccountID, name, alias, choice.Provider, choice.Name)

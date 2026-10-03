@@ -874,7 +874,7 @@ paths:
       responses: {'200': {description: Boolean nativeSessions, nativeAttach, snapshotUpdates, providerEdits}}
   /v1/controller-defaults:
     get:
-      responses: {'200': {description: Controller-held provider and providerCredential}, '409': {description: Default not configured}}
+      responses: {'200': {description: Provider and providerCredential. inferred is true when the sole configured credential is used without a saved default.}, '409': {description: Choose a default provider when no credential or several credentials exist without a saved default.}}
     put:
       description: Owner-only initial alias selection. A differing established default fails closed.
       requestBody:
