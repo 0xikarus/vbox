@@ -295,7 +295,7 @@ func (s *Server) ownerMailPanelSummary(w http.ResponseWriter, r *http.Request, p
 		Unread  int    `json:"unread"`
 	}
 	boxes := []summaryBox{}
-	unread, quarantine := 0, 0
+	unread, quarantine, inbox := 0, 0, 0
 	for rows.Next() {
 		var item summaryBox
 		var quarantined int
@@ -310,7 +310,7 @@ func (s *Server) ownerMailPanelSummary(w http.ResponseWriter, r *http.Request, p
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
 	}
-	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT count(*) FILTER (WHERE read_at IS NULL AND NOT quarantined),count(*) FILTER (WHERE quarantined) FROM mail_messages WHERE account_id=$1 AND expires_at>now()`, p.AccountID).Scan(&unread, &quarantine); err != nil {
+	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT count(*) FILTER (WHERE read_at IS NULL AND NOT quarantined),count(*) FILTER (WHERE quarantined),count(*) FILTER (WHERE NOT quarantined) FROM mail_messages WHERE account_id=$1 AND expires_at>now()`, p.AccountID).Scan(&unread, &quarantine, &inbox); err != nil {
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
 	}
@@ -319,5 +319,5 @@ func (s *Server) ownerMailPanelSummary(w http.ResponseWriter, r *http.Request, p
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
 	}
-	writeJSON(w, 200, map[string]any{"unread": unread, "quarantine": quarantine, "pending": pending, "boxes": boxes})
+	writeJSON(w, 200, map[string]any{"inbox": inbox, "unread": unread, "quarantine": quarantine, "pending": pending, "boxes": boxes})
 }

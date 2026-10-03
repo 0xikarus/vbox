@@ -21,6 +21,7 @@ type ownerMailAddress struct {
 	Address     string   `json:"address"`
 	Label       string   `json:"label"`
 	OwningBoxID string   `json:"owningBoxId,omitempty"`
+	Primary     bool     `json:"primary"`
 	BoxIDs      []string `json:"boxIds"`
 	Enabled     bool     `json:"enabled"`
 	Unread      int      `json:"unread"`
@@ -94,6 +95,7 @@ func (s *Server) ownerMailAddresses(w http.ResponseWriter, r *http.Request, p Pr
 			return
 		}
 		addresses = append(addresses, item)
+		addresses[len(addresses)-1].Primary = item.OwningBoxID != ""
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -298,6 +300,7 @@ func (s *Server) ownerMailAddressItem(w http.ResponseWriter, r *http.Request, p 
 	if item.OwningBoxID != "" && !slices.Contains(item.BoxIDs, item.OwningBoxID) {
 		item.BoxIDs = append([]string{item.OwningBoxID}, item.BoxIDs...)
 	}
+	item.Primary = item.OwningBoxID != ""
 	if err := tx.Commit(); err != nil {
 		writeError(w, 500, fmt.Errorf("mail address unavailable"))
 		return

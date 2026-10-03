@@ -119,7 +119,7 @@ func TestBoxAddressCanGrantAnotherBoxWithoutRemovingItsOwner(t *testing.T) {
 	r.SetPathValue("aid", panelTestBox)
 	w := httptest.NewRecorder()
 	(&Server{Store: store}).ownerMailAddressItem(w, r, Principal{AccountID: "account-a", Role: "owner"})
-	if w.Code != 200 || !strings.Contains(w.Body.String(), panelTestBox) || !strings.Contains(w.Body.String(), otherBox) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), panelTestBox) || !strings.Contains(w.Body.String(), otherBox) || !strings.Contains(w.Body.String(), `"primary":true`) {
 		t.Fatalf("grant status=%d body=%s", w.Code, w.Body.String())
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
