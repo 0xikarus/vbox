@@ -4,7 +4,7 @@
  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
  const readTools=['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'];
  const composeTools=['send_email','list_outbox','get_outbox_status'];
- const state={boxId:'',settings:null,alsoReads:[],settingsSaving:false,globalAvailable:null,approvals:{pending:0,items:[]},tab:'inbox',folder:'all',outboxStatus:'pending_approval',messages:[],messagesCursor:'',messagesLoaded:false,messagesLoading:false,messagesError:'',outbox:[],outboxCursor:'',outboxLoaded:false,outboxLoading:false,outboxError:'',detail:null,detailLoading:false,detailError:'',otpRevealed:false,policy:null};
+ const state={boxId:'',settings:null,alsoReads:[],settingsSaving:false,globalAvailable:null,navUnread:0,approvals:{pending:0,items:[]},tab:'inbox',folder:'all',outboxStatus:'pending_approval',messages:[],messagesCursor:'',messagesLoaded:false,messagesLoading:false,messagesError:'',outbox:[],outboxCursor:'',outboxLoaded:false,outboxLoading:false,outboxError:'',detail:null,detailLoading:false,detailError:'',otpRevealed:false,policy:null};
  let api,mailPage,detailPage,mainGroup,mainRow,review,reviewItem,returnFocus,requestEpoch=0,approvalTimer,detailId='';
  const base=()=>'/v1/logical-boxes/'+encodeURIComponent(state.boxId)+'/mail';
  const count=()=>Number(state.settings?.unread)||0;
@@ -27,17 +27,26 @@
  const maskCode=text=>String(text||'').replace(/\b\d{4,8}\b/g,'••••••');
  const shortError=error=>error?.message||'Request failed';
  function signals(){
+  const navVisible=api.isOwner()&&state.globalAvailable===true;
+  for(const node of document.querySelectorAll('#chat-menu-sheet [data-mail-nav]'))node.hidden=!navVisible;
+  const navCount=$('chat-mail-count');if(navCount){navCount.hidden=!navVisible||!state.navUnread;navCount.textContent=String(state.navUnread)}
   if(mainGroup)mainGroup.hidden=!api.isOwner()||state.globalAvailable!==true;
   if(mainRow){mainRow.hidden=!api.isOwner()||state.globalAvailable!==true||!state.settings;const value=mainRow.querySelector('.ip-row-value');if(value)value.textContent=state.settings?(state.settings.enabled?count()+' unread · '+pending()+' pending':'Off · '+pending()+' pending'):''}
   const n=Number(state.approvals.pending)||0;
   for(const id of ['mail-approval','mail-approval-mobile']){const button=$(id);if(!button)continue;button.hidden=!api.isOwner()||state.globalAvailable!==true||n===0;button.querySelector('b').textContent=String(n);button.setAttribute('aria-label',n+' mail '+(n===1?'approval':'approvals'))}
   for(const node of document.querySelectorAll('#role-editor-form [data-mail-feature]'))node.hidden=!api.isOwner()||state.globalAvailable!==true;
  }
+ async function loadNavSummary(){
+  try{const summary=await api.request('/v1/mail/summary');if(!api.isOwner()||state.globalAvailable!==true)return;state.navUnread=Number(summary?.unread)||0}
+  catch{state.navUnread=0}
+  signals();
+ }
  async function loadApprovals(){
   if(!api.isOwner()){state.globalAvailable=false;signals();return}
   try{
    const result=await api.request('/v1/mail/approvals');
    state.globalAvailable=true;state.approvals={pending:Number(result?.pending)||0,items:Array.isArray(result?.items)?result.items:[]};
+   void loadNavSummary();
    if(state.boxId&&!state.settings)void loadSettings(state.boxId);
   }catch(error){if(error.status===404){state.globalAvailable=false;state.approvals={pending:0,items:[]}}else{state.approvals={pending:0,items:[]};if(state.globalAvailable===null)state.globalAvailable=false}}
   signals();
