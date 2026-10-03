@@ -426,6 +426,7 @@ test('model choice opens a searchable modal and loads the provider catalog',asyn
 test('creation offers documented Claude choices and Codex account models',async()=>{
  const page=await browser.newPage();
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
+ await page.waitForFunction(()=>document.querySelector('#provider-default')?.textContent==='Default: railway / primary');
  await page.waitForSelector('#profile-choices select');
  await page.select('#create select[name=defaultAgent]','claude');
  await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'claude',name:'personal'}));
@@ -851,7 +852,7 @@ test('a shared worker pool is managed inline on the providers page up to its mac
  },revision);
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');
  await page.click('.workspace-links a[href="#providers"]');
- await page.waitForSelector('#provider-list .provider-actions button');
+ await page.waitForFunction(()=>document.querySelector('#provider-default')?.textContent==='Default: shared-worker / my-vps'&&document.querySelector('#provider-list .provider-actions button')?.textContent==='Manage');
  assert.equal(await page.$eval('#provider-list .provider-actions button',n=>n.textContent),'Manage');
  await page.click('#provider-list .provider-actions button');
  await page.waitForSelector('#provider-list .provider-detail-row .provider-panel .worker-settings-form');
@@ -866,11 +867,13 @@ test('a shared worker pool is managed inline on the providers page up to its mac
  await page.$eval('.worker-settings-form input[name=cpu]',n=>{n.value='1.5'});
  assert.match(await page.$eval('.worker-overcommit',n=>n.hidden?'':n.textContent),/6 slots × 2 GiB = 12 GiB, more than this machine's 7\.8 GiB RAM/);
  if(process.env.VMBOX_SCREENSHOT_DIR)await (await page.$('.provider-panel')).screenshot({path:process.env.VMBOX_SCREENSHOT_DIR+'/worker-panel.png'});
+ const originalSettings=await page.$('.provider-panel .worker-settings-form');
  await page.$eval('.worker-settings-form',form=>form.requestSubmit());
  await page.waitForFunction(()=>window.workerWrites.length===1);
  assert.deepEqual(await page.evaluate(()=>window.workerWrites[0]),{provider:'shared-worker',providerCredential:'my-vps',revision:3,slots:6,boxDefaults:{cpu:1.5,memoryMiB:2048,swapMiB:1024}});
  await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('without a restart'));
- await page.waitForFunction(()=>document.querySelector('.provider-panel .worker-settings-form input[name=slots]')?.value==='6');
+ await page.waitForFunction(old=>{const form=document.querySelector('.provider-panel .worker-settings-form');return !old.isConnected&&form&&form!==old&&form.elements.slots?.value==='6'&&form.elements.cpu?.value==='1.5'}, {}, originalSettings);
+ await originalSettings.dispose();
  // A new provider is typed fields, not JSON; the token goes only into the secret.
  await page.$eval('#provider-add',button=>button.click());
  await page.waitForFunction(()=>!document.querySelector('.provider-panel')&&document.querySelector('#provider-editor').open&&!document.querySelector('#provider-editor').classList.contains('in-panel'));

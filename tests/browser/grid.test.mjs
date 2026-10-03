@@ -85,7 +85,16 @@ test('clipboard buttons use the real browser clipboard and a real tmux shell',as
   }),{},marker);
   assert(tmux('capture-pane','-p','-t','box1').split('\n').includes(marker));
   for(const name of ['box2','box3','box4'])assert(!tmux('capture-pane','-p','-t',name).includes(marker));
-  await page.evaluate(()=>window.testTerminals.find(terminal=>terminal.element?.isConnected).selectAll());
+  await page.evaluate(()=>{
+   const screen=document.querySelector('.tile:first-child .terminal-screen');
+   const terminal=window.testTerminals.find(item=>screen.contains(item.element));
+   if(!terminal)throw Error('first tile terminal is not connected');
+   terminal.selectAll();
+  });
+  await page.waitForFunction(value=>{
+   const screen=document.querySelector('.tile:first-child .terminal-screen');
+   return window.testTerminals.find(item=>screen.contains(item.element))?.getSelection().includes(value);
+  },{},marker);
   await page.$$eval('.tile:first-child .terminal-keys button',buttons=>buttons.find(button=>button.textContent==='Copy').click());
   await page.waitForFunction(()=>document.querySelector('.terminal-panel .viewer-overlay').textContent.includes('Terminal selection copied.'));
   assert((await page.evaluate(()=>navigator.clipboard.readText())).includes(marker));

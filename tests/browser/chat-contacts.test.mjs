@@ -334,12 +334,15 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>!document.querySelector('dialog.model-picker-dialog').open);
   assert.equal(await p.$eval('#new-box-modal',modal=>modal.hidden),false,'closing model choices must not close the box form');
   await p.select('#create-box select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
-  await p.type('#create-box input[name=name]','github-chat-fixture');
-  await p.waitForFunction(()=>document.querySelector('#create-box input[name=name]').value==='github-chat-fixture'&&document.querySelector('#create-box').checkValidity());
   const created=p.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
-  await p.$eval('#create-box',form=>form.requestSubmit());
+  await p.$eval('#create-box',form=>{
+   const name=form.querySelector('input[name=name]');name.value='github-chat-fixture';name.dispatchEvent(new Event('input',{bubbles:true}));
+   if(!form.checkValidity())throw Error('creation form is invalid after setting its name');
+   form.requestSubmit();
+  });
   await created;
   await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden);
+  assert.equal(creations.at(-1).name,'github-chat-fixture');
   assert.equal(creations.at(-1).provider,'railway');
   assert.equal(creations.at(-1).providerCredential,'cloud');
   assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'haiku'},{application:'github',name:'gh-work'}]);
