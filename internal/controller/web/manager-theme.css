@@ -46,7 +46,7 @@ table.markets th+th,table.markets td+td{border-left-color:var(--vb-swatch-2b3848
 table.markets tr.row:hover{background:var(--vb-swatch-243243)}
 #box-list table.markets{min-width:60rem}
 #box-list .box-details-action{background:var(--vb-swatch-8fb8f5);border-color:var(--vb-swatch-8fb8f5);color:var(--vb-swatch-102136)}
-body[data-manage-view="boxes"] .manage-content>section:not(#boxes),body[data-manage-view="providers"] .manage-content>section:not(#providers),body[data-manage-view="profiles"] .manage-content>section:not(#profiles),body[data-manage-view="roles"] .manage-content>section:not(#roles),body[data-manage-view="instructions"] .manage-content>section:not(#instructions),body[data-manage-view="fleet"] .manage-content>section:not(#fleet),body[data-manage-view="notifications"] .manage-content>section:not(#notifications){display:none}
+body[data-manage-view="boxes"] .manage-content>section:not(#boxes),body[data-manage-view="mail"] .manage-content>section:not(#mail),body[data-manage-view="providers"] .manage-content>section:not(#providers),body[data-manage-view="profiles"] .manage-content>section:not(#profiles),body[data-manage-view="roles"] .manage-content>section:not(#roles),body[data-manage-view="instructions"] .manage-content>section:not(#instructions),body[data-manage-view="fleet"] .manage-content>section:not(#fleet),body[data-manage-view="notifications"] .manage-content>section:not(#notifications){display:none}
 #profile-summary{margin:.25rem 0 .85rem;color:var(--vb-swatch-91a0b3);font-size:var(--vb-type-rem-0-78)}
 #profile-search{width:100%}
 .profile-login-card{width:min(38rem,calc(100vw - 2rem));max-height:88vh;overflow:auto}

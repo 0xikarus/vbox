@@ -4,6 +4,8 @@
 #inspect.details-prototype .ip-page[data-ip-page^="mail"]{gap:12px}
 #inspect.details-prototype .mail-card{padding:0;overflow:hidden}
 #inspect.details-prototype .mail-card>h3{margin:0;padding:14px 15px 9px;color:var(--vb-ink-soft);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
+#inspect.details-prototype .mail-also-reads{margin:0;padding:0 15px 8px;color:var(--vb-ink);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+#inspect.details-prototype .mail-manage-addresses{display:flex;align-items:center;min-height:42px;padding:0 15px;border-top:1px solid var(--vb-line);color:var(--vb-accent-text);font-size:12px;font-weight:700;text-decoration:none}
 #inspect.details-prototype .mail-setting-row{display:flex;align-items:center;gap:10px;min-height:49px;margin:0 15px;border-bottom:1px solid var(--vb-line);color:var(--vb-ink);font-size:13px;font-weight:650}
 #inspect.details-prototype .mail-setting-row>span:first-child{flex:1}
 #inspect.details-prototype .mail-setting-row .mail-switch{height:44px}
@@ -93,7 +95,7 @@
 #inspect.details-prototype .mail-outbox-row strong{font-size:12px}
 #inspect.details-prototype .mail-outbox-row small{font-size:11px;color:var(--vb-ink-soft)}
 #inspect.details-prototype .mail-outbox-row em{font-size:11px;font-style:normal;color:var(--vb-ink-faint)}
-#mail-approval{display:inline-flex;align-items:center;gap:6px;min-height:40px;margin-right:8px;padding:0 10px;border:1px solid var(--vb-line);border-radius:var(--vb-radius-10);background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font);cursor:pointer}
+#mail-approval{display:inline-flex;align-items:center;gap:6px;min-height:40px;margin-right:8px;padding:0 10px;border:1px solid var(--vb-line);border-radius:var(--vb-radius-10);background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font);text-decoration:none;cursor:pointer}
 #mail-approval .mail-approval-icon{display:none}
 #mail-approval[hidden],#mail-approval-mobile[hidden]{display:none}
 #mail-approval b,#mail-approval-mobile b{display:grid;place-items:center;min-width:20px;height:20px;padding:0 4px;box-sizing:border-box;border-radius:99px;background:var(--vb-warn-soft,#fff3e5);color:var(--vb-warn-text,#a0520d);font-size:11px}
@@ -124,7 +126,7 @@
  #mail-approval{min-height:40px;margin-right:4px;padding:0 7px}
  #mail-approval .mail-approval-label{display:none}
  #mail-approval .mail-approval-icon{display:inline;font-size:17px}
- #mail-approval-mobile{display:inline-flex;align-items:center;gap:5px;min-width:40px;min-height:40px;padding:0 7px;border:1px solid var(--vb-line);border-radius:10px;background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font)}
+ #mail-approval-mobile{display:inline-flex;align-items:center;gap:5px;min-width:40px;min-height:40px;padding:0 7px;border:1px solid var(--vb-line);border-radius:10px;background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font);text-decoration:none}
  #mail-approval-mobile span{font-size:16px}
  .mail-review{top:0;left:0;right:0;bottom:0;width:100%;height:100dvh;max-height:100dvh;margin:0;border:0;border-radius:0;transform:none}
  .mail-review-shell{height:100%;max-height:none}

@@ -35,6 +35,7 @@ async function serve(data,{disabled=false,role='owner'}={}){
    if(path==='/v1/whoami')return send({role,accountId:'acct'});
    if(path==='/v1/logical-boxes'||path==='/v1/grid-boxes')return send([box]);
    if(path==='/v1/mail/approvals')return disabled?send({error:'Mail disabled'},404):send({pending:data.outbox.filter(item=>item.status==='pending_approval').length,items:data.outbox.filter(item=>item.status==='pending_approval').map(item=>({boxId:'builder',boxName:'BossDev',outboxId:item.outboxId,to:item.to,subject:item.subject,createdAt:item.submittedAt}))});
+   if(path==='/v1/mail/addresses')return send({addresses:[{id:'extra-1',address:'b@example.test',localPart:'b',label:'Team',boxIds:['builder']}]});
    if(path==='/v1/logical-boxes/builder/mail'){
     if(disabled)return send({error:'Mail disabled'},404);
     if(request.method==='PUT'){const value=await body();data.writes.push({path,method:'PUT',body:value});data.settings={...data.settings,...value,address:data.settings.address,filters:value.filters||data.settings.filters}}
@@ -81,11 +82,13 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    const save=async name=>{if(capture)await page.screenshot({path:resolve(capture,`${name}-${width}-${theme}.png`),fullPage:true})};
    await open(page,base,()=>save('chat-start'));await save('details');
    if(width===390&&theme==='light'){
-    await page.click('#inspect-close');await page.click('#mail-approval-mobile');
-    await page.waitForFunction(()=>document.querySelector('[data-mail-tab="outbox"]')?.getAttribute('aria-selected')==='true'&&!document.querySelector('[data-ip-page="mail"]').hidden);
-    await page.click('#inspect-prototype-back');
+    assert.equal(await page.$eval('#mail-approval-mobile',node=>new URL(node.href).searchParams.get('mail')),'outbox');
+    assert.equal(await page.$eval('#mail-approval-mobile',node=>new URL(node.href).hash),'#mail');
    }
    await page.click('[data-ip-row="mail"]');await page.waitForSelector('[data-mail-id="m1"]');
+   await page.waitForSelector('.mail-also-reads');
+   assert.match(await page.$eval('.mail-also-reads',node=>node.textContent),/b@tra\.vet/);
+   assert.equal(await page.$eval('.mail-manage-addresses',node=>new URL(node.href).hash),'#mail');
    assert.equal(await page.$eval('[data-ip-page="mail"]',node=>node.textContent.indexOf('Messages')<node.textContent.indexOf('Settings')),true);
    assert.equal(await page.$eval('[data-mail-id="m1"]',node=>node.textContent.includes('483921')),false);
    assert.equal(await page.$('[data-mail-id="m3"]'),null);
