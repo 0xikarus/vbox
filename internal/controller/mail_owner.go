@@ -231,9 +231,7 @@ func (s *Server) ownerMailMessage(w http.ResponseWriter, r *http.Request, p Prin
 		writeError(w, 404, fmt.Errorf("mail message unavailable"))
 		return
 	}
-	row := s.Store.DB.QueryRowContext(r.Context(), `SELECT `+mailMessageFields+`,text_body FROM mail_messages WHERE account_id=$1 AND box_id=$2 AND id=$3 AND expires_at>now()`, p.AccountID, box.ID, r.PathValue("mid"))
-	var value mailMessageDetail
-	err := row.Scan(&value.ID, &value.From, &value.FromName, &value.Subject, &value.Preview, &value.ReceivedAt, &value.Unread, &value.HasAttachments, &value.Quarantined, &value.SPF, &value.DKIM, &value.Text)
+	value, err := s.Store.loadMailMessageDetail(r.Context(), p.AccountID, box.ID, r.PathValue("mid"))
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, 404, fmt.Errorf("mail message unavailable"))
 		return
@@ -242,26 +240,33 @@ func (s *Server) ownerMailMessage(w http.ResponseWriter, r *http.Request, p Prin
 		writeError(w, 500, fmt.Errorf("mail message unavailable"))
 		return
 	}
-	value.Attachments = []mailAttachmentRow{}
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id::text,name,content_type,size_bytes FROM mail_attachments WHERE account_id=$1 AND message_id=$2 ORDER BY id`, p.AccountID, value.ID)
+	writeJSON(w, 200, value)
+}
+
+func (s *Store) loadMailMessageDetail(ctx context.Context, accountID, boxID, messageID string) (mailMessageDetail, error) {
+	row := s.DB.QueryRowContext(ctx, `SELECT `+mailMessageFields+`,text_body FROM mail_messages WHERE account_id=$1 AND box_id=$2 AND id=$3 AND expires_at>now()`, accountID, boxID, messageID)
+	var value mailMessageDetail
+	err := row.Scan(&value.ID, &value.From, &value.FromName, &value.Subject, &value.Preview, &value.ReceivedAt, &value.Unread, &value.HasAttachments, &value.Quarantined, &value.SPF, &value.DKIM, &value.Text)
 	if err != nil {
-		writeError(w, 500, fmt.Errorf("mail attachments unavailable"))
-		return
+		return value, err
+	}
+	value.Attachments = []mailAttachmentRow{}
+	rows, err := s.DB.QueryContext(ctx, `SELECT id::text,name,content_type,size_bytes FROM mail_attachments WHERE account_id=$1 AND message_id=$2 ORDER BY id`, accountID, value.ID)
+	if err != nil {
+		return value, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var attachment mailAttachmentRow
 		if err := rows.Scan(&attachment.ID, &attachment.Name, &attachment.ContentType, &attachment.Size); err != nil {
-			writeError(w, 500, fmt.Errorf("mail attachments unavailable"))
-			return
+			return value, err
 		}
 		value.Attachments = append(value.Attachments, attachment)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, 500, fmt.Errorf("mail attachments unavailable"))
-		return
+		return value, err
 	}
-	writeJSON(w, 200, value)
+	return value, nil
 }
 
 func (s *Server) ownerMailRead(w http.ResponseWriter, r *http.Request, p Principal) {
