@@ -136,7 +136,7 @@
  #inspect.details-prototype .mail-setting-address code{flex:1}
 }
 @media(max-width:420px){
- #chat-header:has(#mail-approval-mobile) #chat-usage{display:none}
+ #chat-header:has(#mail-approval-mobile:not([hidden])) #chat-usage{display:none}
 }
 @media(prefers-reduced-motion:reduce){#inspect.details-prototype .mail-switch span,#inspect.details-prototype .mail-switch span::after{transition:none}}
 
