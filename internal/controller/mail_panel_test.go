@@ -123,14 +123,16 @@ func TestMailPanelArchiveAndUnarchiveScopedToAccount(t *testing.T) {
 		mock.ExpectQuery(`UPDATE mail_messages SET archived_at=CASE WHEN \$3::bool THEN now\(\) ELSE NULL END WHERE account_id=\$1 AND id=\$2.*NOT quarantined RETURNING id::text`).
 			WithArgs("account-a", panelTestMail, archived).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(panelTestMail))
 		body := `{"archived":false}`
+		want := `"archived":false`
 		if archived {
 			body = `{"archived":true}`
+			want = `"archived":true`
 		}
 		r := httptest.NewRequest(http.MethodPost, "/v1/mail/messages/"+panelTestMail+"/archive", strings.NewReader(body))
 		r.SetPathValue("mid", panelTestMail)
 		w := httptest.NewRecorder()
 		s.ownerMailPanelArchive(w, r, Principal{AccountID: "account-a", Role: "owner"})
-		if w.Code != 200 || !strings.Contains(w.Body.String(), `"archived":`+strings.TrimSuffix(strings.TrimPrefix(body, `{"archived":`), `}`)) {
+		if w.Code != 200 || !strings.Contains(w.Body.String(), want) {
 			t.Fatalf("archive=%t status=%d body=%s", archived, w.Code, w.Body.String())
 		}
 	}
