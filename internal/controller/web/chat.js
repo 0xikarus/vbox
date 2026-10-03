@@ -405,16 +405,16 @@
  };
  function boxMascotPose(box){
   if(box.state==='hibernated')return ['sleeping','sleeping','sleeping'];
-  if(box.state==='failed'||box.last?.state==='failed')return ['angry','error','failed'];
+  if(box.state==='failed')return ['angry','error','failed'];
+  if(box.activityState==='working')return box.mascotActivity==='waiting'?['waiting','surprised','asking']:['working','focused','busy'];
+  if(box.last?.state==='failed')return ['angry','error','failed'];
   if(box.mascotActivity==='waiting')return ['waiting','surprised','asking'];
   if(box.mascotMood==='angry')return ['angry','error','failed'];
   if(box.mascotMood==='laughing')return ['laughing',null,'idle'];
   if(box.mascotMood==='happy')return ['happy','happy','idle'];
-  if(box.mascotActivity==='working')return ['working','focused','busy'];
   if(box.mascotMood==='idle')return ['idle',null,'idle'];
   const lastQuestion=[...(box.messages||[])].reverse().find(message=>message.direction!=='user'&&message.question&&!questionAnswered(box,message));
   if(lastQuestion)return ['waiting','surprised','asking'];
-  if(box.processing)return ['working','focused','busy'];
   if(box.unread)return ['happy','surprised','unread'];
   return box.state==='running'?['idle',null,'idle']:['waking','surprised','starting'];
  }
@@ -1240,10 +1240,13 @@
   // currently in flight in this page. Persisted state takes over after it lands.
   const observed=Date.parse(box.mascotObservedAt||'');
   const quiet=box.activityStatusSource==='quiet'&&Number.isFinite(observed)&&Date.now()-observed<=40000;
-  box.processing=box.state==='running'&&agent!=='shell'&&!box.streaming&&(pendingBusy||(box.agentBusy===undefined?inferredBusy:box.agentBusy))&&(!quiet||pendingBusy);
+  const working=box.state==='running'&&(box.streaming||agent!=='shell'&&(pendingBusy||!quiet&&(box.agentBusy===undefined?inferredBusy:box.agentBusy)));
+  box.activityState=box.state==='hibernated'?'hibernated':box.state!=='running'?'stopped':working?'working':'idle';
+  box.processing=box.activityState==='working'&&!box.streaming;
   const marker=seen[id]?new Date(seen[id]).getTime():0;
   box.unread=unreadSince(ms,marker);
  }
+ const workingPhrase=box=>box.activityStatusSource==='quiet'?'':box.activityPhrase||'';
  function previewText(m){
   if(!m)return 'No messages yet';
   if(m.direction==='system')return m.text;
@@ -1400,7 +1403,7 @@
    const time=row.querySelector('time'),nextTime=box.last?fmtTime(box.last.createdAt):'';if(time.textContent!==nextTime)time.textContent=nextTime;
    const muted=isChatMuted(pinKey('box',box.id));row.querySelector('.mute-bell').hidden=!muted;
    row.querySelector('time').classList.toggle('recent',!!box.unread&&!muted);
-   const preview=row.querySelector('.preview'),nextPreview=box.streaming?'typing…':box.processing?(box.activityPhrase||'working…'):previewText(box.last);if(preview.textContent!==nextPreview)preview.textContent=nextPreview;preview.classList.toggle('streaming',!!box.streaming&&!box.processing);preview.classList.toggle('processing',!!box.processing&&!box.streaming);
+   const preview=row.querySelector('.preview'),nextPreview=box.activityState==='working'?(box.streaming?'typing…':workingPhrase(box)||'working…'):previewText(box.last);if(preview.textContent!==nextPreview)preview.textContent=nextPreview;preview.classList.toggle('streaming',box.activityState==='working'&&!!box.streaming);preview.classList.toggle('processing',box.activityState==='working'&&!box.streaming);
    const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=unreadLabel(box.unread);unread.setAttribute('aria-label',box.unread+' unread');unread.classList.toggle('muted',muted);
    row.querySelector('.chat-meta').setAttribute('aria-label','Open chat with '+box.name+(box.unread?' · '+box.unread+' unread':''));
   }
@@ -1997,12 +2000,12 @@
    }
    card.append(title,detail,actions);messagesEl.append(card);
   }
-  if(box.processing&&!box.streaming){
+  if(box.activityState==='working'&&!box.streaming){
    const t=document.createElement('div');t.className='msg agent processing';
    const mini=reuseMessageMascot(liveAvatars.get('processing'),box,'msg-avatar processing-avatar processing-mascot',true);
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
-   const phrase=box.activityPhrase||'';
+   const phrase=workingPhrase(box);
    const label=document.createElement('span');label.className='typing-label sr-only';label.textContent=phrase||'agent is processing…';
    let indicator=dots;
    if(phrase){indicator=document.createElement('span');indicator.className='typing-phrase';indicator.setAttribute('aria-hidden','true');const words=document.createElement('span');words.className='typing-phrase-text';words.textContent=phrase;const ellipsis=document.createElement('span');ellipsis.className='typing-ellipsis';ellipsis.textContent='…';indicator.append(words,ellipsis)}
@@ -2078,6 +2081,7 @@
    boxes.delete(id);resumeChecks.delete(id);avatarCache.delete(id);previewFetched.delete(id);tvReplayCache.delete(id);attachmentDrafts.delete(id);
   }
   for(const [id,b] of current)boxes.set(id,b);
+  for(const id of current.keys())summarize(id);
   if(selected&&!boxes.has(selected)){selected='';restoringTranscript=false;newMessagesBtn.hidden=true;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
   await loadPreviews(force);
   if(hasNewBox)try{await refreshChatGroupsForNewBox()}catch(e){console.warn('Could not refresh chat groups for new box:',e)}
@@ -2142,9 +2146,12 @@
    summarize(id);
   }));
  }
- function applyBusyState(box,history){
-  if(box.activityBatchAt&&Date.now()-box.activityBatchAt<10000)return;
+ function applyBusyState(box,history,newTurn=false){
+  // A newly persisted chat turn and its busy header are newer evidence than
+  // the previous activity batch, even while that batch is still fresh.
+  if(!newTurn&&box.activityBatchAt&&Date.now()-box.activityBatchAt<10000)return;
   box.activityPhrase='';
+  box.activityStatus='';box.activityStatusSource='';box.activityStatusAt='';
   box.mascotMood=history.mascotMood||'';
   box.mascotActivity=history.mascotActivity||'';
   box.mascotObservedAt=history.mascotObservedAt||'';
@@ -2159,7 +2166,7 @@
    const values=await api('/v1/box-activity');
    if(!Array.isArray(values)||generation!==activityGeneration||document.hidden||appEl.hidden)return;
    const selectedBox=boxes.get(selected);
-   const before=selectedBox?[selectedBox.processing,selectedBox.agentBusy,selectedBox.agentBusySince,selectedBox.activityPhrase,selectedBox.mascotMood,selectedBox.mascotActivity].join('|'):'';
+   const before=selectedBox?[selectedBox.activityState,selectedBox.streaming,selectedBox.agentBusy,selectedBox.agentBusySince,selectedBox.activityPhrase,selectedBox.mascotMood,selectedBox.mascotActivity].join('|'):'';
    const receivedAt=Date.now();
    for(const value of values){
     const box=boxes.get(value.boxId);if(!box)continue;
@@ -2175,8 +2182,9 @@
    renderRows();
    if(selectedPair){const pair=pairs.get(selectedPair);if(pair){syncPairAvatar($('#chat-header-avatar .pair-avatar-stack'),pair);syncPairHeroMascots(pair)}}
    if(selectedBox){
-    const after=[selectedBox.processing,selectedBox.agentBusy,selectedBox.agentBusySince,selectedBox.activityPhrase,selectedBox.mascotMood,selectedBox.mascotActivity].join('|');
-    if(before!==after){renderHeader();renderInspect();renderMessages(selectedBox)}
+    const after=[selectedBox.activityState,selectedBox.streaming,selectedBox.agentBusy,selectedBox.agentBusySince,selectedBox.activityPhrase,selectedBox.mascotMood,selectedBox.mascotActivity].join('|');
+    renderHeader();
+    if(before!==after){renderInspect();renderMessages(selectedBox)}
     else if(inspectOpen)renderInspect();
    }
   })().catch(()=>{});
@@ -2194,14 +2202,11 @@
  const interruptPending=new Set();
  function boxActivitySubtitle(box){
   const agent=box.defaultAgent||'agent';
-  if(box.state!=='running')return agent+' · '+(box.state==='hibernated'?'hibernated':'stopped');
-  if(box.activityStatusSource==='quiet'&&box.mascotObservedAt&&Date.now()-Date.parse(box.mascotObservedAt)<=40000)return agent+' · idle';
-  const active=box.streaming||box.processing||box.agentBusy;
-  return agent+' · '+(active?(box.activityPhrase||'working'):'idle');
+  return agent+' · '+(box.activityState==='working'?(workingPhrase(box)||'working'):box.activityState||'idle');
  }
  function renderHeader(){
   const box=boxes.get(selected);if(!box){$('#chat-composer').classList.remove('is-processing');return}
-  const processing=box.state==='running'&&(box.processing||box.streaming);
+  const processing=box.activityState==='working';
   $('#chat-composer').classList.toggle('is-processing',processing);
   $('#chat-interrupt').disabled=!processing||interruptPending.has(box.id);
   $('#chat-header-name').textContent=box.name;
@@ -2243,10 +2248,11 @@
   const history=await chatHistory(boxPath(id)+'/messages?limit=50');
   // Drop a response that arrives after the user moved to another box.
   if(epoch!==viewEpoch||selected!==id||boxes.get(id)!==box)return;
-  applyBusyState(box,history);
   const latest=history.messages||[];
   const known=box.historyLoaded?new Set((box.messages||[]).map(message=>message.id)):null;
   const hasNewReply=known&&latest.some(message=>countsAsUnread(message)&&!known.has(message.id));
+  const hasNewTurn=known&&latest.some(message=>(message.direction==='user'||message.direction==='agent')&&!known.has(message.id));
+  applyBusyState(box,history,hasNewTurn);
   if(box.historyLoaded){
    const merged=new Map((box.messages||[]).map(message=>[message.id,message]));
    for(const message of latest)merged.set(message.id,message);
