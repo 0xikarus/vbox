@@ -65,7 +65,7 @@
    const result=await api.request('/v1/mail/addresses');
    if(epoch!==requestEpoch||boxId!==state.boxId)return;
    const addresses=Array.isArray(result)?result:Array.isArray(result?.addresses)?result.addresses:[];
-   state.alsoReads=addresses.filter(item=>!item.primary&&item.address!==state.settings?.address&&Array.isArray(item.boxIds)&&item.boxIds.includes(boxId)).map(item=>item.address);
+   state.alsoReads=addresses.filter(item=>item.address!==state.settings?.address&&Array.isArray(item.boxIds)&&item.boxIds.includes(boxId)).map(item=>item.address);
    renderMail();
   }catch{if(epoch===requestEpoch&&boxId===state.boxId){state.alsoReads=[];renderMail()}}
  }

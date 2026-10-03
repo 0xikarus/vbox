@@ -17,7 +17,7 @@ function fixture(){return {
   {id:'m3',boxId:'builder',boxName:'BossDev',address:'builder@example.test',from:'spam@example.com',fromName:'Unknown',subject:'Urgent verify',preview:'Suspicious link removed.',text:'Suspicious link removed.',receivedAt:stamp,unread:false,quarantined:true,spf:'fail',dkim:'fail',attachments:[]},
  ],
  outbox:[{outboxId:'o1',boxId:'builder',boxName:'BossDev',to:['mara@example.com'],subject:'Launch checklist',text:'Looks ready.',status:'pending_approval',version:1,submittedAt:stamp},{outboxId:'o2',boxId:'reviewer',boxName:'Reviewer',to:['support@example.com'],subject:'A question',text:'Can you help?',status:'pending_approval',version:1,submittedAt:stamp},{outboxId:'o3',boxId:'builder',boxName:'BossDev',to:['team@example.com'],subject:'Thanks',text:'Thanks!',status:'sent',version:1,submittedAt:yesterday}],
- addresses:[{id:'a1',localPart:'b',address:'b@example.test',label:'Team',boxIds:['reviewer'],unread:1}],keepUnknown:false,writes:[],queries:[],
+ addresses:[{id:'a1',localPart:'b',address:'b@example.test',label:'Team',boxIds:['reviewer'],enabled:true,unread:1},{id:'builder',localPart:'builder',address:'builder@example.test',label:'',owningBoxId:'builder',boxIds:['builder'],enabled:true,unread:1}],keepUnknown:false,writes:[],queries:[],
 }}
 async function serve(data,{disabled=false,role='owner'}={}){
  const server=http.createServer(async(request,response)=>{
@@ -43,11 +43,11 @@ async function serve(data,{disabled=false,role='owner'}={}){
      return send({keepUnknown:data.keepUnknown});
     }
     if(path==='/v1/mail/addresses'){
-     if(request.method==='POST'){const value=await body(),id='a'+(data.addresses.length+1);data.addresses.push({...value,id,address:value.localPart+'@example.test',unread:0});data.writes.push({path,method:'POST',body:value})}
-     return send({addresses:data.addresses,keepUnknown:data.keepUnknown});
+     if(request.method==='POST'){const value=await body(),id='a'+data.addresses.length;data.addresses.push({...value,id,address:value.localPart+'@example.test',enabled:true,unread:0});data.writes.push({path,method:'POST',body:value});return send(data.addresses.at(-1),201)}
+     return send({addresses:data.addresses});
     }
     const addr=path.match(/^\/v1\/mail\/addresses\/([^/]+)$/);
-    if(addr){const index=data.addresses.findIndex(item=>item.id===addr[1]);if(index<0)return send({error:'missing'},404);const value=await body();data.writes.push({path,method:request.method,body:value});if(request.method==='DELETE')data.addresses.splice(index,1);else Object.assign(data.addresses[index],value,{address:value.localPart+'@example.test'});return send({ok:true})}
+    if(addr){const index=data.addresses.findIndex(item=>item.id===addr[1]);if(index<0)return send({error:'missing'},404);const value=request.method==='DELETE'?{}:await body();data.writes.push({path,method:request.method,body:value});if(data.addresses[index].owningBoxId&&(request.method==='DELETE'||'localPart'in value||'label'in value))return send({error:'box address cannot be renamed or deleted'},400);if(request.method==='DELETE'){data.addresses.splice(index,1);response.statusCode=204;response.end();return}Object.assign(data.addresses[index],value,{address:value.localPart?value.localPart+'@example.test':data.addresses[index].address});return send(data.addresses[index])}
     if(path==='/v1/mail/messages'){
      const folder=url.searchParams.get('folder')||'all',q=url.searchParams.get('q')?.toLowerCase()||'',box=url.searchParams.get('box'),address=url.searchParams.get('address');
      const messages=data.messages.filter(item=>(folder==='quarantine'?item.quarantined:folder==='unread'?item.unread&&!item.quarantined:!item.quarantined)&&(!box||item.boxId===box)&&(!address||item.address===address)&&(!q||[item.from,item.fromName,item.subject,item.preview].join(' ').toLowerCase().includes(q))).map(({text,attachments,...item})=>item);
@@ -82,7 +82,7 @@ test('account Mail panel supports folders, search, message detail, quarantine an
   try{
    const page=await chrome.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
    await page.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
-   const save=async name=>{if(capture)await page.screenshot({path:resolve(capture,`${name}-${width}-${theme}.png`),fullPage:name!=='review'})};
+   const save=async name=>{if(capture)await page.screenshot({path:resolve(capture,`${name}-${width}-${theme}.png`),fullPage:!['review','addresses'].includes(name)})};
    await open(page,server);
    assert.equal(await page.$eval('[data-mail-nav]',node=>node.hidden),false);
    assert.equal(await page.$eval('#mail-panel',node=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -121,18 +121,25 @@ test('address filters and address grants support create, edit, revoke, delete an
   await page.click('[data-address="b@example.test"]');await page.waitForSelector('.mail-panel-row[data-item="m2"]');assert.equal(await page.$('.mail-panel-row[data-item="m1"]'),null);
   assert(data.queries.some(path=>path.includes('/v1/mail/messages?')&&path.includes('address=b%40example.test')));
   await page.$eval('[data-action="addresses"]',node=>node.click());await page.waitForSelector('#mail-address-dialog[open]');
+  assert.equal(await page.$('[data-address-edit="builder"]'),null);
+  assert.equal(await page.$('[data-address-delete="builder"]'),null);
+  await page.click('[data-address-grants="builder"]');
+  assert.equal(await page.$eval('#mail-address-form [value="builder"]',input=>input.checked&&input.disabled),true);
+  await page.click('#mail-address-form [value="reviewer"]');await page.click('#mail-address-form [type="submit"]');
+  await page.waitForFunction(()=>document.querySelector('[data-address-grants="builder"]')&&!document.querySelector('#mail-address-form [value="reviewer"]')?.checked);
+  assert.deepEqual(data.writes.find(write=>write.path==='/v1/mail/addresses/builder'&&write.method==='PATCH').body,{boxIds:['builder','reviewer']});
   await page.type('#mail-address-form [name="localPart"]','team');await page.type('#mail-address-form [name="label"]','Shared team');
   await page.click('#mail-address-form [value="builder"]');await page.click('#mail-address-form [type="submit"]');
-  await page.waitForFunction(()=>document.querySelector('.mail-address-row strong')?.textContent==='Team');
-  await page.waitForFunction(()=>document.querySelectorAll('.mail-address-row').length===2);
+  await page.waitForFunction(()=>document.querySelectorAll('.mail-address-row').length===3);
+  assert.equal(await page.$('[data-address-edit="builder"]'),null);
   assert.deepEqual(data.writes.find(write=>write.method==='POST'&&write.path==='/v1/mail/addresses').body,{localPart:'team',label:'Shared team',boxIds:['builder']});
   await page.click('[data-address-edit="a2"]');await page.$eval('#mail-address-form [name="label"]',input=>input.value='Renamed');
   await page.click('#mail-address-form [value="reviewer"]');await page.click('#mail-address-form [value="builder"]');await page.click('#mail-address-form [type="submit"]');
   await page.waitForFunction(()=>[...document.querySelectorAll('.mail-address-row strong')].some(node=>node.textContent==='Renamed'));
-  assert.deepEqual(data.writes.find(write=>write.method==='PATCH').body.boxIds,['reviewer']);
+  assert.deepEqual(data.writes.find(write=>write.path==='/v1/mail/addresses/a2'&&write.method==='PATCH').body.boxIds,['reviewer']);
   await page.click('#mail-keep-unknown');await page.waitForFunction(()=>document.querySelector('#mail-keep-unknown').checked&&!document.querySelector('#mail-keep-unknown').disabled);
   assert.equal(data.keepUnknown,true);
-  await page.click('[data-address-delete="a2"]');await page.click('[data-address-delete="a2"]');await page.waitForFunction(()=>document.querySelectorAll('.mail-address-row').length===1);
+  await page.click('[data-address-delete="a2"]');await page.click('[data-address-delete="a2"]');await page.waitForFunction(()=>document.querySelectorAll('.mail-address-row').length===2);
   assert.equal(data.writes.some(write=>write.method==='DELETE'&&write.path==='/v1/mail/addresses/a2'),true);
   await page.close();
  }finally{await chrome.close();await new Promise(resolve=>server.close(resolve))}
