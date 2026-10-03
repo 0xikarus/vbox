@@ -162,7 +162,7 @@ func desktopMCPIndexHandler(assignment string, resolve desktopToolPolicyResolver
 				"call":    "POST /tools/{name} with a JSON object of arguments, or GET /tools/{name}?argument=value",
 				"prompt":  "POST /prompt with {\"text\":\"...\"} to deliver a user message to the running agent conversation",
 				"auth":    "Authorization: Bearer <token from ~/.local/share/vmbox/mcp-http.json>",
-				"session": "prompt, set_busy, chat_message and chat_ask target the sole agent conversation; name another with an X-Vmbox-Session header",
+				"session": "prompt, chat_message and chat_ask target the sole agent conversation; name another with an X-Vmbox-Session header",
 			},
 		})
 	}
@@ -320,7 +320,7 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 // facade serves the whole box from one process, so it has to say which
 // conversation rather than letting the writer infer it from its own tmux
 // session, which is the facade's own.
-var desktopMCPChatTools = map[string]bool{"set_busy": true, "chat_message": true, "chat_ask": true}
+var desktopMCPChatTools = map[string]bool{"chat_message": true, "chat_ask": true}
 
 // soleAgentConversation names the box's agent conversation when there is
 // exactly one. With several, the caller has to choose: guessing would post a

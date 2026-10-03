@@ -112,6 +112,13 @@ func (s *Store) EffectiveAgentCapabilities(ctx context.Context, accountID, boxID
 			result.SharedChats.Subscribe = result.SharedChats.Subscribe || grant.Subscribe
 			result.SharedChats.Create = result.SharedChats.Create || grant.Create
 			result.SharedChats.Invite = result.SharedChats.Invite || grant.Invite
+		case v1.RolePermissionMail:
+			var grant v1.MailGrant
+			if err := json.Unmarshal(config, &grant); err != nil {
+				return result, err
+			}
+			result.Mail.Read = result.Mail.Read || grant.Read
+			result.Mail.Compose = result.Mail.Compose || grant.Compose
 		case v1.RolePermissionMCPTools:
 			var grant v1.MCPToolsGrant
 			if err := json.Unmarshal(config, &grant); err != nil {

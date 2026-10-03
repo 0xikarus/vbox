@@ -10,10 +10,11 @@ const (
 	RolePermissionManageAgentBoxes = "manage_agent_boxes"
 	RolePermissionCreateEmail      = "create_email_address"
 	RolePermissionSharedChats      = "shared_chats"
+	RolePermissionMail             = "mail"
 	RolePermissionMCPTools         = "mcp_tools"
 )
 
-var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_history", "set_busy", "chat_message", "chat_ask"}
+var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_history", "chat_message", "chat_ask"}
 
 var ComputerAgentMCPTools = []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
 
@@ -22,6 +23,8 @@ var OptionalAgentMCPTools = []string{
 	"list_agent_boxes", "get_agent_box", "get_agent_box_screenshot", "create_agent_box", "get_agent_box_configs", "get_available_workers", "set_agent_box_tags", "set_agent_box_run_budget", "restart_agent_box", "wake_agent_box", "clear_agent_box_context", "compact_agent_box_context", "delete_agent_box",
 	"secret_request", "generate_password", "type_secret", "take_screenshot", "capture_window", "move_mouse", "click_mouse",
 	"drag_mouse", "scroll_mouse", "type_text", "press_keys",
+	"list_emails", "read_email", "search_emails", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox",
+	"send_email", "list_outbox", "get_outbox_status",
 }
 
 // These previously advertised MCP tools are retired. Keep recognizing their
@@ -30,6 +33,7 @@ var RetiredCoordinationMCPTools = map[string]bool{
 	"request_more_time": true, "queue_followup": true, "discover_shared_chats": true,
 	"read_shared_chat": true, "create_shared_chat": true, "subscribe_shared_chat": true,
 	"invite_to_shared_chat": true, "send_shared_chat_message": true, "create_email_address": true,
+	"set_busy": true,
 }
 
 // CanonicalAgentMCPToolName translates names emitted by the pre-merge role UI
@@ -112,6 +116,11 @@ type SharedChatsGrant struct {
 	Invite    bool `json:"invite"`
 }
 
+type MailGrant struct {
+	Read    bool `json:"read"`
+	Compose bool `json:"compose"`
+}
+
 type MCPToolsGrant struct {
 	Enabled      bool     `json:"enabled"`
 	AllowedTools []string `json:"allowedTools"`
@@ -125,6 +134,7 @@ type AgentRoleCapabilities struct {
 	ManageAgentBoxes ManageAgentBoxesGrant   `json:"manageAgentBoxes"`
 	CreateEmail      CreateEmailAddressGrant `json:"createEmailAddress"`
 	SharedChats      SharedChatsGrant        `json:"sharedChats"`
+	Mail             MailGrant               `json:"mail"`
 	MCPTools         MCPToolsGrant           `json:"mcpTools"`
 }
 

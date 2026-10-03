@@ -71,7 +71,7 @@ func TestValidateAgentRoleCapabilitiesUsesExplicitTypesAndBounds(t *testing.T) {
 }
 
 func TestRetiredCoordinationToolsAreDroppedFromOlderPolicies(t *testing.T) {
-	request, err := validateAgentBoxPolicy(v1.PutAgentBoxPolicyRequest{Capabilities: v1.AgentRoleCapabilities{MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"request_more_time", "queue_followup", "create_email_address", "click_mouse"}}}})
+	request, err := validateAgentBoxPolicy(v1.PutAgentBoxPolicyRequest{Capabilities: v1.AgentRoleCapabilities{MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"request_more_time", "queue_followup", "create_email_address", "set_busy", "click_mouse"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,6 +229,41 @@ func TestEffectiveAgentToolNamesRespectsExplicitComputerToolDeny(t *testing.T) {
 	}
 	if !slices.Equal(tools, append(append([]string(nil), v1.BasicAgentMCPTools...), "take_screenshot")) {
 		t.Fatalf("explicit tool policy was overridden: %v", tools)
+	}
+}
+
+func TestMailToolPolicyRequiresTypedGrantAndExpandsCompanions(t *testing.T) {
+	readSet := []string{"list_emails", "read_email", "search_emails", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox"}
+	composeSet := []string{"send_email", "list_outbox", "get_outbox_status"}
+	for _, tc := range []struct {
+		name     string
+		grant    v1.MailGrant
+		selected []string
+		want     []string
+	}{
+		{"off by default", v1.MailGrant{}, []string{"read_email", "send_email"}, nil},
+		{"read grants read companions", v1.MailGrant{Read: true}, []string{"read_email", "send_email"}, readSet},
+		{"compose grants compose companions", v1.MailGrant{Compose: true}, []string{"send_email", "read_email"}, composeSet},
+		{"independent grants", v1.MailGrant{Read: true, Compose: true}, []string{"search_emails", "send_email"}, append(append([]string{}, readSet...), composeSet...)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, mock := testStore(t)
+			policy, _ := json.Marshal(v1.AgentRoleCapabilities{Mail: tc.grant, MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: tc.selected}})
+			mock.ExpectQuery("agent_box_policy").WithArgs("account-a", "box-a").
+				WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow("agent_box_policy", policy))
+			tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range append(readSet, composeSet...) {
+				if slices.Contains(tools, name) != slices.Contains(tc.want, name) {
+					t.Fatalf("tool %s in %v, want %v", name, tools, tc.want)
+				}
+			}
+			if slices.Contains(tools, "set_busy") {
+				t.Fatalf("retired tool was granted: %v", tools)
+			}
+		})
 	}
 }
 
