@@ -2250,7 +2250,9 @@
   $('#chat-interrupt').disabled=!processing||interruptPending.has(box.id);
   $('#chat-header-name').textContent=box.name;
   const state=mk('span');state.className=box.state==='running'?'running':'';
-  state.textContent=boxActivitySubtitle(box);
+  const fullActivity=boxActivitySubtitle(box);
+  state.textContent=matchMedia('(max-width:600px)').matches?box.activityState||'idle':fullActivity;
+  $('#chat-header-state').title=fullActivity;
   $('#chat-header-state').replaceChildren(state);
   inputEl.placeholder='Message '+box.name+'…';
   const key=box.id;
@@ -2265,6 +2267,7 @@
   renderResourceCard();
   updateBanner();
  }
+ matchMedia('(max-width:600px)').addEventListener('change',()=>{if(selected)renderHeader()});
  // One banner for the two things that silently confuse people: a dropped
  // connection, and an agent that looks stuck on the last request.
  const chatBanner=$('#chat-banner');

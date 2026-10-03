@@ -68,7 +68,7 @@ test('one activity batch updates all box rows, the header, and the processing bu
    assert.equal(await page.$eval('[data-box-id="falseRecent"] .preview',el=>el.textContent),'You: Recent request.','explicit false overrides a recent user message');
    assert.equal(await page.$eval('[data-box-id="sleeping"] .preview',el=>el.textContent),'You: Old request.');
    assert.equal(await page.$eval('[data-box-id="sleeping"]',el=>el.textContent.includes('processing')||el.textContent.includes('working')),false);
-   assert.equal(await page.$eval('#chat-header-state',el=>el.textContent),'codex · Editing chat.js');
+   assert.equal(await page.$eval('#chat-header-state',el=>el.textContent),mobile?'working':'codex · Editing chat.js');
    assert.equal(await page.$eval('#chat-messages .msg.processing .typing-phrase-text',el=>el.textContent),'Editing chat.js');
    assert.equal(await page.$eval('#chat-messages .msg.processing .typing-label',el=>el.textContent),'Editing chat.js');
    assert.ok(await page.$('#chat-messages .msg.processing .tv-button'),'TV control remains in the bubble');

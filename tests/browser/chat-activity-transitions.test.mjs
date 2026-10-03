@@ -60,12 +60,18 @@ test('send, quiet heartbeat, stale busy signal, and reply keep every activity su
    assert.equal(await page.$eval('[data-box-id="builder"] .avatar-mascot svg',el=>el.dataset.mood),state==='working'?'working':'idle');
   };
   const capture=async(phase)=>{
-   if(!process.env.VMBOX_CAPTURE_DIR)return;
-   await mkdir(process.env.VMBOX_CAPTURE_DIR,{recursive:true});
+   if(process.env.VMBOX_CAPTURE_DIR)await mkdir(process.env.VMBOX_CAPTURE_DIR,{recursive:true});
    for(const width of [1440,390])for(const theme of ['light','dark']){
-    await page.setViewport({width,height:width===390?844:900,deviceScaleFactor:1});
-    await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
-    await page.screenshot({path:path.join(process.env.VMBOX_CAPTURE_DIR,`activity-${phase}-${width}-${theme}.png`)});
+   await page.setViewport({width,height:width===390?844:900,deviceScaleFactor:1});
+   await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
+    if(width===390){
+     const expected=phase==='before'?'idle':'working';
+     await page.waitForFunction(value=>document.querySelector('#chat-header-state')?.innerText.trim()===value,{},expected);
+     assert.equal(await page.$eval('#chat-usage',el=>el.textContent.includes('No usage data')),true,'usage chip competes for mobile header space');
+     assert.equal(await page.$eval('#chat-header-state',el=>el.scrollWidth<=el.clientWidth),true,'mobile activity state fits without clipping mid-word');
+     assert.equal(await page.$eval('#chat-header-state',el=>el.title),'codex · '+expected,'full subtitle remains in the tooltip');
+    }
+    if(process.env.VMBOX_CAPTURE_DIR)await page.screenshot({path:path.join(process.env.VMBOX_CAPTURE_DIR,`activity-${phase}-${width}-${theme}.png`)});
    }
    await page.setViewport({width:1440,height:900,deviceScaleFactor:1});
   };
