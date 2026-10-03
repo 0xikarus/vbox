@@ -50,3 +50,13 @@ func TestAgentMailRuntimeGateRequiresGrantAndEnabledInbox(t *testing.T) {
 		})
 	}
 }
+
+func TestSameMailDraftAcceptsJSONBFormatting(t *testing.T) {
+	to := []string{"one@example.com", "two@example.com"}
+	if !sameMailDraft([]byte(`["one@example.com", "two@example.com"]`), "Subject", "Body", to, "Subject", "Body") {
+		t.Fatal("PostgreSQL JSONB whitespace changed an idempotent retry")
+	}
+	if sameMailDraft([]byte(`["two@example.com", "one@example.com"]`), "Subject", "Body", to, "Subject", "Body") {
+		t.Fatal("different recipient order was treated as the same draft")
+	}
+}

@@ -252,6 +252,64 @@ func (s *Server) sendApprovedMail(ctx context.Context, id, from string, to []str
 	return result.ID, nil
 }
 
+// ReconcileStaleMailSendsNow recovers the crash window after approval changes
+// a draft to sending. Resend receives the outbox ID as its idempotency key, so
+// retrying an uncertain request does not create another email.
+func (s *Server) ReconcileStaleMailSendsNow(ctx context.Context) error {
+	if mailDomain() == "" || os.Getenv("VMBOX_RESEND_API_KEY") == "" || s.Store == nil || s.Store.DB == nil {
+		return nil
+	}
+	rows, err := s.Store.DB.QueryContext(ctx, `SELECT o.account_id::text,o.box_id::text,o.id::text,m.address,o.recipient_list,o.subject,o.reviewed_text FROM mail_outbox o JOIN box_mail_settings m ON m.account_id=o.account_id AND m.box_id=o.box_id WHERE o.status='sending' AND o.updated_at<now()-interval '1 minute' ORDER BY o.updated_at LIMIT 20`)
+	if err != nil {
+		return err
+	}
+	type pending struct {
+		account, box, id, from, subject, text string
+		raw                                   []byte
+	}
+	var items []pending
+	for rows.Next() {
+		var item pending
+		if err := rows.Scan(&item.account, &item.box, &item.id, &item.from, &item.raw, &item.subject, &item.text); err != nil {
+			rows.Close()
+			return err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, item := range items {
+		// Updating the timestamp is a lease across controller instances.
+		claimed, err := s.Store.DB.ExecContext(ctx, `UPDATE mail_outbox SET updated_at=now() WHERE account_id=$1 AND box_id=$2 AND id=$3 AND status='sending' AND updated_at<now()-interval '1 minute'`, item.account, item.box, item.id)
+		if err != nil {
+			return err
+		}
+		if n, _ := claimed.RowsAffected(); n != 1 {
+			continue
+		}
+		var to []string
+		if json.Unmarshal(item.raw, &to) != nil {
+			return fmt.Errorf("invalid stored recipients for outbox %s", item.id)
+		}
+		providerID, sendErr := s.sendApprovedMail(ctx, item.id, item.from, to, item.subject, item.text)
+		status, reason := "sent", ""
+		if sendErr != nil {
+			status, reason = "failed", "Send provider unavailable or rejected the message."
+		}
+		result, err := s.Store.DB.ExecContext(ctx, `UPDATE mail_outbox SET status=$4,reason=$5,provider_id=$6,sent_at=CASE WHEN $4='sent' THEN now() ELSE NULL END,updated_at=now() WHERE account_id=$1 AND box_id=$2 AND id=$3 AND status='sending'`, item.account, item.box, item.id, status, reason, providerID)
+		if err != nil {
+			return err
+		}
+		if n, _ := result.RowsAffected(); n == 1 {
+			s.notifyBoxMailStatus(item.account, item.box, item.id, to, item.subject, status, reason)
+		}
+	}
+	return nil
+}
+
 func (s *Server) ownerMailReject(w http.ResponseWriter, r *http.Request, p Principal) {
 	box, ok := s.ownerMailBox(w, r, p)
 	if !ok {

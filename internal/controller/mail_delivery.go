@@ -33,7 +33,7 @@ func (s *Server) ReconcileMailNoticesNow(ctx context.Context) error {
 	if mailDomain() == "" || s.Store == nil || s.Store.DB == nil {
 		return nil
 	}
-	rows, err := s.Store.DB.QueryContext(ctx, `SELECT m.account_id::text,m.box_id::text FROM box_mail_settings m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id WHERE m.enabled AND b.state='running' AND (m.subscribed OR EXISTS(SELECT 1 FROM mail_notice_queue n WHERE n.account_id=m.account_id AND n.box_id=m.box_id AND n.delivered_at IS NULL)) ORDER BY m.updated_at LIMIT 200`)
+	rows, err := s.Store.DB.QueryContext(ctx, `SELECT m.account_id::text,m.box_id::text FROM box_mail_settings m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id WHERE b.state='running' AND ((m.enabled AND m.subscribed) OR EXISTS(SELECT 1 FROM mail_notice_queue n WHERE n.account_id=m.account_id AND n.box_id=m.box_id AND n.delivered_at IS NULL)) ORDER BY m.updated_at LIMIT 200`)
 	if err != nil {
 		return err
 	}
@@ -73,9 +73,9 @@ func (s *Server) reconcileBoxMailNotices(ctx context.Context, accountID, boxID s
 		return err
 	}
 	defer tx.Rollback()
-	var subscribed bool
+	var enabled, subscribed bool
 	var senderFilter, subjectFilter string
-	err = tx.QueryRowContext(ctx, `SELECT m.subscribed,m.sender_filter,m.subject_filter FROM box_mail_settings m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id WHERE m.account_id=$1 AND m.box_id=$2 AND m.enabled AND b.state='running' FOR UPDATE OF m SKIP LOCKED`, accountID, boxID).Scan(&subscribed, &senderFilter, &subjectFilter)
+	err = tx.QueryRowContext(ctx, `SELECT m.enabled,m.subscribed,m.sender_filter,m.subject_filter FROM box_mail_settings m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id WHERE m.account_id=$1 AND m.box_id=$2 AND b.state='running' FOR UPDATE OF m SKIP LOCKED`, accountID, boxID).Scan(&enabled, &subscribed, &senderFilter, &subjectFilter)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -90,7 +90,7 @@ func (s *Server) reconcileBoxMailNotices(ctx context.Context, accountID, boxID s
 	if err != nil {
 		return err
 	}
-	if subscribed {
+	if enabled && subscribed {
 		if slices.Contains(tools, "list_emails") {
 			items, ids, more, err := selectMailBatch(ctx, tx, accountID, boxID, senderFilter, subjectFilter)
 			if err != nil {

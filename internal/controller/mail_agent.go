@@ -264,7 +264,7 @@ func (s *Server) agentMailSend(w http.ResponseWriter, r *http.Request, p Princip
 			writeError(w, 500, fmt.Errorf("outbox unavailable"))
 			return
 		}
-		if string(previousRaw) != string(raw) || previousSubject != subject || previousText != request.Text {
+		if !sameMailDraft(previousRaw, previousSubject, previousText, to, subject, request.Text) {
 			writeError(w, 409, fmt.Errorf("idempotency key already used for another draft"))
 			return
 		}
@@ -287,6 +287,11 @@ func (s *Server) agentMailSend(w http.ResponseWriter, r *http.Request, p Princip
 	s.pushAccountNotification(p.AccountID, map[string]string{"title": "Mail approval needed", "body": "A box submitted an email draft for review.", "box": boxID, "url": "/chat#box=" + boxID})
 	s.notifyBoxMailStatus(p.AccountID, boxID, id, to, subject, "pending_approval", "")
 	writeJSON(w, 202, map[string]string{"outboxId": id, "status": "pending_approval"})
+}
+
+func sameMailDraft(previousRaw []byte, previousSubject, previousText string, to []string, subject, text string) bool {
+	var previousTo []string
+	return json.Unmarshal(previousRaw, &previousTo) == nil && slices.Equal(previousTo, to) && previousSubject == subject && previousText == text
 }
 
 func (s *Server) agentMailOutbox(w http.ResponseWriter, r *http.Request, p Principal) {
