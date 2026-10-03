@@ -63,7 +63,7 @@ test('remote control notice links to the actor and Technical shows the last sess
    assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),false);
    await page.click('#role-editor-form [name=controlOtherDesktops]');
    assert.equal(await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),true);
-   assert.equal(await page.$eval('#role-editor-form input[value=get_agent_box_screenshot]',input=>input.checked),true);
+   assert.equal(await page.$eval('#role-editor-form input[value=get_agent_box_screenshot]',input=>input.checked),false,'screenshot access is a separate toggle');
    await save('permissions');
    await page.click('#role-editor-form .mcp-tool-options summary');
    await page.click('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) .role-capability-options summary');

@@ -191,7 +191,7 @@ func (s *Server) agentBoxScreenshotHandler(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	allowed := (capabilities.ManageAgentBoxes.Inspect && capabilities.MCPTools.Enabled && slices.Contains(capabilities.MCPTools.AllowedTools, "get_agent_box_screenshot")) || (capabilities.ManageAgentBoxes.Control && capabilities.MCPTools.Enabled && slices.Contains(capabilities.MCPTools.AllowedTools, "remote_control_box"))
+	allowed := capabilities.ManageAgentBoxes.Inspect && capabilities.MCPTools.Enabled && slices.Contains(capabilities.MCPTools.AllowedTools, "get_agent_box_screenshot")
 	if err := requireCapability(allowed, "get_agent_box_screenshot"); err != nil {
 		writeError(w, http.StatusForbidden, err)
 		return

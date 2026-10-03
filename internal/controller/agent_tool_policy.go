@@ -34,9 +34,6 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 		selected["clear_agent_box_context"] = true
 		selected["compact_agent_box_context"] = true
 	}
-	if selected["remote_control_box"] && capabilities.ManageAgentBoxes.Control {
-		selected["get_agent_box_screenshot"] = true
-	}
 	readMail := []string{"list_mail_addresses", "list_emails", "read_email", "search_emails", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox"}
 	for _, name := range readMail {
 		if selected[name] {
