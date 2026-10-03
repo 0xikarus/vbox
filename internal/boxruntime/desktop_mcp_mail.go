@@ -17,7 +17,7 @@ import (
 
 func isDesktopMailTool(name string) bool {
 	switch name {
-	case "list_mail_addresses", "list_emails", "read_email", "search_emails", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox", "send_email", "list_outbox", "get_outbox_status":
+	case "list_mail_addresses", "list_emails", "read_email", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox", "send_email", "list_outbox", "get_outbox_status":
 		return true
 	}
 	return false
@@ -64,8 +64,8 @@ func callDesktopMailTool(ctx context.Context, assignment, name string, args json
 	switch name {
 	case "list_mail_addresses":
 		method, endpoint = http.MethodGet, base+"/addresses"
-	case "list_emails", "search_emails":
-		if request.Limit < 0 || request.Limit > 50 || (name == "search_emails" && strings.TrimSpace(request.Query) == "") {
+	case "list_emails":
+		if request.Limit < 0 || request.Limit > 50 || len(strings.TrimSpace(request.Query)) > 200 {
 			return nil, fmt.Errorf("invalid mail search or limit")
 		}
 		query := url.Values{}
@@ -81,7 +81,7 @@ func callDesktopMailTool(ctx context.Context, assignment, name string, args json
 		if request.Address != "" {
 			query.Set("address", request.Address)
 		}
-		if name == "search_emails" {
+		if strings.TrimSpace(request.Query) != "" {
 			query.Set("query", strings.TrimSpace(request.Query))
 		}
 		method, endpoint = http.MethodGet, base+"/messages?"+query.Encode()
@@ -128,7 +128,7 @@ func callDesktopMailTool(ctx context.Context, assignment, name string, args json
 	if err := desktopAgentAPI(ctx, assignment, method, endpoint, input, &result); err != nil {
 		return nil, err
 	}
-	return desktopMailToolJSON(result, name == "read_email" || name == "list_emails" || name == "search_emails")
+	return desktopMailToolJSON(result, name == "read_email" || name == "list_emails")
 }
 
 func downloadDesktopMailAttachment(ctx context.Context, assignment, endpoint, relative string) (map[string]any, error) {

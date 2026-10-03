@@ -2,7 +2,7 @@
 (()=>{
  const $=id=>document.getElementById(id);
  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
- const readTools=['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'];
+ const readTools=['list_mail_addresses','list_emails','read_email','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'];
  const composeTools=['send_email','list_outbox','get_outbox_status'];
  const state={boxId:'',settings:null,alsoReads:[],settingsSaving:false,globalAvailable:null,navUnread:0,approvals:{pending:0,items:[]},tab:'inbox',folder:'all',outboxStatus:'pending_approval',messages:[],messagesCursor:'',messagesLoaded:false,messagesLoading:false,messagesError:'',outbox:[],outboxCursor:'',outboxLoaded:false,outboxLoading:false,outboxError:'',detail:null,detailLoading:false,detailError:'',otpRevealed:false,policy:null};
  let api,mailPage,detailPage,mainGroup,mainRow,review,reviewItem,returnFocus,requestEpoch=0,approvalTimer,detailId='';
@@ -148,6 +148,7 @@
  }
  function renderMail(){
   if(!mailPage)return;
+  mailPage.setAttribute('aria-busy',String(state.messagesLoading||state.outboxLoading||state.settingsSaving));
   if(!mailPage.querySelector('.mail-main-tabs'))mailPage.innerHTML='<div class="mail-main-tabs" role="tablist" aria-label="Mail folders"><button type="button" role="tab" data-mail-tab="inbox">Inbox <span>0</span></button><button type="button" role="tab" data-mail-tab="outbox">Outbox <span>0</span></button></div><div class="mail-content"></div>';
   for(const tab of mailPage.querySelectorAll('[data-mail-tab]')){tab.setAttribute('aria-selected',String(tab.dataset.mailTab===state.tab));tab.querySelector('span').textContent=String(tab.dataset.mailTab==='inbox'?count():pending())}
   mailPage.querySelector('.mail-content').innerHTML=!state.settings?'<div class="mail-empty"><strong>Loading Mail…</strong></div>':state.tab==='inbox'?renderInbox():renderOutbox();
