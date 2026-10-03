@@ -83,3 +83,21 @@ func (s *Store) lastRemoteControl(ctx context.Context, accountID, targetID strin
 	}
 	return &item, nil
 }
+
+func (s *Store) lastRemoteControls(ctx context.Context, accountID string) (map[string]*v1.LastRemoteControl, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT DISTINCT ON (r.target_box_id) r.target_box_id::text,r.actor_box_id::text,COALESCE(b.name,'Former box'),r.action_count,r.started_at,r.last_at FROM remote_control_sessions r LEFT JOIN logical_boxes b ON b.id=r.actor_box_id AND b.account_id=r.account_id WHERE r.account_id=$1 ORDER BY r.target_box_id,r.last_at DESC`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[string]*v1.LastRemoteControl{}
+	for rows.Next() {
+		var targetID string
+		var item v1.LastRemoteControl
+		if err := rows.Scan(&targetID, &item.ActorBoxID, &item.ActorName, &item.Actions, &item.StartedAt, &item.EndedAt); err != nil {
+			return nil, err
+		}
+		result[targetID] = &item
+	}
+	return result, rows.Err()
+}

@@ -239,6 +239,56 @@ func TestAgentBoxScreenshotToolReturnsControllerPNG(t *testing.T) {
 	}
 }
 
+func TestRemoteControlBoxToolPostsActionAndReturnsFreshPNG(t *testing.T) {
+	var imageBytes bytes.Buffer
+	image := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	image.Set(0, 0, color.RGBA{G: 255, A: 255})
+	if err := png.Encode(&imageBytes, image); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/agent-desktop/boxes/target/control" || r.Header.Get("Authorization") != "DesktopAgent "+strings.Repeat("a", 64) {
+			t.Errorf("unexpected remote control request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "unexpected request", 400)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["action"] != "click" || body["button"] != "right" || body["x"] != float64(10) || body["y"] != float64(20) || body["box"] != nil {
+			t.Errorf("body=%v", body)
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(imageBytes.Bytes())
+	}))
+	defer server.Close()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	certFile := filepath.Join(home, "test-ca.pem")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSL_CERT_FILE", certFile)
+	configPath := filepath.Join(home, ".config", "vmbox", "desktop-agent.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	config, _ := json.Marshal(DesktopAgentConfig{Controller: server.URL, Assignment: "assignment", Token: strings.Repeat("a", 64)})
+	if err := os.WriteFile(configPath, config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := callDesktopTool(context.Background(), "assignment", "remote_control_box", json.RawMessage(`{"box":"target","action":"click","x":10,"y":20,"button":"right"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := result["content"].([]map[string]any)
+	decoded, err := base64.StdEncoding.DecodeString(content[0]["data"].(string))
+	if err != nil || !bytes.Equal(decoded, imageBytes.Bytes()) {
+		t.Fatalf("remote screenshot invalid: %v", err)
+	}
+}
+
 func TestAgentBoxConfigToolUsesExplicitMode(t *testing.T) {
 	for _, test := range []struct {
 		args string

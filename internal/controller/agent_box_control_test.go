@@ -101,6 +101,46 @@ func TestRemoteControlRequiresControlGrantAndSelectedTool(t *testing.T) {
 	}
 }
 
+func TestRemoteControlHandlerRefusesSelfProtectedAndSleepingTargets(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		boxID     string
+		state     string
+		protected bool
+		want      string
+	}{
+		{"self", "box-a", "running", false, "own desktop"},
+		{"protected", "box-b", "running", true, "protected"},
+		{"hibernated", "box-b", "hibernated", false, "not running"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, mock := testStore(t)
+			manage, _ := json.Marshal(v1.ManageAgentBoxesGrant{Control: true})
+			mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"remote_control_box"}})
+			mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionManageAgentBoxes, manage).AddRow(v1.RolePermissionMCPTools, mcp))
+			boxRows := func() *sqlmock.Rows {
+				return sqlmock.NewRows([]string{"id", "account_id", "owner_user_id", "name", "provider", "provider_credential", "default_agent", "roles", "state", "volume_id", "volume_name", "slot_id", "assignment_generation", "lease_owner", "lease_expires_at", "restoration_state", "failure_reason", "created_at", "updated_at", "tools"}).
+					AddRow(tc.boxID, "account-a", "owner-a", tc.boxID, "railway", "primary", "codex", []byte(`[]`), tc.state, "volume", "volume", "slot", 1, "", nil, "", "", time.Now(), time.Now(), []byte(`[]`))
+			}
+			mock.ExpectQuery("FROM logical_boxes WHERE account_id=").WithArgs("account-a", tc.boxID).WillReturnRows(boxRows())
+			if tc.boxID != "box-a" {
+				mock.ExpectQuery("FROM logical_boxes WHERE account_id=").WithArgs("account-a", tc.boxID).WillReturnRows(boxRows())
+				mock.ExpectQuery("SELECT EXISTS\\(SELECT 1 FROM box_protection").WithArgs("account-a", tc.boxID).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(tc.protected))
+			}
+			r := httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/boxes/"+tc.boxID+"/control", strings.NewReader(`{"action":"screenshot"}`))
+			r.SetPathValue("box", tc.boxID)
+			w := httptest.NewRecorder()
+			(&Server{Store: store}).agentBoxControlHandler(w, r, Principal{AccountID: "account-a", Subject: "desktop-box:box-a"})
+			if w.Code != 403 || !strings.Contains(w.Body.String(), tc.want) {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestRemoteControlPolicyAddsScreenshotCompanion(t *testing.T) {
 	store, mock := testStore(t)
 	manage, _ := json.Marshal(v1.ManageAgentBoxesGrant{Control: true})
@@ -117,6 +157,23 @@ func TestRemoteControlPolicyAddsScreenshotCompanion(t *testing.T) {
 	}
 	if slicesContains(tools, "get_agent_box") {
 		t.Fatalf("inspection granted unexpectedly: %v", tools)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnusableRemoteControlSelectionDoesNotGrantScreenshotCompanion(t *testing.T) {
+	store, mock := testStore(t)
+	manage, _ := json.Marshal(v1.ManageAgentBoxesGrant{Inspect: true})
+	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"remote_control_box"}})
+	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionManageAgentBoxes, manage).AddRow(v1.RolePermissionMCPTools, mcp))
+	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slicesContains(tools, "remote_control_box") || slicesContains(tools, "get_agent_box_screenshot") {
+		t.Fatalf("unusable tool created companion: %v", tools)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -143,13 +200,15 @@ func TestRemoteControlRateLimitAndAuditMetadata(t *testing.T) {
 	if err != nil || limited || id == "" {
 		t.Fatalf("id=%s limited=%v err=%v", id, limited, err)
 	}
-	mock.ExpectBegin()
-	mock.ExpectExec("pg_advisory_xact_lock").WithArgs("account-a:box-a", "box-b").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery("FROM remote_control_actions WHERE").WithArgs("account-a", "box-a", "box-b").WillReturnRows(sqlmock.NewRows([]string{"second", "minute"}).AddRow(10, 300))
-	mock.ExpectRollback()
-	_, limited, err = store.reserveRemoteControl(context.Background(), "account-a", "box-a", "box-b", remoteControlRequest{Action: "click"})
-	if err != nil || !limited {
-		t.Fatalf("limited=%v err=%v", limited, err)
+	for _, counts := range [][2]int{{10, 20}, {0, 300}} {
+		mock.ExpectBegin()
+		mock.ExpectExec("pg_advisory_xact_lock").WithArgs("account-a:box-a", "box-b").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery("FROM remote_control_actions WHERE").WithArgs("account-a", "box-a", "box-b").WillReturnRows(sqlmock.NewRows([]string{"second", "minute"}).AddRow(counts[0], counts[1]))
+		mock.ExpectRollback()
+		_, limited, err = store.reserveRemoteControl(context.Background(), "account-a", "box-a", "box-b", remoteControlRequest{Action: "click"})
+		if err != nil || !limited {
+			t.Fatalf("counts=%v limited=%v err=%v", counts, limited, err)
+		}
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -201,7 +260,11 @@ func TestOwnerLogicalBoxResponsesIncludeLastRemoteControl(t *testing.T) {
 				mock.ExpectQuery("FROM logical_boxes WHERE account_id=").WithArgs("account-a", "box-b").WillReturnRows(boxRows)
 			}
 			stamp := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-			mock.ExpectQuery("FROM remote_control_sessions r LEFT JOIN logical_boxes b").WithArgs("account-a", "box-b").WillReturnRows(sqlmock.NewRows([]string{"actor", "name", "actions", "started", "ended"}).AddRow("box-a", "Manager", 4, stamp, stamp.Add(time.Minute)))
+			if path == "/v1/logical-boxes" {
+				mock.ExpectQuery("FROM remote_control_sessions r LEFT JOIN logical_boxes b").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"target", "actor", "name", "actions", "started", "ended"}).AddRow("box-b", "box-a", "Manager", 4, stamp, stamp.Add(time.Minute)))
+			} else {
+				mock.ExpectQuery("FROM remote_control_sessions r LEFT JOIN logical_boxes b").WithArgs("account-a", "box-b").WillReturnRows(sqlmock.NewRows([]string{"actor", "name", "actions", "started", "ended"}).AddRow("box-a", "Manager", 4, stamp, stamp.Add(time.Minute)))
+			}
 			r := httptest.NewRequest(http.MethodGet, path, nil)
 			r.SetPathValue("id", "box-b")
 			w := httptest.NewRecorder()

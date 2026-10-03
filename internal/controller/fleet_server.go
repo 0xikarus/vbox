@@ -252,12 +252,13 @@ func (s *Server) listLogicalBoxes(w http.ResponseWriter, r *http.Request, p Prin
 		return
 	}
 	if p.Role == "owner" {
+		last, historyErr := s.Store.lastRemoteControls(r.Context(), p.AccountID)
+		if historyErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("remote control history unavailable"))
+			return
+		}
 		for i := range boxes {
-			boxes[i].LastRemoteControl, err = s.Store.lastRemoteControl(r.Context(), p.AccountID, boxes[i].ID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, fmt.Errorf("remote control history unavailable"))
-				return
-			}
+			boxes[i].LastRemoteControl = last[boxes[i].ID]
 		}
 	}
 	writeJSON(w, http.StatusOK, boxes)

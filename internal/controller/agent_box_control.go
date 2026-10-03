@@ -226,7 +226,9 @@ func (s *Server) agentBoxControlHandler(w http.ResponseWriter, r *http.Request, 
 	finished := false
 	defer func() {
 		if !finished {
-			_, _ = s.Store.DB.ExecContext(context.Background(), `UPDATE remote_control_actions SET status='failed' WHERE id=$1`, actionID)
+			cleanup, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_, _ = s.Store.DB.ExecContext(cleanup, `UPDATE remote_control_actions SET status='failed' WHERE id=$1`, actionID)
 		}
 	}()
 	if request.Action != "screenshot" {

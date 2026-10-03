@@ -103,7 +103,9 @@ func desktopAgentImageRequest(ctx context.Context, assignment, method, path stri
 	}
 	transport := &http.Transport{Proxy: nil}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 50 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	timeout := 20 * time.Second
+	if method == http.MethodPost { timeout = 50 * time.Second }
+	client := &http.Client{Transport: transport, Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("controller request failed")
