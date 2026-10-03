@@ -1605,6 +1605,13 @@
   return fragment;
  }
  function bubble(box,message,readOnly=false){
+  if(message.direction==='system'&&message.control?.kind==='remote_control'){
+   const control=message.control,actions=Math.max(0,Number(control.actions)||0),actor=control.actorName||boxes.get(control.actorBoxId)?.name||'manager';
+   const row=document.createElement('div');row.className='msg system mail-system-row';
+   const link=document.createElement('a');link.className='mail-status-link remote-control-link';link.href='#box='+encodeURIComponent(control.actorBoxId||'');
+   link.textContent='Controlled by '+actor+' · '+actions+' '+(actions===1?'action':'actions');
+   row.append(link);return row;
+  }
   if(message.direction==='system'&&message.mail){const mailRow=window.VBoxMail?.notice(box,message);if(mailRow)return mailRow}
   const row=document.createElement('div');
   if(message.direction==='system'){row.className='msg system';row.append(Object.assign(document.createElement('span'),{className:'text',textContent:message.text}));return row}
@@ -2204,7 +2211,7 @@
   // The processing bubble must use the state of this response, not the
   // previous poll's state (which can leave it beneath an agent reply).
   applySeen(selected);
-  const signature=box.messages.map(m=>m.id+m.updatedAt+m.state).join('|')+'|'+box.processing+'|'+box.streaming;
+  const signature=box.messages.map(m=>m.id+m.updatedAt+m.state+(m.control?.actions??'')).join('|')+'|'+box.processing+'|'+box.streaming;
   renderHeader();
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
   if(hasNewReply&&!stickToBottom)newMessagesBtn.hidden=false;
@@ -2477,7 +2484,7 @@ function pairTileStatus(tile,mode,label){
   closeForwardMenu();
   closeTakeover();
   renderInspect();
-  renderMessages(box);lastSignature=box.messages.map(m=>m.id+m.updatedAt+m.state).join('|')+'|'+box.processing+'|'+box.streaming;doodle('');
+  renderMessages(box);lastSignature=box.messages.map(m=>m.id+m.updatedAt+m.state+(m.control?.actions??'')).join('|')+'|'+box.processing+'|'+box.streaming;doodle('');
   const loadingKey='#box='+encodeURIComponent(id);historyLoadingFor=loadingKey;
   void refreshMessages().catch(e=>{if(selected===id)statusEl.textContent=e.message}).finally(()=>{if(historyLoadingFor===loadingKey)historyLoadingFor=''});
   const finish=()=>{
@@ -3263,6 +3270,10 @@ function pairTileStatus(tile,mode,label){
   const table=$('#ip-technical-table');table.replaceChildren();
   const messages=box.messages||[],lastAgent=lastMessage(messages,'agent'),livePing=boxViewerMetrics.get(box.id)?.ping;
   const sync=inspectInstructionsFor===box.id?inspectInstructions:null;
+  const remote=box.lastRemoteControl,remoteAt=remote?.endedAt||remote?.startedAt;
+  const remoteWhen=remoteAt&&Number.isFinite(new Date(remoteAt).getTime())?fmtAgo(remoteAt):'';
+  const remoteActor=remote?.actorName||boxes.get(remote?.actorBoxId)?.name||'manager';
+  const remoteActions=Number(remote?.actions)||0;
   const rows=[
    ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId,null,inspectWorker.serviceId]]:[]),
    ['Slot',inspectWorker?.slot||box.slotId||'—',null,box.slotId],
@@ -3270,6 +3281,7 @@ function pairTileStatus(tile,mode,label){
    ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
    ['Box ping',livePing==null?'—':livePing+' ms'],
    ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
+   ...(remote?[['Last remote control',remoteActor+(remoteWhen?' · '+remoteWhen:'')+' · '+remoteActions+' '+(remoteActions===1?'action':'actions'),null,null,{title:remoteAt||''}]]:[]),
    ...inspectObservationRows(box),
    ['Instructions synced',instructionSyncLabel(sync),null,null,{title:instructionSyncFull(sync)}],
   ];
@@ -4404,9 +4416,12 @@ let usagePending=null,usageGeneration=0;
 
 
  /* ---------- direct per-box agent permissions ---------- */
- function syncMCPToolGroups(form=$('#role-editor-form')){const restart=form.querySelector('input[name=mcpTools][value=restart_agent_box]'),wake=form.querySelector('input[name=mcpTools][value=wake_agent_box]');if(restart&&wake){wake.disabled=restart.checked;if(restart.checked)wake.checked=true}for(const group of form.querySelectorAll('.mcp-tool-group')){const tools=[...group.querySelectorAll('input[name=mcpTools]')],toggle=group.querySelector('.mcp-tool-group-toggle'),selected=tools.filter(input=>input.checked).length;toggle.checked=selected===tools.length;toggle.indeterminate=selected>0&&selected<tools.length}}
+ function syncMCPToolGroups(form=$('#role-editor-form')){const restart=form.querySelector('input[name=mcpTools][value=restart_agent_box]'),wake=form.querySelector('input[name=mcpTools][value=wake_agent_box]'),remote=form.querySelector('input[name=mcpTools][value=remote_control_box]'),screenshot=form.querySelector('input[name=mcpTools][value=get_agent_box_screenshot]');if(restart&&wake){wake.disabled=restart.checked;if(restart.checked)wake.checked=true}if(remote?.checked&&screenshot)screenshot.checked=true;for(const group of form.querySelectorAll('.mcp-tool-group')){const tools=[...group.querySelectorAll('input[name=mcpTools]')],toggle=group.querySelector('.mcp-tool-group-toggle'),selected=tools.filter(input=>input.checked).length;toggle.checked=selected===tools.length;toggle.indeterminate=selected>0&&selected<tools.length}}
  const mailReadTools=['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'],mailComposeTools=['send_email','list_outbox','get_outbox_status'];
- function syncMailGrant(form,source){
+ function syncToolGrants(form,source){
+  const remote=form.querySelector('input[name=mcpTools][value=remote_control_box]');
+  if(source.name==='controlOtherDesktops')remote.checked=source.checked;
+  else if(source.value==='remote_control_box'||source.classList.contains('mcp-tool-group-toggle'))form.elements.controlOtherDesktops.checked=remote.checked;
   const group=source.closest('[data-mail-feature]');
   if(source.name==='mailRead'||source.name==='mailCompose'){
    const names=source.name==='mailRead'?mailReadTools:mailComposeTools;
@@ -4417,11 +4432,11 @@ let usagePending=null,usageGeneration=0;
   }
   syncMCPToolGroups(form);
  }
- function changeMCPToolGroup(toggle){for(const input of toggle.closest('.mcp-tool-group').querySelectorAll('input[name=mcpTools]'))input.checked=toggle.checked;syncMailGrant(toggle.form,toggle)}
+ function changeMCPToolGroup(toggle){for(const input of toggle.closest('.mcp-tool-group').querySelectorAll('input[name=mcpTools]'))input.checked=toggle.checked;syncToolGrants(toggle.form,toggle)}
  function populatePolicyEditor(box,cap={}){
   const form=$('#role-editor-form');form.reset();form.elements.id.value=box.id;form.elements.name.value=box.name;
   const set=(name,value)=>{if(value===undefined||value===null)return;const input=form.elements[name];if(input.type==='number'&&input.min!==''&&Number(value)<Number(input.min))return;input.value=String(value)};
-  form.elements.allContactsEnabled.checked=!!cap.allContacts?.enabled;form.elements.mailRead.checked=!!cap.mail?.read;form.elements.mailCompose.checked=!!cap.mail?.compose;set('maxBoxes',cap.createAgentBox?.maxBoxes);set('maxDiskGiB',cap.createAgentBox?.maxDiskGiB);
+  form.elements.allContactsEnabled.checked=!!cap.allContacts?.enabled;form.elements.mailRead.checked=!!cap.mail?.read;form.elements.mailCompose.checked=!!cap.mail?.compose;form.elements.controlOtherDesktops.checked=!!cap.manageAgentBoxes?.control;set('maxBoxes',cap.createAgentBox?.maxBoxes);set('maxDiskGiB',cap.createAgentBox?.maxDiskGiB);
   const allowedAgents=new Set(cap.createAgentBox?.allowedAgents||[]);form.querySelectorAll('input[name=allowedAgents]').forEach(input=>input.checked=!allowedAgents.size||allowedAgents.has(input.value));
   const allowedMCP=new Set(cap.mcpTools?.enabled?(cap.mcpTools.allowedTools||[]):[]);form.querySelectorAll('input[name=mcpTools]').forEach(input=>input.checked=allowedMCP.has(input.value));form.querySelectorAll('.role-capability-options').forEach(details=>details.open=false);syncMCPToolGroups(form);$('#role-editor-modal').hidden=false;
  }
@@ -4429,7 +4444,7 @@ let usagePending=null,usageGeneration=0;
  const summaryToolGroups={
   computer:['take_screenshot','capture_window','move_mouse','click_mouse','drag_mouse','scroll_mouse','type_text','press_keys'],
   passwords:['secret_request','generate_password','type_secret'],
-  admin:['list_agent_boxes','get_agent_box','get_agent_box_screenshot','set_agent_box_tags','set_agent_box_run_budget','restart_agent_box','wake_agent_box','delete_agent_box']
+  admin:['list_agent_boxes','get_agent_box','get_agent_box_screenshot','remote_control_box','set_agent_box_tags','set_agent_box_run_budget','restart_agent_box','wake_agent_box','delete_agent_box']
  };
  function policySummaryCell(kind,policy){
   const cell=mk('div');cell.className='role-perm-cell';cell.append(mk('small',kind==='contacts'?'Contacts':kind==='computer'?'Computer':kind==='passwords'?'Passwords':kind==='admin'?'Admin':'Create'));
@@ -4492,13 +4507,13 @@ let usagePending=null,usageGeneration=0;
  function directPolicyBody(form){
   const f=form.elements,num=name=>Number.parseInt(f[name].value,10)||0,allowedTools=[...form.querySelectorAll('input[name=mcpTools]:checked')].map(input=>input.value),hasTool=name=>allowedTools.includes(name);
   const chosenAgents=[...form.querySelectorAll('input[name=allowedAgents]:checked')].map(input=>input.value);
-  return {capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},mail:{read:f.mailRead.checked,compose:f.mailCompose.checked},createAgentBox:{enabled:hasTool('create_agent_box'),maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:chosenAgents.length?chosenAgents:['codex','claude','opencode']},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box')||hasTool('get_agent_box_screenshot'),tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box')||hasTool('wake_agent_box')||hasTool('set_agent_box_run_budget'),delete:hasTool('delete_agent_box')},mcpTools:{enabled:true,allowedTools}}};
+  return {capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},mail:{read:f.mailRead.checked,compose:f.mailCompose.checked},createAgentBox:{enabled:hasTool('create_agent_box'),maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:chosenAgents.length?chosenAgents:['codex','claude','opencode']},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box')||hasTool('get_agent_box_screenshot'),control:f.controlOtherDesktops.checked,tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box')||hasTool('wake_agent_box')||hasTool('set_agent_box_run_budget'),delete:hasTool('delete_agent_box')},mcpTools:{enabled:true,allowedTools}}};
  }
  $('#roles-toggle').onclick=()=>void openPermissionsModal();
  $('#inspect-edit-roles').onclick=()=>void openBoxPolicyEditor(selected);
  $('#role-box-search').addEventListener('input',renderPermissionBoxes);
  document.querySelectorAll('#role-editor-form .mcp-tool-group-toggle').forEach(input=>input.addEventListener('change',()=>changeMCPToolGroup(input)));
- document.querySelectorAll('#role-editor-form input[name=mcpTools],#role-editor-form input[name=mailRead],#role-editor-form input[name=mailCompose]').forEach(input=>input.addEventListener('change',()=>syncMailGrant(input.form,input)));
+ document.querySelectorAll('#role-editor-form input[name=mcpTools],#role-editor-form input[name=mailRead],#role-editor-form input[name=mailCompose],#role-editor-form input[name=controlOtherDesktops]').forEach(input=>input.addEventListener('change',()=>syncToolGrants(input.form,input)));
  $('#role-editor-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget,boxID=form.elements.id.value,status=$('#role-editor-status');if(!boxID)return;
   status.textContent='Saving permissions…';

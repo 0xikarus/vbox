@@ -2952,6 +2952,7 @@ dialog:not([open]){display:none}
 #inspect.details-prototype .ip-technical-activity{min-height:53px}
 #inspect.details-prototype .ip-technical-activity span:nth-child(2){display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;text-overflow:clip;overflow:hidden;line-height:1.35}
 #inspect.details-prototype .ip-technical-row svg{width:14px;height:14px;color:var(--vb-ink-faint)}
+.remote-control-link{text-decoration:none}
 #inspect.details-prototype .ip-page #inspect-contacts,#inspect.details-prototype .ip-page #inspect-access,#inspect.details-prototype .ip-page #inspect-attachment-storage{display:block;margin:0;padding:0;border:1px solid var(--vb-line);border-radius:var(--vb-radius-16);background:var(--vb-surface);overflow:hidden}
 #inspect.details-prototype .ip-page #inspect-contacts[hidden],#inspect.details-prototype .ip-page #inspect-access[hidden],#inspect.details-prototype .ip-page #inspect-attachment-storage[hidden]{display:none}
 #inspect.details-prototype .ip-page #inspect-contacts>summary,#inspect.details-prototype .ip-page #inspect-access>summary{display:none}

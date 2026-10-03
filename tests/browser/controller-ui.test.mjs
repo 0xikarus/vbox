@@ -301,7 +301,11 @@ test('direct per-box permissions can be edited without a role matrix',async()=>{
  await page.click('#role-editor-form input[name=allContactsEnabled]');
  await page.click('#role-editor-form .mcp-tool-options summary');
  assert.equal(await page.$('#role-editor-form .mcp-tool-group-toggle[value=coordination]'),null);
+ assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),false);
  await page.click('#role-editor-form .mcp-tool-group-toggle[value=admin_work]');
+ assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),true);
+ assert.equal(await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),true);
+ assert.equal(await page.$eval('#role-editor-form input[value=get_agent_box_screenshot]',input=>input.checked),true);
  assert.equal(await page.$eval('#role-editor-form input[name=mcpTools][value=wake_agent_box]',input=>input.checked&&input.disabled),true,'restart includes wake permission');
  await page.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
  await page.click('#role-editor-form button.primary');
@@ -313,6 +317,8 @@ test('direct per-box permissions can be edited without a role matrix',async()=>{
  assert.equal(fixturePolicy.capabilities.sharedChats,undefined);
  assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('press_keys'),true);
  assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('get_agent_box_screenshot'),true);
+ assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('remote_control_box'),true);
+ assert.equal(fixturePolicy.capabilities.manageAgentBoxes.control,true);
  assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('wake_agent_box'),true);
  assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('secret_request'),false);
  assert.equal(await page.$('#role-assignments table'),null,'permissions must not use a role matrix');
