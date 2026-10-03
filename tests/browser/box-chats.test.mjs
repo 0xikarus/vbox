@@ -578,7 +578,7 @@ test('new boxes can be created into a group or pinned in Chats from the section 
   assert.equal(savedLayout().pins.includes('box:created-3'),false);
 
   createBehavior.fail=true;const before=JSON.stringify(savedLayout());
-  await page.click('.chat-folder-menu');await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+  await page.$eval('.chat-folder-menu',button=>button.click());await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
   await page.type('#create-box input[name=name]','failed-created');await page.click('#create-box-submit');
   await page.waitForFunction(()=>document.querySelector('#new-box-status').textContent.includes('Create failed'));
   assert.equal(JSON.stringify(savedLayout()),before,'failed creation leaves layout unchanged');
