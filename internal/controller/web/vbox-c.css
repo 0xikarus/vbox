@@ -3149,7 +3149,7 @@ dialog:not([open]){display:none}
 #role-assignments .inline-permission-editor{padding:12px;box-sizing:border-box}
 @media(max-width:600px){.inline-permission-tool-list{grid-template-columns:1fr}}
 /* Created-box limit is three ordinary rows inside Manage boxes. */
-.inline-permission-card #inspect-create-limit,.inline-permission-card #role-create-limit{display:block;margin:0!important;padding:0!important;border:0!important;border-top:1px solid var(--vb-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;overflow:visible!important}
+.inline-permission-card #inspect-create-limit,.inline-permission-card #role-create-limit{display:block;margin:0!important;padding:0!important;border:0!important;border-top:1px solid var(--vb-line)!important;border-bottom:1px solid var(--vb-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;overflow:visible!important}
 .inline-permission-card #inspect-create-limit[hidden],.inline-permission-card #role-create-limit[hidden]{display:none!important}
 .inline-permission-card .box-create-limit{margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
 .inline-permission-card .box-create-limit .idle-policy-top{min-height:48px;margin:0;padding:4px 15px;border-bottom:1px solid var(--vb-line)}

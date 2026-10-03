@@ -3331,7 +3331,7 @@ function pairTileStatus(tile,mode,label){
   page('contacts','Choose the boxes this agent can contact.').append($('#inspect-contacts'));
   $('#inspect-contacts').open=true;
   const access=page('access','Control agent permissions, protection and created-box limits.');access.append($('#inspect-access'));
-  const permissionHome=$('#inspect-inline-permissions');permissionHome.append($('#role-editor-inline'));permissionLayout.manage.append($('#inspect-create-limit'));
+  const permissionHome=$('#inspect-inline-permissions');permissionHome.append($('#role-editor-inline'));permissionLayout.manage.querySelector('.inline-create').after($('#inspect-create-limit'));
   $('#inspect-access').open=true;
   page('attachments','Storage used by this box and its chat uploads.').append($('#inspect-attachment-storage'));
   const technical=page('technical','Tap an ID to copy it in full.');technical.append($('#ip-technical-table'));
@@ -4591,7 +4591,7 @@ let usagePending=null,usageGeneration=0;
  }
  function changeMCPToolGroup(toggle){for(const input of toggle.closest('.mcp-tool-group').querySelectorAll('input[name=mcpTools]'))input.checked=toggle.checked;syncToolGrants(toggle.form,toggle)}
  function populatePolicyEditor(box,cap={}){
-  const form=$('#role-editor-form'),limit=$('#inspect-create-limit'),limitParent=limit.parentNode;limit.remove();form.reset();limitParent.append(limit);form.elements.id.value=box.id;form.elements.name.value=box.name;
+  const form=$('#role-editor-form'),limit=$('#inspect-create-limit'),limitParent=limit.parentNode,limitNext=limit.nextSibling;limit.remove();form.reset();limitParent.insertBefore(limit,limitNext);form.elements.id.value=box.id;form.elements.name.value=box.name;
   const set=(name,value)=>{if(value===undefined||value===null)return;const input=form.elements[name];if(input.type==='number'&&input.min!==''&&Number(value)<Number(input.min))return;input.value=String(value)};
   form.elements.allContactsEnabled.checked=!!cap.allContacts?.enabled;form.elements.createAgentBoxEnabled.checked=!!cap.createAgentBox?.enabled;form.elements.mailRead.checked=!!cap.mail?.read;form.elements.mailCompose.checked=!!cap.mail?.compose;form.elements.controlOtherDesktops.checked=!!cap.manageAgentBoxes?.control;set('maxBoxes',cap.createAgentBox?.maxBoxes);set('maxDiskGiB',cap.createAgentBox?.maxDiskGiB);
   const allowedAgents=new Set(cap.createAgentBox?.allowedAgents||[]);form.querySelectorAll('input[name=allowedAgents]').forEach(input=>input.checked=!allowedAgents.size||allowedAgents.has(input.value));

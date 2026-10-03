@@ -72,6 +72,7 @@ test('Details and Manage group switches save all, none, and mixed grants in one 
    }else{await page.waitForSelector('#roles .role-assignment-toggle');await page.click('#roles .role-assignment-toggle')}
    await page.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#role-editor-status').textContent==='');
    await page.waitForFunction(()=>!document.querySelector('[data-permission-group="mail"]').hidden);
+   assert.deepEqual(await page.$$eval('[data-permission-group="manage-boxes"] .inline-permission-card > *',nodes=>nodes.map(node=>node.classList.contains('inline-create')?'create':node.id==='inspect-create-limit'||node.id==='role-create-limit'?'limit':node.dataset.quickPermission|| (node.classList.contains('inline-permission-tools')?'tools':'')).filter(Boolean)),['create','limit','admin','remote-control','tools'],view+' keeps the created-box limit beside Create agents');
    for(const [id] of groups){
     const selector=`[data-permission-group="${id}"]`,master=selector+' .inline-permission-master';
     const tools=await page.$$eval(selector+' input[name=mcpTools]',nodes=>nodes.map(node=>node.value));
