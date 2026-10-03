@@ -79,6 +79,11 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    const errors=[];page.on('pageerror',error=>errors.push(error.message));
    const save=async name=>{if(capture)await page.screenshot({path:resolve(capture,`${name}-${width}-${theme}.png`),fullPage:true})};
    await open(page,base,()=>save('chat-start'));await save('details');
+   if(width===390&&theme==='light'){
+    await page.click('#inspect-close');await page.click('#mail-approval-mobile');
+    await page.waitForFunction(()=>document.querySelector('[data-mail-tab="outbox"]')?.getAttribute('aria-selected')==='true'&&!document.querySelector('[data-ip-page="mail"]').hidden);
+    await page.click('#inspect-prototype-back');
+   }
    await page.click('[data-ip-row="mail"]');await page.waitForSelector('[data-mail-id="m1"]');
    assert.equal(await page.$eval('[data-ip-page="mail"]',node=>node.textContent.indexOf('Messages')<node.textContent.indexOf('Settings')),true);
    assert.equal(await page.$eval('[data-mail-id="m1"]',node=>node.textContent.includes('483921')),false);
@@ -100,7 +105,7 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    await page.waitForSelector('[data-outbox-id="o2"]');await page.click('[data-outbox-id="o2"]');await page.click('[data-review="reject"]');await page.type('#mail-review [name="reason"]','Not appropriate.');await page.click('[data-review="reject"]');
    await page.waitForFunction(()=>!document.querySelector('#mail-review').open);
    assert.equal(data.writes.some(write=>write.path.endsWith('/o2/reject')&&write.body.reason==='Not appropriate.'&&write.body.version===1),true);
-   await page.click('#inspect-prototype-back');await page.click('[data-ip-row="access"]');await page.waitForSelector('#mail-permissions:not([hidden])');
+   await page.click('#inspect-prototype-back');await page.click('[data-ip-row="access"]');await page.waitForSelector('#mail-permissions:not([hidden])');await save('access');
    await page.click('#mail-permission-read');await page.waitForFunction(()=>document.querySelector('#mail-permission-status').textContent==='Saved');
    assert.equal(data.writes.some(write=>write.path.endsWith('/agent-policy')&&write.body.capabilities.mail.read===true&&write.body.capabilities.mcpTools.allowedTools.includes('list_emails')),true);
    await page.click('#inspect-edit-roles');await page.waitForSelector('#role-editor-modal:not([hidden])');
