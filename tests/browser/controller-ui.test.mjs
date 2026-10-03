@@ -451,7 +451,7 @@ test('creation offers documented Claude choices and Codex account models',async(
  await page.click('dialog.model-picker-dialog .model-picker-apply');
  await page.waitForFunction(()=>!document.querySelector('dialog.model-picker-dialog').open);
  assert.equal(await page.$eval(input,e=>e.value),'account-codex-model');
- await page.type('#create input[name=name]','disposable-model-fixture');
+ await page.$eval('#create input[name=name]',input=>{input.value='disposable-model-fixture';input.dispatchEvent(new Event('input',{bubbles:true}))});
  assert.equal(await page.$eval('#create input[name=name]',element=>element.value),'disposable-model-fixture');
  assert.equal(await page.$eval('#create',form=>form.checkValidity()),true,'the creation form is valid before submission');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
