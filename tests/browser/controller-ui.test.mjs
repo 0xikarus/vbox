@@ -300,13 +300,13 @@ test('direct per-box permissions can be edited without a role matrix',async()=>{
  assert.equal(await page.$eval('#role-editor-form',form=>form.checkValidity()),true,'disabled zero limits must not block permission saving');
  await page.click('#role-editor-form input[name=allContactsEnabled]');
  assert.equal(await page.$('#role-editor-form .mcp-tool-group-toggle[value=coordination]'),null);
- assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),false);
+ assert.equal(await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),false);
  await page.$eval('#role-editor-form',form=>{
   for(const name of ['list_agent_boxes','get_agent_box','get_agent_box_screenshot','remote_control_box','create_agent_box','set_agent_box_tags','set_agent_box_run_budget','restart_agent_box','delete_agent_box','take_screenshot','capture_window','move_mouse','click_mouse','drag_mouse','scroll_mouse','type_text','press_keys']){
    const input=form.querySelector('input[name=mcpTools][value='+name+']');if(!input.checked)input.click();
   }
  });
- assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),true);
+ assert.equal(await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),true);
  assert.equal(await page.$eval('#role-editor-form input[value=get_agent_box_screenshot]',input=>input.checked),true);
  assert.equal(await page.$eval('#role-editor-form input[name=mcpTools][value=wake_agent_box]',input=>input.checked&&input.disabled),true,'restart includes wake permission');
  for(let i=0;i<50&&!fixturePolicy.capabilities?.mcpTools?.allowedTools?.includes('press_keys');i++)await new Promise(resolve=>setTimeout(resolve,100));

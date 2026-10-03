@@ -59,13 +59,11 @@ test('remote control notice links to the actor and Technical shows the last sess
    await page.$eval('#inspect-prototype-back',button=>button.click());
    await page.$eval('[data-ip-row="access"]',row=>row.click());
    await page.waitForFunction(()=>document.querySelector('#role-editor-status')?.textContent==='');
-   assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),false);
+   assert.equal(await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),false);
    await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.click());
-   assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),true);
    assert.equal(await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),true);
    assert.equal(await page.$eval('#role-editor-form input[value=get_agent_box_screenshot]',input=>input.checked),false,'screenshot access is a separate toggle');
    await save('permissions');
-   await page.click('[data-permission-group="manage-boxes"] .inline-permission-tools summary');
    assert.match(await page.$eval('[data-permission-group="manage-boxes"]',group=>group.textContent),/remote_control_box/);
    await page.$eval('#role-editor-form input[value=remote_control_box]',input=>input.scrollIntoView({block:'center'}));
    await save('tool-picker');

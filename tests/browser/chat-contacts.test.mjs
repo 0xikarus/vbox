@@ -258,23 +258,21 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#role-editor-status').textContent==='');
   assert.equal(await p.$eval('#role-editor-form',form=>form.checkValidity()),true,'zero limits do not block permission edits');
   assert.equal(await p.$('#role-editor-form .mcp-tool-group-toggle[value=coordination]'),null);
-  assert.match(await p.$eval('#role-editor-form label:has(input[value=secret_request])',element=>element.title),/privately/);
-  assert.match(await p.$eval('#role-editor-form label:has(input[value=create_agent_box])',element=>element.title),/startup instructions/);
-  assert.equal(await p.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),false);
-  await p.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.click());
+  assert.match(await p.$eval('#role-editor-form label:has(input[value=secret_request])',element=>element.textContent),/Ask the owner for a password/);
+  assert.match(await p.$eval('#role-editor-form label:has(input[value=create_agent_box])',element=>element.textContent),/Create boxes within the limit/);
+  assert.equal(await p.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),false);
+  await p.$eval('#role-editor-form input[value=remote_control_box]',input=>input.click());
   assert.equal(await p.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),true);
   assert.equal(await p.$eval('#role-editor-form input[value=get_agent_box_screenshot]',input=>input.checked),false,'screenshot access is independent');
-  await p.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.click());
+  await p.$eval('#role-editor-form input[value=remote_control_box]',input=>input.click());
   assert.equal(await p.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),false);
   await p.$eval('#role-editor-form',form=>{
    const tools=['take_screenshot','capture_window','move_mouse','click_mouse','drag_mouse','scroll_mouse','type_text','press_keys','list_agent_boxes','get_agent_box','get_agent_box_screenshot','remote_control_box','create_agent_box','set_agent_box_tags','set_agent_box_run_budget','restart_agent_box','delete_agent_box'];
    for(const name of tools){const input=form.querySelector('input[name=mcpTools][value='+name+']');if(!input.checked)input.click()}
   });
   assert.equal(await p.$eval('#role-editor-form input[name=mcpTools][value=wake_agent_box]',input=>input.checked&&input.disabled),true,'restart includes wake permission');
-  assert.equal(await p.$eval('#role-editor-form [name=controlOtherDesktops]',input=>input.checked),true);
-  await p.$eval('[data-permission-group="manage-boxes"] .inline-permission-tools',element=>element.open=true);
+  assert.equal(await p.$eval('#role-editor-form input[value=remote_control_box]',input=>input.checked),true);
   await (await p.$('[data-permission-group="manage-boxes"]')).screenshot({path:'docs/chat-ui/screenshots/chat-permission-mcp-tools.png'});
-  await p.$eval('[data-permission-group="manage-boxes"] .inline-permission-tools',element=>element.open=false);
   await (await p.$('#role-editor-inline')).screenshot({path:'docs/chat-ui/screenshots/chat-permission-editor.png'});
   await p.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved'&&document.querySelector('#role-editor-form input[value=get_agent_box_screenshot]').checked);
   assert.equal(await p.$eval('#role-editor-inline',editor=>editor.hidden),false,'editor remains inline after saving');

@@ -2,7 +2,7 @@
 // An owner-facing shortcut for the per-box create_agent_box quota.
 window.VMBoxCreateLimit = (() => {
  const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el};
- function mount(root,{boxId,request,onSaved,showWhenDisabled=false,showStateToggle=false}){
+ function mount(root,{boxId,request,onSaved,showWhenDisabled=false,showStateToggle=false,toolRow=false}){
   if(!root||root.dataset.createLimitBox===boxId)return;
   root.dataset.createLimitBox=boxId;root.hidden=true;root.replaceChildren();
   const card=text('section','');card.className='idle-policy box-create-limit';
@@ -17,11 +17,12 @@ window.VMBoxCreateLimit = (() => {
   const count=document.createElement('input');count.type='number';count.min='1';count.max='100';count.step='1';count.disabled=true;
   count.setAttribute('aria-label','Maximum boxes this box can create');
   const countSuffix=document.createTextNode(' boxes total');label.append(count,countSuffix);
-  const save=text('button',showStateToggle?'Save':'Save limit');save.type='button';save.disabled=true;controls.append(label,save);
+  const save=text('button',showStateToggle||toolRow?'Save':'Save limit');save.type='button';save.disabled=true;controls.append(label,save);
   const note=text('p','Completed creations still count toward this total.');note.className='idle-policy-note';
   const status=text('p','Loading creation limit…');status.className='idle-policy-status';status.setAttribute('role','status');
   const retry=text('button','Retry');retry.type='button';retry.className='idle-policy-retry';retry.hidden=true;
-  card.append(top,controls,note,status,retry);root.append(card);
+  if(!toolRow)card.append(top);
+  card.append(controls);if(!toolRow)card.append(note);card.append(status,retry);root.append(card);
   const current=()=>root.isConnected&&root.dataset.createLimitBox===boxId;
   const updateCountSuffix=()=>{countSuffix.textContent=showStateToggle?(Number(count.value)===1?' box':' boxes'):(Number(count.value)===1?' box total':' boxes total')};
   count.addEventListener('input',updateCountSuffix);
@@ -32,8 +33,9 @@ window.VMBoxCreateLimit = (() => {
    count.value=String(grant.maxBoxes||1);updateCountSuffix();count.disabled=!allowed;save.disabled=!allowed;
    toggle.checked=allowed;toggle.disabled=!allowed;switchLabel.title=allowed?'Turn off box creation':'Enable Create agents above';
    badge.textContent=allowed?String(grant.maxBoxes)+' total':'Off';badge.dataset.enabled=String(allowed);
-   status.textContent=allowed?'This box may create up to '+grant.maxBoxes+' '+(grant.maxBoxes===1?'box':'boxes')+' total.':'Box creation is off. Enable Create agents above to edit this limit.';
+   status.textContent=allowed?'This box may create up to '+grant.maxBoxes+' '+(grant.maxBoxes===1?'box':'boxes')+' total.':toolRow?'Select create_agent_box above to edit this limit.':'Box creation is off. Enable Create agents above to edit this limit.';
   }
+  root.createLimitRender=render;
   toggle.addEventListener('change',async()=>{
    if(toggle.checked)return;
    toggle.disabled=true;count.disabled=true;save.disabled=true;status.textContent='Turning off box creation…';
@@ -68,5 +70,5 @@ window.VMBoxCreateLimit = (() => {
   retry.addEventListener('click',()=>void load());
   void load();
  }
- return {mount};
+ return {mount,refresh:(root,policy)=>root?.createLimitRender?.(policy)};
 })();

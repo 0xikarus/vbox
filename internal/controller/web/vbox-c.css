@@ -3135,8 +3135,12 @@ dialog:not([open]){display:none}
 .inline-permission-count{color:var(--vb-ink-soft);font-size:12px;font-weight:500;white-space:nowrap}
 .inline-permission-chevron{width:7px;height:7px;flex:none;margin-left:4px;border-right:1.5px solid var(--vb-ink-soft);border-bottom:1.5px solid var(--vb-ink-soft);transform:rotate(45deg);transition:transform .15s}
 .inline-permission-tools[open] .inline-permission-chevron{transform:rotate(225deg)}
-.inline-permission-tool-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 14px;padding:0 15px 12px;border-top:1px solid var(--vb-line)}
-.inline-permission-tool-list label{display:flex;align-items:center;gap:9px;min-height:44px;min-width:0;overflow-wrap:anywhere;color:var(--vb-ink);font-size:12px}
+.inline-permission-tool-list{display:block;min-width:0;padding:0}
+.inline-permission-tool-list>.inline-permission-tool-row{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 14px;border-bottom:1px solid var(--vb-line);overflow-wrap:anywhere;color:var(--vb-ink)}
+.inline-permission-tool-list>.inline-permission-tool-row:last-child{border-bottom:0}
+.inline-permission-tool-row>span{display:grid;gap:2px;min-width:0}
+.inline-permission-tool-row strong{font-size:12px;font-weight:700;line-height:1.3}
+.inline-permission-tool-row small{color:var(--vb-ink-soft);font-size:11px;line-height:1.3}
 .inline-permission-editor #role-editor-status{margin:0;padding:8px 12px;border:1px solid var(--vb-line);border-radius:9px;background:var(--vb-surface);color:var(--vb-ink-soft);font-size:12px}
 .inline-permission-editor #role-editor-status:empty{display:none}
 .inline-permission-editor #role-editor-status[data-state=error]{color:var(--vb-danger-text);border-color:currentColor}
@@ -3147,9 +3151,10 @@ dialog:not([open]){display:none}
 #inspect.details-prototype .ip-page #inspect-access .inspect-access-rows{display:grid;gap:12px;padding:0;border:0}
 #inspect.details-prototype .ip-page #inspect-access .inspect-access-meta-card{border:1px solid var(--vb-line);border-radius:12px;background:var(--vb-surface);overflow:hidden}
 #role-assignments .inline-permission-editor{padding:12px;box-sizing:border-box}
-@media(max-width:600px){.inline-permission-tool-list{grid-template-columns:1fr}}
+@media(max-width:600px){.inline-permission-tool-list>.inline-permission-tool-row{padding:6px 13px}}
 /* Created-box limit is three ordinary rows inside Manage boxes. */
 .inline-permission-card #inspect-create-limit,.inline-permission-card #role-create-limit{display:block;margin:0!important;padding:0!important;border:0!important;border-top:1px solid var(--vb-line)!important;border-bottom:1px solid var(--vb-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;overflow:visible!important}
+.inline-permission-tool-list>#inspect-create-limit,.inline-permission-tool-list>#role-create-limit{border-top:0!important}
 .inline-permission-card #inspect-create-limit[hidden],.inline-permission-card #role-create-limit[hidden]{display:none!important}
 .inline-permission-card .box-create-limit{margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
 .inline-permission-card .box-create-limit .idle-policy-top{min-height:48px;margin:0;padding:4px 15px;border-bottom:1px solid var(--vb-line)}
