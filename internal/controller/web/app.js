@@ -1,3 +1,49 @@
+/* Shared layout for per-box policy editors. Existing inputs keep policy serialization intact. */
+(function(){
+ function layout(form){
+  const fields=[...form.querySelectorAll('.role-capabilities > .role-capability')];
+  const byName=name=>fields.find(field=>field.querySelector('input[name="'+name+'"]'));
+  const groups=[...form.querySelectorAll('.mcp-tool-group')];
+  const group=value=>groups.find(field=>field.querySelector('.mcp-tool-group-toggle')?.value===value);
+  const status=form.querySelector('#role-editor-status');
+  const contacts=byName('allContactsEnabled'),create=byName('createAgentBoxEnabled'),control=byName('controlOtherDesktops'),mail=byName('mailRead');
+  const sections=[];
+  function card(title,items,feature,compact){
+   const section=document.createElement('section');section.className='inline-permission-group';section.dataset.permissionGroup=title.toLowerCase().replaceAll(' ','-');
+   if(feature)section.dataset.mailFeature='';
+   if(!compact){const heading=document.createElement('h3');heading.className='ip-heading';heading.textContent=title;section.append(heading);}
+   const surface=document.createElement('div');surface.className='ip-card inline-permission-card';
+   for(const item of items)if(item)surface.append(item);
+   section.append(surface);sections.push(section);return surface;
+  }
+  function tools(title,compact,...toolGroups){
+   toolGroups=toolGroups.filter(Boolean);if(!toolGroups.length)return null;
+   const checks=toolGroups.flatMap(item=>[...item.querySelectorAll('input[name=mcpTools]')]);
+   const row=document.createElement('details');row.className='inline-permission-tools'+(compact?' inline-permission-tools-compact':'');
+   const summary=document.createElement('summary');
+   const label=document.createElement('span');label.className='inline-permission-tools-label';label.textContent=title;
+   const count=document.createElement('span');count.className='inline-permission-count';count.textContent='0 of '+checks.length+(compact?' tools':'');
+   const chevron=document.createElement('span');chevron.className='inline-permission-chevron';chevron.setAttribute('aria-hidden','true');
+   summary.append(label,count,chevron);row.append(summary);
+   const list=document.createElement('div');list.className='inline-permission-tool-list';
+   for(const input of checks)list.append(input.closest('label'));
+   row.append(list);return row;
+  }
+  if(create){create.classList.add('inline-create');create.hidden=false;create.querySelector('.role-capability-options')?.removeAttribute('open');create.querySelector('.role-capability-options>summary').textContent='Advanced limits';}
+  for(const field of [control,mail]){const legend=field?.querySelector('legend');if(legend)legend.remove();}
+  const manage=card('Manage boxes',[control,create,tools('Tools',false,group('admin_work'),group('lifecycle'))]);
+  card('Mail',[mail,tools('Tools',false,group('mail'))],true);
+  card('Computer use',[tools('Computer use',true,group('computer_use'))],false,true);
+  card('Passwords',[tools('Passwords',true,group('passwords'))],false,true);
+  card('All contacts',[contacts]);
+  form.replaceChildren(...[...form.querySelectorAll('input[type=hidden],textarea[hidden]')],status,...sections);
+  const retry=document.createElement('button');retry.type='button';retry.className='inline-permission-retry';retry.textContent='Retry';retry.hidden=true;status.after(retry);
+  const update=()=>{for(const row of form.querySelectorAll('.inline-permission-tools')){const checks=[...row.querySelectorAll('input[name=mcpTools]')];row.querySelector('.inline-permission-count').textContent=checks.filter(input=>input.checked).length+' of '+checks.length+(row.classList.contains('inline-permission-tools-compact')?' tools':'');}};
+  form.addEventListener('change',update);update();return {update,manage,retry};
+ }
+ window.VBoxPermissionLayout={layout};
+})();
+
 'use strict';
 const $=s=>document.querySelector(s);
 const workspaceNav=window.VMBoxWorkspaceNav?.init({menuId:'manage-menu',panelId:'manage-menu-panel',usageId:'manage-usage',providersId:'manage-providers'});
@@ -542,9 +588,10 @@ function renderBoxes(boxes){
 }
 $('#box-search').addEventListener('input',()=>renderBoxes(listedBoxes));
 document.addEventListener('click',event=>{if(event.target.closest('.row-overflow'))return;document.querySelectorAll('.row-overflow.open').forEach(el=>el.classList.remove('open'))});
+let activePermissionBoxId='',currentPermissionPolicy=null,permissionSaving=false,permissionPending=false;
 function renderPermissionBoxes(boxes){
- roleBoxes=boxes||[];const root=$('#role-assignments'),query=$('#role-box-search').value.trim().toLowerCase(),visible=roleBoxes.filter(box=>!query||box.name.toLowerCase().includes(query));root.replaceChildren();
- if(!visible.length){root.append(node('p',query?'No boxes match this search.':'Create a box to configure agent permissions.'));return}
+ roleBoxes=boxes||[];const root=$('#role-assignments'),editor=$('#role-editor-inline'),query=$('#role-box-search').value.trim().toLowerCase(),visible=roleBoxes.filter(box=>!query||box.name.toLowerCase().includes(query));root.replaceChildren();
+ if(!visible.length){root.append(node('p',query?'No boxes match this search.':'Create a box to configure agent permissions.'));editor.hidden=true;root.append(editor);return}
  const list=node('div');list.className='role-assignment-list';
  for(const box of visible){
   const card=node('article');card.className='role-assignment-card';card.dataset.state=box.state;card.dataset.roleBoxId=box.id;
@@ -552,16 +599,18 @@ function renderPermissionBoxes(boxes){
   const mark=node('span');mark.className='role-box-mark';mark.setAttribute('aria-hidden','true');mark.innerHTML='<span class="role-box-screen"></span><span class="role-box-mascot">'+blobSVG(box.id)+'</span>';
   const identity=node('div');identity.className='role-assignment-identity';identity.append(node('strong',box.name));const meta=node('div');meta.className='role-box-meta';const agent=node('span',box.defaultAgent||'agent');agent.className='role-agent-badge';const state=node('span',box.state);state.className='role-state-badge';meta.append(agent,state);identity.append(meta);
   const current=node('div');current.className='role-assignment-current';current.append(node('span','Direct MCP permissions and contacts'));
-  const actions=node('div');actions.className='role-assignment-actions';const manage=button('Edit permissions',()=>openBoxPolicyEditor(box));manage.classList.add('role-assignment-toggle','vb-secondary');const more=node('details');more.className='role-box-more';const moreSummary=node('summary');moreSummary.setAttribute('aria-label','More for '+box.name);moreSummary.innerHTML=ICON_MORE;const contacts=node('a','Manage contacts');contacts.href='/chat#box='+encodeURIComponent(box.id);more.append(moreSummary,contacts);actions.append(manage,more);
-  summary.append(mark,identity,current,actions);card.append(summary);list.append(card);
+  const actions=node('div');actions.className='role-assignment-actions';const manage=button(activePermissionBoxId===box.id?'Hide permissions':'Edit permissions',()=>openBoxPolicyEditor(box));manage.classList.add('role-assignment-toggle','vb-secondary');const more=node('details');more.className='role-box-more';const moreSummary=node('summary');moreSummary.setAttribute('aria-label','More for '+box.name);moreSummary.innerHTML=ICON_MORE;const contacts=node('a','Manage contacts');contacts.href='/chat#box='+encodeURIComponent(box.id);more.append(moreSummary,contacts);actions.append(manage,more);
+  summary.append(mark,identity,current,actions);card.append(summary);if(activePermissionBoxId===box.id){editor.hidden=false;card.append(editor)}list.append(card);
  }
- root.append(list);
+ root.append(list);if(!editor.isConnected){editor.hidden=true;root.append(editor)}
 }
-function populatePolicyEditor(box,cap={}){const form=$('#role-editor-form');form.reset();form.elements.id.value='box:'+box.id;form.elements.name.value=box.name;const set=(name,value)=>{if(value===undefined||value===null)return;const input=form.elements[name];if(input.type==='number'&&input.min!==''&&Number(value)<Number(input.min))return;input.value=String(value)},check=(name,value)=>form.elements[name].checked=!!value;check('allContactsEnabled',cap.allContacts?.enabled);check('mailRead',cap.mail?.read);check('mailCompose',cap.mail?.compose);check('controlOtherDesktops',cap.manageAgentBoxes?.control);set('maxBoxes',cap.createAgentBox?.maxBoxes);set('maxDiskGiB',cap.createAgentBox?.maxDiskGiB);const allowed=new Set(cap.createAgentBox?.allowedAgents||[]);form.querySelectorAll('input[name=allowedAgents]').forEach(input=>input.checked=!allowed.size||allowed.has(input.value));const allowedMCP=new Set(cap.mcpTools?.enabled?(cap.mcpTools.allowedTools||[]):[]);form.querySelectorAll('input[name=mcpTools]').forEach(input=>input.checked=allowedMCP.has(input.value));form.querySelectorAll('.role-capability-options').forEach(details=>details.open=false);syncMCPToolGroups(form);$('#role-editor-status').textContent='';modalEl('role-editor-modal').hidden=false;void api('/v1/mail/approvals').then(()=>form.querySelectorAll('[data-mail-feature]').forEach(node=>node.hidden=false)).catch(()=>form.querySelectorAll('[data-mail-feature]').forEach(node=>node.hidden=true))}
+function populatePolicyEditor(box,cap={}){const form=$('#role-editor-form'),limit=$('#role-create-limit'),limitParent=limit.parentNode;limit.remove();form.reset();limitParent.append(limit);form.elements.id.value='box:'+box.id;form.elements.name.value=box.name;const set=(name,value)=>{if(value===undefined||value===null)return;const input=form.elements[name];if(input.type==='number'&&input.min!==''&&Number(value)<Number(input.min))return;input.value=String(value)},check=(name,value)=>form.elements[name].checked=!!value;check('allContactsEnabled',cap.allContacts?.enabled);check('createAgentBoxEnabled',cap.createAgentBox?.enabled);check('mailRead',cap.mail?.read);check('mailCompose',cap.mail?.compose);check('controlOtherDesktops',cap.manageAgentBoxes?.control);set('maxBoxes',cap.createAgentBox?.maxBoxes);set('maxDiskGiB',cap.createAgentBox?.maxDiskGiB);const allowed=new Set(cap.createAgentBox?.allowedAgents||[]);form.querySelectorAll('input[name=allowedAgents]').forEach(input=>input.checked=!allowed.size||allowed.has(input.value));const allowedMCP=new Set(cap.mcpTools?.enabled?(cap.mcpTools.allowedTools||[]):[]);form.querySelectorAll('input[name=mcpTools]').forEach(input=>input.checked=allowedMCP.has(input.value));form.querySelectorAll('.inline-permission-tools').forEach(details=>details.open=false);syncMCPToolGroups(form);permissionLayout.update();$('#role-editor-status').textContent='';$('#role-editor-inline').hidden=false;void api('/v1/mail/approvals').then(()=>form.querySelectorAll('[data-mail-feature]').forEach(node=>node.hidden=false)).catch(()=>form.querySelectorAll('[data-mail-feature]').forEach(node=>node.hidden=true))}
 function syncMCPToolGroups(form=$('#role-editor-form')){const restart=form.querySelector('input[name=mcpTools][value=restart_agent_box]'),wake=form.querySelector('input[name=mcpTools][value=wake_agent_box]');if(restart&&wake){wake.disabled=restart.checked;if(restart.checked)wake.checked=true}for(const group of form.querySelectorAll('.mcp-tool-group')){const tools=[...group.querySelectorAll('input[name=mcpTools]')],toggle=group.querySelector('.mcp-tool-group-toggle'),selected=tools.filter(input=>input.checked).length;toggle.checked=selected===tools.length;toggle.indeterminate=selected>0&&selected<tools.length}}
 const mailReadTools=['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'],mailComposeTools=['send_email','list_outbox','get_outbox_status'];
 function syncToolGrants(form,source){
  const remote=form.querySelector('input[name=mcpTools][value=remote_control_box]');
+ if(source.name==='createAgentBoxEnabled')form.querySelector('input[name=mcpTools][value=create_agent_box]').checked=source.checked;
+ if(source.value==='create_agent_box')form.elements.createAgentBoxEnabled.checked=source.checked;
  if(source.name==='controlOtherDesktops')remote.checked=source.checked;
  else if(source.value==='remote_control_box'||source.classList.contains('mcp-tool-group-toggle'))form.elements.controlOtherDesktops.checked=remote.checked;
  const group=source.closest('[data-mail-feature]');
@@ -577,15 +626,45 @@ function syncToolGrants(form,source){
 function changeMCPToolGroup(toggle){for(const input of toggle.closest('.mcp-tool-group').querySelectorAll('input[name=mcpTools]'))input.checked=toggle.checked;syncToolGrants(toggle.form,toggle)}
 function controllerDirectPolicyBody(form){
  const f=form.elements,num=name=>Number.parseInt(f[name].value,10)||0,allowedTools=[...form.querySelectorAll('input[name=mcpTools]:checked')].map(input=>input.value),hasTool=name=>allowedTools.includes(name),chosenAgents=[...form.querySelectorAll('input[name=allowedAgents]:checked')].map(input=>input.value);
- return {capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},mail:{read:f.mailRead.checked,compose:f.mailCompose.checked},createAgentBox:{enabled:hasTool('create_agent_box'),maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:chosenAgents.length?chosenAgents:['codex','claude','opencode'],assignableRoleIds:[]},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box')||hasTool('get_agent_box_screenshot'),control:f.controlOtherDesktops.checked,tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box')||hasTool('wake_agent_box'),delete:hasTool('delete_agent_box')},mcpTools:{enabled:true,allowedTools}}};
+ return {capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},mail:{read:f.mailRead.checked,compose:f.mailCompose.checked},createAgentBox:{enabled:hasTool('create_agent_box'),maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:chosenAgents.length?chosenAgents:['codex','claude','opencode']},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box')||hasTool('get_agent_box_screenshot'),control:f.controlOtherDesktops.checked,tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box')||hasTool('wake_agent_box')||hasTool('set_agent_box_run_budget'),delete:hasTool('delete_agent_box')},mcpTools:{enabled:true,allowedTools}}};
 }
+const permissionLayout=window.VBoxPermissionLayout.layout($('#role-editor-form'));
+const inlineCreateLimit=document.createElement('div');inlineCreateLimit.id='role-create-limit';permissionLayout.manage.append(inlineCreateLimit);
 $('#role-box-search').addEventListener('input',()=>renderPermissionBoxes(roleBoxes));
-document.querySelectorAll('#role-editor-form .mcp-tool-group-toggle').forEach(input=>input.addEventListener('change',()=>changeMCPToolGroup(input)));
-document.querySelectorAll('#role-editor-form input[name=mcpTools],#role-editor-form input[name=mailRead],#role-editor-form input[name=mailCompose],#role-editor-form input[name=controlOtherDesktops]').forEach(input=>input.addEventListener('change',()=>syncToolGrants(input.form,input)));
-$('#role-editor-form').addEventListener('submit',action(async event=>{const id=event.currentTarget.elements.id.value;if(!id.startsWith('box:'))return;$('#role-editor-status').textContent='Saving…';await api(bp(id.slice(4))+'/agent-policy','PUT',controllerDirectPolicyBody(event.currentTarget));modalEl('role-editor-modal').hidden=true;notice('Permissions updated and syncing automatically.');await refresh()}));
-async function openBoxPolicyEditor(box){
-	const policy=await api(bp(box.id)+'/agent-policy');populatePolicyEditor(box,policy.capabilities||{});
- $('#role-editor-title').textContent='Permissions · '+box.name;$('#delete-role').hidden=true;$('#role-assigned-count').textContent=policy.migratedFromRoles?'Imported the box’s previous role grants. Saving converts them to direct permissions.':'Saved directly on this box. Changes sync automatically to its running MCP client.';
+async function saveInlinePermissions(){
+ if(permissionSaving){permissionPending=true;return}
+ const form=$('#role-editor-form'),id=form.elements.id.value;if(!id.startsWith('box:'))return;
+ const boxID=id.slice(4);permissionSaving=true;permissionLayout.retry.hidden=true;
+ do{
+  permissionPending=false;$('#role-editor-status').dataset.state='saving';$('#role-editor-status').textContent='Saving…';
+  const changed=controllerDirectPolicyBody(form).capabilities,existing=currentPermissionPolicy?.capabilities||{};
+  const capabilities={...existing,...changed};for(const key of Object.keys(changed))capabilities[key]={...(existing[key]||{}),...changed[key]};
+  try{
+   const policy=await api(bp(boxID)+'/agent-policy','PUT',{capabilities});
+   if(form.elements.id.value!==id)break;
+   currentPermissionPolicy=policy?.capabilities?policy:{capabilities};$('#role-editor-status').dataset.state='saved';$('#role-editor-status').textContent='Saved';
+  }catch(error){if(form.elements.id.value===id){$('#role-editor-status').dataset.state='error';$('#role-editor-status').textContent=error.message;permissionLayout.retry.hidden=false}break}
+ }while(permissionPending&&form.elements.id.value===id);
+ permissionSaving=false;if(permissionPending&&form.elements.id.value!==id)void saveInlinePermissions();
+}
+$('#role-editor-form').addEventListener('change',event=>{
+ if(!event.target.matches('input[name]'))return;
+ if(event.target.classList.contains('mcp-tool-group-toggle'))changeMCPToolGroup(event.target);
+ else syncToolGrants(event.currentTarget,event.target);
+ permissionLayout.update();void saveInlinePermissions();
+});
+permissionLayout.retry.onclick=()=>void saveInlinePermissions();
+$('#role-editor-form').onsubmit=event=>event.preventDefault();
+async function openBoxPolicyEditor(box,retry=false){
+ if(!ownerTools)return;
+ if(!retry&&activePermissionBoxId===box.id&&!$('#role-editor-inline').hidden){activePermissionBoxId='';$('#role-editor-inline').hidden=true;renderPermissionBoxes(roleBoxes);return}
+ activePermissionBoxId=box.id;renderPermissionBoxes(roleBoxes);const form=$('#role-editor-form');form.elements.id.value='box:'+box.id;form.querySelectorAll('input[name]').forEach(input=>input.disabled=true);$('#role-editor-inline').hidden=false;permissionLayout.retry.hidden=true;currentPermissionPolicy=null;$('#role-editor-status').textContent='Loading permissions…';
+ try{
+  const policy=await api(bp(box.id)+'/agent-policy');if(activePermissionBoxId!==box.id)return;
+  currentPermissionPolicy=policy;populatePolicyEditor(box,policy.capabilities||{});form.querySelectorAll('input[name]').forEach(input=>input.disabled=false);syncMCPToolGroups(form);
+  window.VMBoxCreateLimit?.mount(inlineCreateLimit,{boxId:box.id,showWhenDisabled:true,showStateToggle:true,request:body=>api(bp(box.id)+'/agent-policy',body?'PUT':'GET',body),onSaved:saved=>{currentPermissionPolicy=saved;const form=$('#role-editor-form');if(form.elements.id.value==='box:'+box.id){form.elements.maxBoxes.value=String(saved.capabilities?.createAgentBox?.maxBoxes||3);if(!saved.capabilities?.createAgentBox?.enabled){form.elements.createAgentBoxEnabled.checked=false;form.querySelector('input[value=create_agent_box]').checked=false;permissionLayout.update()}}}});
+  $('#role-editor-status').textContent='';permissionLayout.retry.onclick=()=>void saveInlinePermissions();
+ }catch(error){if(activePermissionBoxId===box.id){$('#role-editor-status').dataset.state='error';$('#role-editor-status').textContent=error.message;permissionLayout.retry.hidden=false;permissionLayout.retry.onclick=()=>void openBoxPolicyEditor(box,true)}}
 }
 function paintProfileLibrary(){
  const query=$('#profile-search').value.trim().toLocaleLowerCase(),root=$('#profile-tree');root.replaceChildren();
@@ -769,7 +848,7 @@ async function refresh(){
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#login-error').textContent='';$('#app').hidden=false;openProfileFromLink()}));
-$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());closeProviderPanel();$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
+$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;$('#role-editor-inline').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());closeProviderPanel();$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
 $('#refresh').addEventListener('click',action(refresh));
 $('#logout').addEventListener('click',()=>mailPanel?.setOwner(false));
 function resetCreationForm(form){
