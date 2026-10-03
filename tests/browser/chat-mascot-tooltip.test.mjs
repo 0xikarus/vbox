@@ -25,6 +25,7 @@ test('mascot freshness tooltip updates, expires, and leaves mobile row navigatio
   if(path==='/v1/tool-presets'||path==='/v1/box-conversations')return res.end('[]');
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   if(path==='/v1/logical-boxes/builder/messages'){
+   res.setHeader('X-Vmbox-Agent-Busy',observation?'true':'false');
    if(observation){res.setHeader('X-Vmbox-Mascot-Mood','idle');res.setHeader('X-Vmbox-Mascot-Activity','working');res.setHeader('X-Vmbox-Mascot-Observed-At',observation)}
    return res.end('[]');
   }

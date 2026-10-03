@@ -2,9 +2,11 @@ package controller
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -66,6 +68,46 @@ func TestBoxActivityReturnsOneScopedBatchAndExpiresState(t *testing.T) {
 		t.Fatalf("idle, empty-run, quiet, unknown, or hibernated activity leaked: %+v %+v %+v %+v %+v", activities[3], activities[4], activities[5], activities[6], activities[7])
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The browser transition test consumes these responses from the real Go handler.
+// The environment variable keeps this fixture export out of ordinary Go tests.
+func TestBoxActivityBrowserPayloads(t *testing.T) {
+	path := os.Getenv("VMBOX_ACTIVITY_FIXTURE_FILE")
+	if path == "" {
+		t.Skip("browser fixture export only")
+	}
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	columns := []string{"box_id", "agent_busy", "agent_busy_updated_at", "mascot_mood", "mascot_activity", "mascot_phrase", "mascot_observed_at", "mascot_phrase_at", "mascot_evidence_changed_at"}
+	old := now.Add(-3 * time.Minute)
+	cases := map[string][]driver.Value{
+		"working": {"builder", true, now.Add(-10 * time.Second), "idle", "working", "Editing chat.js", now.Add(-2 * time.Second), now.Add(-2 * time.Second), now.Add(-2 * time.Second)},
+		"quiet":   {"builder", true, old, "idle", "idle", "Old work", now.Add(-2 * time.Second), old, old},
+		"stale":   {"builder", true, now.Add(-time.Minute), "idle", "working", "Old work", now.Add(-50 * time.Second), now.Add(-50 * time.Second), now.Add(-50 * time.Second)},
+		"idle":    {"builder", false, now.Add(-2 * time.Second), "idle", "idle", "", now.Add(-2 * time.Second), nil, now.Add(-2 * time.Second)},
+	}
+	output := make(map[string]json.RawMessage, len(cases))
+	for name, values := range cases {
+		row := sqlmock.NewRows(columns).AddRow(values...)
+		mock.ExpectQuery(`FROM logical_boxes b LEFT JOIN LATERAL`).WithArgs("account-a", "owner", "user-a").WillReturnRows(row)
+		response := httptest.NewRecorder()
+		chatTestServer(store).boxActivityHandler(response, httptest.NewRequest(http.MethodGet, "/v1/box-activity", nil), Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"})
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", name, response.Code, response.Body.String())
+		}
+		output[name] = append([]byte(nil), response.Body.Bytes()...)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
 }
