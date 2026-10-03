@@ -4,7 +4,7 @@
  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
  const readTools=['list_mail_addresses','list_emails','read_email','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'];
  const composeTools=['send_email','list_outbox','get_outbox_status'];
- const state={boxId:'',settings:null,alsoReads:[],settingsSaving:false,globalAvailable:null,navUnread:0,approvals:{pending:0,items:[]},tab:'inbox',folder:'all',outboxStatus:'pending_approval',messages:[],messagesCursor:'',messagesLoaded:false,messagesLoading:false,messagesError:'',outbox:[],outboxCursor:'',outboxLoaded:false,outboxLoading:false,outboxError:'',detail:null,detailLoading:false,detailError:'',otpRevealed:false,policy:null};
+ const state={boxId:'',settings:null,settingsSaving:false,globalAvailable:null,navUnread:0,approvals:{pending:0,items:[]},tab:'inbox',folder:'all',outboxStatus:'pending_approval',messages:[],messagesCursor:'',messagesLoaded:false,messagesLoading:false,messagesError:'',outbox:[],outboxCursor:'',outboxLoaded:false,outboxLoading:false,outboxError:'',detail:null,detailLoading:false,detailError:'',otpRevealed:false,policy:null,policyLoading:false,policySaving:false,pendingRead:null,policyError:'',policyStatus:'',addresses:[],addressesLoaded:false,addressesLoading:false,addressSaving:false,addressExpanded:false,editAddressId:'',addressError:'',addressStatus:''};
  let api,mailPage,detailPage,mainGroup,mainRow,review,reviewItem,returnFocus,requestEpoch=0,approvalTimer,detailId='';
  const base=()=>'/v1/logical-boxes/'+encodeURIComponent(state.boxId)+'/mail';
  const count=()=>Number(state.settings?.unread)||0;
@@ -58,7 +58,8 @@
    const settings=await api.request('/v1/logical-boxes/'+encodeURIComponent(boxId)+'/mail');
    if(epoch!==requestEpoch||boxId!==state.boxId)return;
    state.settings=settings;state.globalAvailable=true;
-   void loadAlsoReads(boxId);
+   void loadPolicy(boxId);
+   void loadAddresses(boxId);
    if(state.tab==='inbox'&&settings.enabled&&!state.messagesLoaded)void loadMessages();
    renderMail();signals();
   }catch(error){
@@ -67,15 +68,71 @@
    renderMail();signals();
   }
  }
- async function loadAlsoReads(boxId){
+ async function loadPolicy(boxId){
+  if(!boxId||state.policyLoading)return;
   const epoch=requestEpoch;
+  state.policyLoading=true;state.policyError='';renderMail();
+  try{
+   const result=await api.request('/v1/logical-boxes/'+encodeURIComponent(boxId)+'/agent-policy');
+   if(epoch===requestEpoch&&boxId===state.boxId)state.policy=result?.capabilities||{};
+  }catch(error){if(epoch===requestEpoch&&boxId===state.boxId)state.policyError=shortError(error)}
+  finally{if(epoch===requestEpoch&&boxId===state.boxId){state.policyLoading=false;renderMail()}}
+ }
+ async function saveReadPermission(read){
+  const boxId=state.boxId,epoch=requestEpoch;
+  if(!boxId||state.policySaving)return;
+  state.policySaving=true;state.pendingRead=read;state.policyError='';state.policyStatus='Saving…';renderMail();
+  try{
+   const path='/v1/logical-boxes/'+encodeURIComponent(boxId)+'/agent-policy';
+   const current=await api.request(path),existing=current?.capabilities||{},previousTools=existing.mcpTools||{};
+   const allowed=new Set((previousTools.enabled?previousTools.allowedTools||[]:[]).map(name=>name==='search_emails'?'list_emails':name));
+   for(const name of readTools)read?allowed.add(name):allowed.delete(name);
+   const capabilities={...existing,mail:{...(existing.mail||{}),read},mcpTools:{...previousTools,enabled:read||!!previousTools.enabled,allowedTools:[...allowed]}};
+   const updated=await api.request(path,'PUT',{capabilities});
+   if(epoch===requestEpoch&&boxId===state.boxId){state.policy=updated?.capabilities||capabilities;state.policyStatus='Saved'}
+  }catch(error){if(epoch===requestEpoch&&boxId===state.boxId){state.policyError=shortError(error);state.policyStatus=''}}
+  finally{if(epoch===requestEpoch&&boxId===state.boxId){state.policySaving=false;state.pendingRead=null;renderMail()}}
+ }
+ async function loadAddresses(boxId){
+  if(!boxId||state.addressesLoading)return;
+  const epoch=requestEpoch;
+  state.addressesLoading=true;state.addressError='';renderMail();
   try{
    const result=await api.request('/v1/mail/addresses');
    if(epoch!==requestEpoch||boxId!==state.boxId)return;
-   const addresses=Array.isArray(result)?result:Array.isArray(result?.addresses)?result.addresses:[];
-   state.alsoReads=addresses.filter(item=>item.address!==state.settings?.address&&Array.isArray(item.boxIds)&&item.boxIds.includes(boxId)).map(item=>item.address);
-   renderMail();
-  }catch{if(epoch===requestEpoch&&boxId===state.boxId){state.alsoReads=[];renderMail()}}
+   state.addresses=Array.isArray(result)?result:Array.isArray(result?.addresses)?result.addresses:[];
+   state.addressesLoaded=true;
+  }catch(error){if(epoch===requestEpoch&&boxId===state.boxId)state.addressError=shortError(error)}
+  finally{if(epoch===requestEpoch&&boxId===state.boxId){state.addressesLoading=false;renderMail()}}
+ }
+ async function saveAddressGrant(addressID,granted){
+  const boxId=state.boxId,epoch=requestEpoch;
+  if(!boxId||state.addressSaving)return;
+  state.addressSaving=true;state.addressError='';state.addressStatus='Saving access…';renderMail();
+  try{
+   const latest=await api.request('/v1/mail/addresses');
+   const address=(Array.isArray(latest)?latest:latest?.addresses||[]).find(item=>item.id===addressID);
+   if(!address)throw Error('Address is no longer available');
+   if(address.owningBoxId===boxId&&!granted)throw Error('The box always has access to its own address');
+   const boxIds=new Set(address.boxIds||[]);
+   granted?boxIds.add(boxId):boxIds.delete(boxId);
+   await api.request('/v1/mail/addresses/'+encodeURIComponent(addressID),'PATCH',{boxIds:[...boxIds]});
+   if(epoch===requestEpoch&&boxId===state.boxId){state.addressStatus='Access saved';await loadAddresses(boxId)}
+  }catch(error){if(epoch===requestEpoch&&boxId===state.boxId){state.addressError=shortError(error);state.addressStatus=''}}
+  finally{if(epoch===requestEpoch&&boxId===state.boxId){state.addressSaving=false;renderMail()}}
+ }
+ async function saveAddressForm(form){
+  const boxId=state.boxId,epoch=requestEpoch;
+  if(!boxId||state.addressSaving)return;
+  const editID=form.dataset.editId,localPart=form.elements.localPart.value.trim(),label=form.elements.label.value.trim();
+  state.addressSaving=true;state.addressError='';state.addressStatus=editID?'Saving address…':'Adding address…';
+  form.querySelector('[type="submit"]').disabled=true;
+  let saved=false;
+  try{
+   await api.request('/v1/mail/addresses'+(editID?'/'+encodeURIComponent(editID):''),editID?'PATCH':'POST',editID?{localPart,label}:{localPart,label,boxIds:[boxId]});
+   if(epoch===requestEpoch&&boxId===state.boxId){state.editAddressId='';state.addressStatus=editID?'Address saved':'Address added';await loadAddresses(boxId);saved=true}
+  }catch(error){if(epoch===requestEpoch&&boxId===state.boxId){state.addressError=shortError(error);state.addressStatus='';setStatus('mail-address-status',state.addressError);form.querySelector('[type="submit"]').disabled=false}}
+  finally{if(epoch===requestEpoch&&boxId===state.boxId){state.addressSaving=false;if(saved)renderMail()}}
  }
  async function saveSettings(patch){
   if(!state.boxId||!state.settings||state.settingsSaving)return;
@@ -119,9 +176,32 @@
   }catch(error){if(epoch===requestEpoch&&boxId===state.boxId)state.outboxError=shortError(error)}
   finally{if(epoch===requestEpoch&&boxId===state.boxId){state.outboxLoading=false;renderMail()}}
  }
+ function renderAgentAccess(){
+  const read=state.policySaving?state.pendingRead:!!state.policy?.mail?.read,available=!!state.policy&&!state.policyLoading&&!state.policySaving&&!state.policyError;
+  const note=state.policyLoading?'Checking permission…':state.policyError?'Could not load permission':read?'Agent can list and read mail.':'Needs permission to read mail';
+  const body=`<div class="mail-setting-row mail-agent-read-row"><span><strong>Read mail</strong><small>${esc(note)}</small></span><label class="mail-switch mail-switch-small"><input id="mail-read-permission" type="checkbox" role="switch" aria-label="Allow agent to read mail" ${read?'checked':''} ${available?'':'disabled'}><span aria-hidden="true"></span></label></div><p class="mail-inline-status mail-access-status" role="status">${esc(state.policyError||state.policyStatus)}</p>${state.policyError?'<button type="button" class="mail-access-retry" data-mail-action="retry-policy">Retry permission</button>':''}`;
+  return card('Agent access',body,'mail-permission-card');
+ }
+ function renderAddresses(){
+  const granted=state.addresses.filter(item=>item.owningBoxId!==state.boxId&&(item.boxIds||[]).includes(state.boxId));
+  const preview=granted.length?`<p class="mail-also-reads">Also reads: ${granted.map(item=>esc(item.address)).join(', ')}</p>`:'<p class="mail-also-reads">No extra addresses granted.</p>';
+  let body=preview+`<button type="button" class="mail-manage-addresses" data-mail-action="toggle-addresses" aria-expanded="${state.addressExpanded}" aria-controls="mail-address-manager">${state.addressExpanded?'Hide address controls':'Manage access and addresses'} <span aria-hidden="true">›</span></button>`;
+  if(state.addressExpanded){
+   const ordered=[...state.addresses].sort((a,b)=>Number((b.boxIds||[]).includes(state.boxId))-Number((a.boxIds||[]).includes(state.boxId))||a.address.localeCompare(b.address));
+   const rows=ordered.map(item=>{
+    const isOwn=item.owningBoxId===state.boxId,checked=isOwn||(item.boxIds||[]).includes(state.boxId),editable=!item.owningBoxId;
+    const edit=editable?`<button type="button" class="mail-address-edit" data-mail-action="edit-address" data-address-id="${esc(item.id)}">Edit</button>`:'';
+    const form=state.editAddressId===item.id?`<form class="mail-address-form mail-address-edit-form" data-edit-id="${esc(item.id)}"><label>Address name<input name="localPart" required maxlength="64" autocomplete="off" value="${esc(item.localPart)}"></label><label>Label<input name="label" maxlength="100" value="${esc(item.label||'')}"></label><div><button type="submit">Save address</button><button type="button" data-mail-action="cancel-address-edit">Cancel</button></div></form>`:'';
+    return `<div class="mail-address-access-row"><div class="mail-address-info"><strong>${esc(item.address)}</strong><small>${isOwn?'This box’s address':item.owningBoxId?'Another box’s address':esc(item.label||'Shared address')}</small></div><label class="mail-switch mail-switch-small"><input type="checkbox" role="switch" data-mail-address-id="${esc(item.id)}" aria-label="Allow this box to access ${esc(item.address)}" ${checked?'checked':''} ${isOwn||state.addressSaving?'disabled':''}><span aria-hidden="true"></span></label>${edit}</div>${form}`;
+   }).join('');
+   const domain=state.settings?.address?.split('@')[1];
+   const addForm=`<form class="mail-address-form" id="mail-add-address-form"><strong>Add address${domain?' @'+esc(domain):''}</strong><label>Address name<input name="localPart" required maxlength="64" autocomplete="off" placeholder="team"></label><label>Label (optional)<input name="label" maxlength="100" placeholder="Team inbox"></label><button type="submit" ${state.addressSaving?'disabled':''}>Add for this box</button></form>`;
+   body+=`<div id="mail-address-manager" class="mail-address-manager">${state.addressesLoading&&!state.addressesLoaded?'<p class="mail-address-state">Loading addresses…</p>':state.addressError&&!state.addressesLoaded?'<p class="mail-address-state" role="alert">'+esc(state.addressError)+' <button type="button" data-mail-action="retry-addresses">Retry</button></p>':rows||'<p class="mail-address-state">No addresses yet.</p>'}${addForm}<a class="mail-all-addresses" href="/#mail">Open all account addresses</a><p id="mail-address-status" class="mail-inline-status" role="status">${esc(state.addressError||state.addressStatus)}</p></div>`;
+  }
+  return card('Addresses',body,'mail-address-card');
+ }
  function renderInbox(){
   const settings=state.settings||{enabled:false,address:'',subscribed:false,filters:{sender:'',subject:''}};
-  const alsoReads=state.alsoReads.length?card('Also reads',`<p class="mail-also-reads">${state.alsoReads.map(esc).join(', ')}</p><a class="mail-manage-addresses" href="/#mail">Manage addresses →</a>`):'';
   const settingsCard=card('Settings',`<div class="mail-setting-row"><span>Receive mail</span><label class="mail-switch"><input id="mail-enabled" type="checkbox" role="switch" aria-label="Enable inbox" ${settings.enabled?'checked':''} ${state.settingsSaving?'disabled':''}><span aria-hidden="true"></span></label></div><div class="mail-setting-row mail-setting-address"><span>Address</span><code>${esc(settings.address||'Assigned when enabled')}</code><button type="button" data-mail-action="copy" ${settings.address?'':'disabled'}>Copy</button></div><div class="mail-setting-row"><span>Notify agent</span><label class="mail-switch"><input id="mail-subscribed" type="checkbox" role="switch" aria-label="Subscribe agent to inbox" ${settings.subscribed?'checked':''} ${settings.enabled&&!state.settingsSaving?'':'disabled'}><span aria-hidden="true"></span></label></div><details class="mail-filter-details"><summary>Notification filters</summary><div class="mail-filter-fields"><label>Sender <input id="mail-sender-filter" placeholder="Any sender" value="${esc(settings.filters?.sender||'')}" ${settings.enabled&&settings.subscribed&&!state.settingsSaving?'':'disabled'}></label><label>Subject <input id="mail-subject-filter" placeholder="Any subject" value="${esc(settings.filters?.subject||'')}" ${settings.enabled&&settings.subscribed&&!state.settingsSaving?'':'disabled'}></label></div></details><p id="mail-settings-status" class="mail-inline-status" role="status"></p>`);
   let list='';
   if(!settings.enabled)list=`<div class="mail-empty"><strong>Inbox is off</strong><p>Enable mail in Settings below.</p></div>`;
@@ -133,7 +213,7 @@
    if(state.messagesCursor)list+='<button type="button" class="mail-load-more" data-mail-action="more-messages">Load more</button>';
   }
   const tabs=`<div class="mail-tabs" role="tablist" aria-label="Inbox filter">${[['all','All'],['unread','Unread'],['quarantine','Quarantine']].map(([key,label])=>`<button type="button" role="tab" aria-selected="${state.folder===key}" data-mail-filter="${key}">${label}${key==='unread'?` <span>${count()}</span>`:''}</button>`).join('')}</div>`;
-  return `<div class="mail-section-heading"><strong>Messages</strong><span>${count()} unread</span></div><section class="ip-card mail-list-card">${tabs}<div class="mail-list">${list}</div></section>${settingsCard}${alsoReads}`;
+  return `<div class="mail-section-heading"><strong>Messages</strong><span>${count()} unread</span></div><section class="ip-card mail-list-card">${tabs}<div class="mail-list">${list}</div></section>${settingsCard}${renderAgentAccess()}${renderAddresses()}`;
  }
  function renderOutbox(){
   let list='';
@@ -252,6 +332,11 @@
    const draft=event.target.closest('[data-outbox-id]');if(draft){openReview(state.outbox.find(item=>item.outboxId===draft.dataset.outboxId),draft);return}
    const action=event.target.closest('[data-mail-action]')?.dataset.mailAction;
    if(action==='copy'){try{await navigator.clipboard.writeText(state.settings?.address||'');event.target.textContent='Copied'}catch{setStatus('mail-settings-status','Could not copy address')}return}
+   if(action==='toggle-addresses'){state.addressExpanded=!state.addressExpanded;state.addressError='';renderMail();if(state.addressExpanded&&!state.addressesLoaded)void loadAddresses(state.boxId);return}
+   if(action==='edit-address'){state.editAddressId=event.target.closest('[data-address-id]')?.dataset.addressId||'';state.addressError='';renderMail();mailPage.querySelector('.mail-address-edit-form [name="localPart"]')?.focus();return}
+   if(action==='cancel-address-edit'){state.editAddressId='';renderMail();return}
+   if(action==='retry-policy'){void loadPolicy(state.boxId);return}
+   if(action==='retry-addresses'){void loadAddresses(state.boxId);return}
    if(action==='retry-messages')void loadMessages();if(action==='retry-outbox')void loadOutbox();if(action==='more-messages')void loadMessages(true);if(action==='more-outbox')void loadOutbox(true);
   });
   mailPage.addEventListener('change',event=>{
@@ -259,6 +344,12 @@
    if(event.target.id==='mail-subscribed')void saveSettings({subscribed:event.target.checked});
    if(event.target.id==='mail-sender-filter')void saveSettings({filters:{sender:event.target.value}});
    if(event.target.id==='mail-subject-filter')void saveSettings({filters:{subject:event.target.value}});
+   if(event.target.id==='mail-read-permission')void saveReadPermission(event.target.checked);
+   if(event.target.matches('[data-mail-address-id]'))void saveAddressGrant(event.target.dataset.mailAddressId,event.target.checked);
+  });
+  mailPage.addEventListener('submit',event=>{
+   if(!event.target.matches('.mail-address-form'))return;
+   event.preventDefault();void saveAddressForm(event.target);
   });
   detailPage.addEventListener('click',async event=>{
    const action=event.target.closest('[data-mail-action]')?.dataset.mailAction;if(!action)return;
@@ -268,7 +359,7 @@
   });
   void loadApprovals();approvalTimer=setInterval(()=>{if(!document.hidden)void loadApprovals()},30000);
   signals();renderMail();
-  return {backTarget:key=>key==='mailDetail'?'mail':'',onShow:key=>{if(key==='mail'){renderMail();if(state.tab==='inbox'&&state.settings?.enabled)void loadMessages();if(state.tab==='outbox')void loadOutbox()}},onBox:box=>{if(box?.id===state.boxId)return;requestEpoch++;state.boxId=box?.id||'';state.settings=null;state.alsoReads=[];state.messages=[];state.messagesLoaded=false;state.outbox=[];state.outboxLoaded=false;state.detail=null;signals();renderMail();if(box&&state.globalAvailable===true)void loadSettings(box.id)},refreshApprovals:loadApprovals,openMessage,openApprovals};
+  return {backTarget:key=>key==='mailDetail'?'mail':'',onShow:key=>{if(key==='mail'){renderMail();if(state.boxId){void loadPolicy(state.boxId);void loadAddresses(state.boxId)}if(state.tab==='inbox'&&state.settings?.enabled)void loadMessages();if(state.tab==='outbox')void loadOutbox()}},onBox:box=>{if(box?.id===state.boxId)return;requestEpoch++;state.boxId=box?.id||'';state.settings=null;state.messages=[];state.messagesLoaded=false;state.outbox=[];state.outboxLoaded=false;state.detail=null;state.policy=null;state.policyLoading=false;state.policySaving=false;state.pendingRead=null;state.policyError='';state.policyStatus='';state.addresses=[];state.addressesLoaded=false;state.addressesLoading=false;state.addressSaving=false;state.editAddressId='';state.addressError='';state.addressStatus='';state.addressExpanded=false;signals();renderMail();if(box&&state.globalAvailable===true)void loadSettings(box.id)},refreshApprovals:loadApprovals,openMessage,openApprovals};
  }
  function notice(box,message){
   const mail=message?.mail;if(message?.direction!=='system'||!mail||!['mail_batch','outbox_status'].includes(mail.kind))return null;

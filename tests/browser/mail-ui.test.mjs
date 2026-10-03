@@ -23,6 +23,12 @@ function fixture(){return {
   {outboxId:'o3',to:['team@example.com'],subject:'Thanks',text:'Thanks!',status:'sent',version:1,submittedAt:stamp},
  ],
  policy:{capabilities:{allContacts:{enabled:false},mail:{read:false,compose:false},mcpTools:{enabled:true,allowedTools:[]},createAgentBox:{maxBoxes:3,maxDiskGiB:50},manageAgentBoxes:{}}},
+ addresses:[
+  {id:'own-builder',address:'builder-ab12@example.test',localPart:'builder-ab12',owningBoxId:'builder',primary:true,boxIds:['builder']},
+  {id:'extra-1',address:'b@example.test',localPart:'b',label:'Team',boxIds:['builder']},
+  {id:'other-box',address:'reviewer@example.test',localPart:'reviewer',owningBoxId:'reviewer',primary:true,boxIds:['reviewer','builder']},
+  {id:'available-1',address:'shared@example.test',localPart:'shared',label:'Shared',boxIds:['reviewer']},
+ ],
  writes:[],
  } }
 async function serve(data,{disabled=false,role='owner'}={}){
@@ -35,7 +41,21 @@ async function serve(data,{disabled=false,role='owner'}={}){
    if(path==='/v1/whoami')return send({role,accountId:'acct'});
    if(path==='/v1/logical-boxes'||path==='/v1/grid-boxes')return send([box]);
    if(path==='/v1/mail/approvals')return disabled?send({error:'Mail disabled'},404):send({pending:data.outbox.filter(item=>item.status==='pending_approval').length,items:data.outbox.filter(item=>item.status==='pending_approval').map(item=>({boxId:'builder',boxName:'BossDev',outboxId:item.outboxId,to:item.to,subject:item.subject,createdAt:item.submittedAt}))});
-   if(path==='/v1/mail/addresses')return send({addresses:[{id:'extra-1',address:'b@example.test',localPart:'b',label:'Team',boxIds:['builder']},{id:'other-box',address:'reviewer@example.test',owningBoxId:'other-box',primary:true,boxIds:['other-box','builder']}]});
+   if(path==='/v1/mail/addresses'){
+    if(request.method==='POST'){
+     const value=await body();data.writes.push({path,method:'POST',body:value});
+     const item={id:'created-'+(data.addresses.length+1),localPart:value.localPart,address:value.localPart+'@example.test',label:value.label,boxIds:value.boxIds||[]};
+     data.addresses.push(item);return send(item,201);
+    }
+    return send({addresses:data.addresses});
+   }
+   const addressItem=path.match(/^\/v1\/mail\/addresses\/([^/]+)$/);
+   if(addressItem&&request.method==='PATCH'){
+    const item=data.addresses.find(entry=>entry.id===addressItem[1]);if(!item)return send({error:'Address unavailable'},404);
+    const value=await body();data.writes.push({path,method:'PATCH',body:value});
+    Object.assign(item,value);if(value.localPart)item.address=value.localPart+'@example.test';
+    return send(item);
+   }
    if(path==='/v1/logical-boxes/builder/mail'){
     if(disabled)return send({error:'Mail disabled'},404);
     if(request.method==='PUT'){const value=await body();data.writes.push({path,method:'PUT',body:value});data.settings={...data.settings,...value,address:data.settings.address,filters:value.filters||data.settings.filters}}
@@ -89,7 +109,7 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    await page.waitForSelector('.mail-also-reads');
    assert.match(await page.$eval('.mail-also-reads',node=>node.textContent),/b@tra\.vet/);
    assert.match(await page.$eval('.mail-also-reads',node=>node.textContent),/reviewer@tra\.vet/);
-   assert.equal(await page.$eval('.mail-manage-addresses',node=>new URL(node.href).hash),'#mail');
+   assert.equal(await page.$eval('.mail-manage-addresses',node=>node.getAttribute('aria-expanded')),'false');
    assert.equal(await page.$eval('[data-ip-page="mail"]',node=>node.textContent.indexOf('Messages')<node.textContent.indexOf('Settings')),true);
    assert.equal(await page.$eval('[data-mail-id="m1"]',node=>node.textContent.includes('483921')),false);
    assert.equal(await page.$('[data-mail-id="m3"]'),null);
@@ -151,6 +171,74 @@ test('Mail UI is absent when the feature is off and tool lists omit retired tool
  const data=fixture(),server=await serve(data,{disabled:true}),chrome=await browser();
  try{const page=await chrome.newPage();await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);await page.click('#chat-info');await page.waitForFunction(()=>document.querySelector('.mail-group')?.hidden===true);assert.equal(await page.$eval('#mail-approval',node=>node.hidden),true);assert.equal(await page.$eval('#role-editor-form [data-mail-feature]',node=>node.hidden),true);assert.equal(await page.$eval('#role-editor-form [data-mail-feature]',node=>node.hidden),true);await page.close()}finally{await chrome.close();await new Promise(resolve=>server.close(resolve))}
  const manage=await readFile(resolve(web,'index.html'),'utf8');assert.match(manage,/value="list_emails"/);assert.doesNotMatch(manage,/value="reply_email"|value="set_busy"/);
+});
+
+test('box Mail details can grant read permission and manage its addresses',async()=>{
+ const data=fixture();data.policy.capabilities.mail.compose=true;data.policy.capabilities.mcpTools.allowedTools=['send_email','take_screenshot'];
+ const capture=process.env.MAIL_CAPTURE_DIR;if(capture)await mkdir(capture,{recursive:true});
+ const server=await serve(data),chrome=await browser();
+ try{
+  const page=await chrome.newPage();await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await open(page,'http://127.0.0.1:'+server.address().port);
+  await page.click('[data-ip-row="mail"]');
+  await page.waitForFunction(()=>document.querySelector('#mail-read-permission')?.disabled===false);
+  assert.match(await page.$eval('.mail-agent-read-row',node=>node.textContent),/Needs permission to read mail/);
+  if(capture)await page.screenshot({path:resolve(capture,'box-mail-permission-390.png'),fullPage:true});
+  await page.click('#mail-read-permission');
+  await page.waitForFunction(()=>document.querySelector('#mail-read-permission')?.checked&&document.querySelector('.mail-access-status')?.textContent==='Saved');
+  const granted=data.writes.find(write=>write.path.endsWith('/agent-policy')&&write.body.capabilities.mail.read===true);
+  assert.equal(granted.body.capabilities.mail.compose,true);
+  assert.equal(granted.body.capabilities.mcpTools.allowedTools.includes('send_email'),true);
+  assert.equal(granted.body.capabilities.mcpTools.allowedTools.includes('take_screenshot'),true);
+  assert.equal(granted.body.capabilities.mcpTools.allowedTools.includes('list_emails'),true);
+  await page.click('#mail-read-permission');
+  await page.waitForFunction(()=>document.querySelector('#mail-read-permission')?.checked===false&&document.querySelector('.mail-access-status')?.textContent==='Saved');
+  const revoked=data.writes.findLast(write=>write.path.endsWith('/agent-policy'));
+  assert.equal(revoked.body.capabilities.mail.read,false);
+  assert.equal(revoked.body.capabilities.mcpTools.allowedTools.includes('list_emails'),false);
+  assert.equal(revoked.body.capabilities.mcpTools.allowedTools.includes('send_email'),true);
+  await page.click('.mail-manage-addresses');
+  await page.waitForSelector('[data-mail-address-id="available-1"]');
+  if(capture){await page.$eval('#inspect-prototype-page',node=>node.scrollTop=node.scrollHeight);await page.screenshot({path:resolve(capture,'box-mail-addresses-390.png'),fullPage:true})}
+  assert.equal(await page.$eval('[data-mail-address-id="own-builder"]',node=>node.checked&&node.disabled),true);
+  await page.click('[data-mail-address-id="available-1"]');
+  await page.waitForFunction(()=>document.querySelector('[data-mail-address-id="available-1"]')?.checked&&!document.querySelector('[data-mail-address-id="available-1"]')?.disabled);
+  assert.deepEqual(data.writes.findLast(write=>write.path.endsWith('/addresses/available-1')).body.boxIds,['reviewer','builder']);
+  await page.click('[data-mail-address-id="available-1"]');
+  await page.waitForFunction(()=>document.querySelector('[data-mail-address-id="available-1"]')?.checked===false&&!document.querySelector('[data-mail-address-id="available-1"]')?.disabled);
+  assert.deepEqual(data.writes.findLast(write=>write.path.endsWith('/addresses/available-1')).body.boxIds,['reviewer']);
+  await page.type('#mail-add-address-form [name="localPart"]','project');
+  await page.type('#mail-add-address-form [name="label"]','Project inbox');
+  await page.click('#mail-add-address-form [type="submit"]');
+  await page.waitForFunction(()=>[...document.querySelectorAll('.mail-address-info strong')].some(node=>node.textContent==='project@example.test'));
+  assert.deepEqual(data.writes.find(write=>write.path==='/v1/mail/addresses'&&write.method==='POST').body,{localPart:'project',label:'Project inbox',boxIds:['builder']});
+  await page.click('[data-mail-action="edit-address"][data-address-id="created-5"]');
+  await page.waitForSelector('.mail-address-edit-form');
+  await page.$eval('.mail-address-edit-form [name="label"]',node=>node.value='Updated project inbox');
+  await page.click('.mail-address-edit-form [type="submit"]');
+  await page.waitForFunction(()=>[...document.querySelectorAll('.mail-address-info small')].some(node=>node.textContent==='Updated project inbox'));
+  const edited=data.writes.findLast(write=>write.path.endsWith('/addresses/created-5'));
+  assert.equal(edited.body.label,'Updated project inbox');assert.equal('boxIds' in edited.body,false);
+  assert.deepEqual(data.addresses.find(item=>item.id==='created-5').boxIds,['builder']);
+  assert.deepEqual(errors,[]);
+  await page.close();
+ }finally{await chrome.close();await new Promise(resolve=>server.close(resolve))}
+});
+
+test('box Mail read switch does not activate unrelated dormant MCP grants',async()=>{
+ const data=fixture();data.policy.capabilities.mcpTools={enabled:false,allowedTools:['delete_agent_box']};
+ const server=await serve(data),chrome=await browser();
+ try{
+  const page=await chrome.newPage();await open(page,'http://127.0.0.1:'+server.address().port);
+  await page.click('[data-ip-row="mail"]');await page.waitForFunction(()=>document.querySelector('#mail-read-permission')?.disabled===false);
+  await page.click('#mail-read-permission');await page.waitForFunction(()=>document.querySelector('.mail-access-status')?.textContent==='Saved');
+  const saved=data.writes.find(write=>write.path.endsWith('/agent-policy'))?.body.capabilities;
+  assert.equal(saved.mail.read,true);assert.equal(saved.mcpTools.enabled,true);
+  assert.equal(saved.mcpTools.allowedTools.includes('list_emails'),true);
+  assert.equal(saved.mcpTools.allowedTools.includes('delete_agent_box'),false);
+  await page.close();
+ }finally{await chrome.close();await new Promise(resolve=>server.close(resolve))}
 });
 
 test('Mail distinguishes a disabled box from a disabled feature and reloads a changed draft',async()=>{

@@ -4,11 +4,36 @@
 #inspect.details-prototype .ip-page[data-ip-page^="mail"]{gap:12px}
 #inspect.details-prototype .mail-card{padding:0;overflow:hidden}
 #inspect.details-prototype .mail-card>h3{margin:0;padding:14px 15px 9px;color:var(--vb-ink-soft);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
-#inspect.details-prototype .mail-also-reads{margin:0;padding:0 15px 8px;color:var(--vb-ink);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
-#inspect.details-prototype .mail-manage-addresses{display:flex;align-items:center;min-height:42px;padding:0 15px;border-top:1px solid var(--vb-line);color:var(--vb-accent-text);font-size:12px;font-weight:700;text-decoration:none}
+#inspect.details-prototype .mail-also-reads{margin:0;padding:0 15px 8px;color:var(--vb-ink-soft);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+#inspect.details-prototype .mail-manage-addresses{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:42px;padding:0 15px;border:0;border-top:1px solid var(--vb-line);background:transparent;color:var(--vb-accent-text);font:700 12px var(--vb-font);text-align:left;cursor:pointer}
+#inspect.details-prototype .mail-manage-addresses span{font-size:20px;transition:transform .18s}
+#inspect.details-prototype .mail-manage-addresses[aria-expanded="true"] span{transform:rotate(90deg)}
 #inspect.details-prototype .mail-setting-row{display:flex;align-items:center;gap:10px;min-height:49px;margin:0 15px;border-bottom:1px solid var(--vb-line);color:var(--vb-ink);font-size:13px;font-weight:650}
 #inspect.details-prototype .mail-setting-row>span:first-child{flex:1}
 #inspect.details-prototype .mail-setting-row .mail-switch{height:44px}
+#inspect.details-prototype .mail-agent-read-row>span:first-child{display:grid;gap:2px;padding:8px 0}
+#inspect.details-prototype .mail-agent-read-row small{color:var(--vb-ink-soft);font-size:11px;font-weight:500;line-height:1.35}
+#inspect.details-prototype .mail-permission-card .mail-setting-row{border-bottom:0}
+#inspect.details-prototype .mail-access-status{padding:0 15px 12px}
+#inspect.details-prototype .mail-access-retry{margin:0 15px 12px;padding:7px 10px;border:1px solid var(--vb-line-strong);border-radius:8px;background:var(--vb-surface-2);color:var(--vb-ink);font:700 11px var(--vb-font)}
+#inspect.details-prototype .mail-address-manager{padding:3px 15px 14px;border-top:1px solid var(--vb-line)}
+#inspect.details-prototype .mail-address-access-row{display:flex;align-items:center;gap:5px;min-height:55px;border-bottom:1px solid var(--vb-line)}
+#inspect.details-prototype .mail-address-info{display:grid;gap:2px;min-width:0;flex:1}
+#inspect.details-prototype .mail-address-info strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+#inspect.details-prototype .mail-address-info small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vb-ink-soft);font-size:10px}
+#inspect.details-prototype .mail-address-edit{min-height:36px;padding:0 4px;border:0;background:transparent;color:var(--vb-accent-text);font:700 11px var(--vb-font);cursor:pointer}
+#inspect.details-prototype .mail-address-form{display:grid;gap:9px;margin:12px 0 0;padding:12px;border:1px solid var(--vb-line);border-radius:10px;background:var(--vb-surface-2)}
+#inspect.details-prototype .mail-address-form>strong{font-size:12px}
+#inspect.details-prototype .mail-address-form label{display:grid;gap:4px;color:var(--vb-ink-soft);font-size:11px;font-weight:700}
+#inspect.details-prototype .mail-address-form label span{font-weight:500}
+#inspect.details-prototype .mail-address-form input{box-sizing:border-box;width:100%;min-height:38px;padding:7px 9px;border:1px solid var(--vb-line-strong);border-radius:8px;background:var(--vb-surface);color:var(--vb-ink);font:12px var(--vb-font)}
+#inspect.details-prototype .mail-address-form button{min-height:38px;padding:0 10px;border:1px solid var(--vb-line-strong);border-radius:8px;background:var(--vb-surface);color:var(--vb-ink);font:700 11px var(--vb-font);cursor:pointer}
+#inspect.details-prototype .mail-address-form button[type="submit"]{border-color:var(--vb-ink);background:var(--vb-ink);color:var(--vb-bg)}
+#inspect.details-prototype .mail-address-edit-form>div{display:flex;gap:6px}
+#inspect.details-prototype .mail-all-addresses{display:block;margin:11px 0 4px;color:var(--vb-accent-text);font-size:11px;font-weight:700;text-decoration:none}
+#inspect.details-prototype .mail-address-state{margin:10px 0;color:var(--vb-ink-soft);font-size:11px}
+#inspect.details-prototype #mail-address-status{display:block;margin-top:8px}
+#inspect.details-prototype #mail-address-status:empty{display:none}
 #inspect.details-prototype .mail-setting-address code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vb-ink-soft);font-size:12px;font-weight:500}
 #inspect.details-prototype .mail-setting-address button{min-height:40px;padding:0 10px;border:1px solid var(--vb-line-strong);border-radius:9px;background:var(--vb-surface-2);color:var(--vb-ink);font:700 12px var(--vb-font)}
 #inspect.details-prototype .mail-filter-details summary{display:flex;align-items:center;min-height:44px;padding:0 15px;color:var(--vb-ink-soft);font-size:12px;font-weight:650;cursor:pointer;list-style:none}
@@ -29,6 +54,10 @@
 #inspect.details-prototype .mail-switch input:checked+span::after{transform:translateX(17px)}
 #inspect.details-prototype .mail-switch input:focus-visible+span{outline:2px solid var(--vb-ink);outline-offset:3px}
 #inspect.details-prototype .mail-switch input:disabled+span{opacity:.45}
+#inspect.details-prototype .mail-switch-small{width:45px}
+#inspect.details-prototype .mail-switch-small span{width:36px;height:22px}
+#inspect.details-prototype .mail-switch-small span::after{width:16px;height:16px}
+#inspect.details-prototype .mail-switch-small input:checked+span::after{transform:translateX(14px)}
 #inspect.details-prototype .mail-attachment button,#inspect.details-prototype .mail-error button{min-height:40px;padding:0 12px;border:1px solid var(--vb-line-strong);border-radius:10px;background:var(--vb-surface);color:var(--vb-ink);font:700 12px var(--vb-font);cursor:pointer}
 #inspect.details-prototype .mail-filter-fields{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:0 15px}
 #inspect.details-prototype .mail-filter-fields label{display:grid;gap:5px;min-width:0;color:var(--vb-ink-soft);font-size:11px;font-weight:700}
