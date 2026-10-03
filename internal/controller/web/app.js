@@ -1,6 +1,7 @@
 'use strict';
 const $=s=>document.querySelector(s);
 const workspaceNav=window.VMBoxWorkspaceNav?.init({menuId:'manage-menu',panelId:'manage-menu-panel',usageId:'manage-usage',providersId:'manage-providers'});
+const mailPanel=window.VBoxMailPanel?.init();
 let token='',defaults=null,epoch=0;
 let boxRefreshTimer;
 let fleetSnapshots=[];
@@ -464,7 +465,7 @@ $('#box-detail-close').onclick=closeBoxDetail;$('#box-detail-backdrop').onclick=
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#box-detail').hidden&&!document.querySelector('.modal:not([hidden])'))closeBoxDetail()});
 function manageView(){
  const section=location.hash.slice(1);
- const pageNames={boxes:'boxes',providers:'providers',profiles:'profiles',roles:'permissions',instructions:'instructions',fleet:'capacity',notifications:'notifications'};
+ const pageNames={boxes:'boxes',mail:'mail',providers:'providers',profiles:'profiles',roles:'permissions',instructions:'instructions',fleet:'capacity',notifications:'notifications'};
  const page=pageNames[section]||'manage';
  const view=pageNames[section]?section:'all';
  document.body.dataset.manageView=view;
@@ -474,6 +475,7 @@ function manageView(){
   if(link.getAttribute('href')==='#'+section&&section)link.setAttribute('aria-current','page');
   else link.removeAttribute('aria-current');
  });
+ mailPanel?.onRoute();
 }
 addEventListener('hashchange',manageView);manageView();
 $('#manage-account')?.addEventListener('click',()=>$('#manage-menu')?.click());
@@ -743,13 +745,14 @@ async function loadAgentCLIVersionChoices(version){
 async function refresh(){
  const version=epoch,[caps,boxes,instructionList]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes'),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);if(version!==epoch)return;
  ownerTools=caps.providerEdits;
- if(!ownerTools)workspaceNav?.setOwner(false);
+ if(!ownerTools){workspaceNav?.setOwner(false);mailPanel?.setOwner(false)}
  document.querySelectorAll('[data-owner]:not(.modal)').forEach(n=>n.hidden=!ownerTools);
  applyInstructionPresets(instructionList);
  renderBoxes(boxes);
  if(!ownerTools)return;
  const [providers,schema,notifications,identity,profiles,toolPresets,cliVersions]=await Promise.all([api('/v1/provider-credentials'),api('/v1/provider-schemas'),api('/v1/notifications'),api('/v1/whoami'),api('/v1/login-profiles'),api('/v1/tool-presets'),api('/v1/agent-cli-versions')]);if(version!==epoch)return;
  workspaceNav?.setOwner(identity.role==='owner');
+ mailPanel?.setOwner(identity.role==='owner');
  renderPermissionBoxes(boxes);
  renderPoolChoices(providers);
  const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};const snapshot=await workspaceNav.providerSnapshot(provider);return {...(snapshot.fleet||{}),...target,providerSnapshot:snapshot,hostResources:snapshot.host,hostError:snapshot.hostError,error:snapshot.fleet?undefined:snapshot.errors[0]}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
@@ -765,6 +768,7 @@ async function refresh(){
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#login-error').textContent='';$('#app').hidden=false;openProfileFromLink()}));
 $('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());closeProviderPanel();$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
 $('#refresh').addEventListener('click',action(refresh));
+$('#logout').addEventListener('click',()=>mailPanel?.setOwner(false));
 function resetCreationForm(form){
  const pool=form.elements.pool.value;
  form.reset();createInstructionSource='';

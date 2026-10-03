@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
@@ -87,8 +88,7 @@ func (s *Server) inboundMailRecipient(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, fmt.Errorf("unknown recipient"))
 		return
 	}
-	var exists bool
-	err := s.Store.DB.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM box_mail_settings m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id WHERE lower(m.address)=$1 AND m.enabled AND b.state NOT IN ('deleting','deleted'))`, recipient).Scan(&exists)
+	_, exists, err := s.resolveInboundMailRecipient(r.Context(), recipient)
 	if err != nil {
 		writeError(w, 503, fmt.Errorf("recipient lookup unavailable"))
 		return
@@ -98,6 +98,35 @@ func (s *Server) inboundMailRecipient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"accept": true})
+}
+
+type inboundMailDestination struct{ accountID, boxID, addressID, boxName string }
+
+func (s *Server) resolveInboundMailRecipient(ctx context.Context, recipient string) (inboundMailDestination, bool, error) {
+	var destination inboundMailDestination
+	var boxID sql.NullString
+	var enabled bool
+	var boxState sql.NullString
+	err := s.Store.DB.QueryRowContext(ctx, `SELECT a.account_id::text,a.id::text,a.owning_box_id::text,COALESCE(b.name,'Unassigned'),a.enabled,b.state FROM mail_addresses a LEFT JOIN logical_boxes b ON b.id=a.owning_box_id AND b.account_id=a.account_id WHERE lower(a.address)=$1`, recipient).Scan(&destination.accountID, &destination.addressID, &boxID, &destination.boxName, &enabled, &boxState)
+	if err == nil {
+		if !enabled || (boxID.Valid && (!boxState.Valid || boxState.String == "deleting" || boxState.String == "deleted")) {
+			return inboundMailDestination{}, false, nil
+		}
+		destination.boxID = boxID.String
+		return destination, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return destination, false, err
+	}
+	err = s.Store.DB.QueryRowContext(ctx, `SELECT account_id::text FROM mail_account_settings WHERE keep_unknown=true`).Scan(&destination.accountID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return destination, false, nil
+	}
+	if err != nil {
+		return destination, false, err
+	}
+	destination.boxName = "Unassigned"
+	return destination, true, nil
 }
 
 func (s *Server) inboundMailMessage(w http.ResponseWriter, r *http.Request) {
@@ -112,10 +141,11 @@ func (s *Server) inboundMailMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.Header.Get("X-Vbox-Idempotency")
+	ingestKey := recipient + ":" + key
 	digest := sha256.Sum256(raw)
 	rawHash := hex.EncodeToString(digest[:])
 	var priorHash, priorRecipient, priorID string
-	err := s.Store.DB.QueryRowContext(r.Context(), `SELECT raw_sha256,envelope_to,id::text FROM mail_messages WHERE ingest_key=$1`, key).Scan(&priorHash, &priorRecipient, &priorID)
+	err := s.Store.DB.QueryRowContext(r.Context(), `SELECT raw_sha256,envelope_to,id::text FROM mail_messages WHERE ingest_key=$1`, ingestKey).Scan(&priorHash, &priorRecipient, &priorID)
 	if err == nil {
 		writeInboundDuplicate(w, priorHash, priorRecipient, rawHash, recipient, priorID)
 		return
@@ -124,11 +154,8 @@ func (s *Server) inboundMailMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, fmt.Errorf("mail store unavailable"))
 		return
 	}
-	var accountID, boxID, boxName string
-	var subscribed bool
-	var senderFilter, subjectFilter string
-	err = s.Store.DB.QueryRowContext(r.Context(), `SELECT m.account_id::text,m.box_id::text,b.name,m.subscribed,m.sender_filter,m.subject_filter FROM box_mail_settings m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id WHERE lower(m.address)=$1 AND m.enabled AND b.state NOT IN ('deleting','deleted')`, recipient).Scan(&accountID, &boxID, &boxName, &subscribed, &senderFilter, &subjectFilter)
-	if errors.Is(err, sql.ErrNoRows) {
+	destination, found, err := s.resolveInboundMailRecipient(r.Context(), recipient)
+	if !found && err == nil {
 		writeError(w, 404, fmt.Errorf("unknown recipient"))
 		return
 	}
@@ -149,9 +176,9 @@ func (s *Server) inboundMailMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	var inserted string
-	err = tx.QueryRowContext(r.Context(), `INSERT INTO mail_messages(id,account_id,box_id,ingest_key,raw_sha256,rfc_message_id,envelope_from,envelope_to,header_from,from_name,subject,text_body,preview,quarantined,spf,dkim,has_attachments) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT(ingest_key) DO NOTHING RETURNING id::text`, id, accountID, boxID, key, rawHash, parsed.MessageID, envelopeFrom, recipient, parsed.From, parsed.FromName, parsed.Subject, parsed.Text, parsed.Preview, quarantined, parsed.SPF, parsed.DKIM, len(parsed.Attachments) > 0).Scan(&inserted)
+	err = tx.QueryRowContext(r.Context(), `INSERT INTO mail_messages(id,account_id,box_id,address_id,ingest_key,raw_sha256,rfc_message_id,envelope_from,envelope_to,header_from,from_name,subject,text_body,preview,quarantined,spf,dkim,has_attachments) VALUES($1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT(ingest_key) DO NOTHING RETURNING id::text`, id, destination.accountID, destination.boxID, destination.addressID, ingestKey, rawHash, parsed.MessageID, envelopeFrom, recipient, parsed.From, parsed.FromName, parsed.Subject, parsed.Text, parsed.Preview, quarantined, parsed.SPF, parsed.DKIM, len(parsed.Attachments) > 0).Scan(&inserted)
 	if errors.Is(err, sql.ErrNoRows) {
-		if err := tx.QueryRowContext(r.Context(), `SELECT raw_sha256,envelope_to,id::text FROM mail_messages WHERE ingest_key=$1`, key).Scan(&priorHash, &priorRecipient, &priorID); err != nil {
+		if err := tx.QueryRowContext(r.Context(), `SELECT raw_sha256,envelope_to,id::text FROM mail_messages WHERE ingest_key=$1`, ingestKey).Scan(&priorHash, &priorRecipient, &priorID); err != nil {
 			writeError(w, 503, fmt.Errorf("mail store unavailable"))
 			return
 		}
@@ -167,13 +194,13 @@ func (s *Server) inboundMailMessage(w http.ResponseWriter, r *http.Request) {
 		if attachment.Blocked {
 			scanState = "blocked"
 		}
-		_, err := tx.ExecContext(r.Context(), `INSERT INTO mail_attachments(id,account_id,message_id,name,content_type,size_bytes,sha256,data,scan_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, uuid(), accountID, id, attachment.Name, attachment.ContentType, len(attachment.Data), attachment.SHA256, attachment.Data, scanState)
+		_, err := tx.ExecContext(r.Context(), `INSERT INTO mail_attachments(id,account_id,message_id,name,content_type,size_bytes,sha256,data,scan_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, uuid(), destination.accountID, id, attachment.Name, attachment.ContentType, len(attachment.Data), attachment.SHA256, attachment.Data, scanState)
 		if err != nil {
 			writeError(w, 503, fmt.Errorf("mail attachment store unavailable"))
 			return
 		}
 	}
-	if err := appendMailEvent(r.Context(), tx, accountID, boxID, id, "", "ingest", "worker", nil); err != nil {
+	if err := appendMailEvent(r.Context(), tx, destination.accountID, destination.boxID, id, "", "ingest", "worker", nil); err != nil {
 		writeError(w, 503, fmt.Errorf("mail audit unavailable"))
 		return
 	}
@@ -181,10 +208,7 @@ func (s *Server) inboundMailMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, fmt.Errorf("mail store unavailable"))
 		return
 	}
-	s.pushAccountNotification(accountID, map[string]string{"title": "New mail · " + boxName, "body": "A message arrived for " + boxName + ".", "box": boxID, "url": "/chat#box=" + boxID})
-	_ = subscribed
-	_ = senderFilter
-	_ = subjectFilter // Durable batches are selected by the reconciler.
+	s.pushAccountNotification(destination.accountID, map[string]string{"title": "New mail · " + destination.boxName, "body": "A message arrived for " + recipient + ".", "box": destination.boxID, "url": "/mail"})
 	writeJSON(w, 202, map[string]string{"id": id})
 }
 

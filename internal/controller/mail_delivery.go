@@ -74,8 +74,8 @@ func (s *Server) reconcileBoxMailNotices(ctx context.Context, accountID, boxID s
 	}
 	defer tx.Rollback()
 	var enabled, subscribed bool
-	var senderFilter, subjectFilter string
-	err = tx.QueryRowContext(ctx, `SELECT m.enabled,m.subscribed,m.sender_filter,m.subject_filter FROM box_mail_settings m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id WHERE m.account_id=$1 AND m.box_id=$2 AND b.state='running' FOR UPDATE OF m SKIP LOCKED`, accountID, boxID).Scan(&enabled, &subscribed, &senderFilter, &subjectFilter)
+	var senderFilter, subjectFilter, subscriptionAddress string
+	err = tx.QueryRowContext(ctx, `SELECT m.enabled,m.subscribed,m.sender_filter,m.subject_filter,m.subscription_address FROM box_mail_settings m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id WHERE m.account_id=$1 AND m.box_id=$2 AND b.state='running' FOR UPDATE OF m SKIP LOCKED`, accountID, boxID).Scan(&enabled, &subscribed, &senderFilter, &subjectFilter, &subscriptionAddress)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -92,7 +92,7 @@ func (s *Server) reconcileBoxMailNotices(ctx context.Context, accountID, boxID s
 	}
 	if enabled && subscribed {
 		if slices.Contains(tools, "list_emails") {
-			items, ids, more, err := selectMailBatch(ctx, tx, accountID, boxID, senderFilter, subjectFilter)
+			items, ids, more, err := selectMailBatch(ctx, tx, accountID, boxID, subscriptionAddress, senderFilter, subjectFilter)
 			if err != nil {
 				return err
 			}
@@ -101,8 +101,10 @@ func (s *Server) reconcileBoxMailNotices(ctx context.Context, accountID, boxID s
 				if err := insertMailBoxMessage(ctx, tx, accountID, taskID, userID, "mail-batch:"+ids[0], encodeBoxMessageMail(mail)); err != nil {
 					return err
 				}
-				if _, err := tx.ExecContext(ctx, `UPDATE mail_messages SET notified_at=now() WHERE account_id=$1 AND box_id=$2 AND id::text=ANY($3)`, accountID, boxID, ids); err != nil {
-					return err
+				for _, id := range ids {
+					if _, err := tx.ExecContext(ctx, `INSERT INTO mail_message_notifications(account_id,message_id,box_id) VALUES($1,$2,$3) ON CONFLICT(message_id,box_id) DO NOTHING`, accountID, id, boxID); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -141,9 +143,11 @@ func (s *Server) reconcileBoxMailNotices(ctx context.Context, accountID, boxID s
 	return nil
 }
 
-func selectMailBatch(ctx context.Context, tx *sql.Tx, accountID, boxID, senderFilter, subjectFilter string) ([]v1.BoxMessageMailItem, []string, int, error) {
+func selectMailBatch(ctx context.Context, tx *sql.Tx, accountID, boxID, subscriptionAddress, senderFilter, subjectFilter string) ([]v1.BoxMessageMailItem, []string, int, error) {
 	// A message from this box's own address is excluded to avoid reply loops.
-	rows, err := tx.QueryContext(ctx, `SELECT id::text,header_from,from_name,subject,preview,quarantined FROM mail_messages WHERE account_id=$1 AND box_id=$2 AND notified_at IS NULL AND expires_at>now() AND received_at<=now()-interval '30 seconds' AND NOT quarantined AND lower(envelope_from)<>lower(envelope_to) AND ($3='' OR lower(header_from)=ANY(string_to_array(lower($3),','))) AND ($4='' OR position(lower($4) in lower(subject))>0) ORDER BY received_at,id LIMIT 21`, accountID, boxID, senderFilter, subjectFilter)
+	rows, err := tx.QueryContext(ctx, `SELECT m.id::text,m.header_from,m.from_name,m.subject,m.preview,m.quarantined FROM mail_messages m WHERE m.account_id=$1 AND NOT EXISTS(SELECT 1 FROM mail_message_notifications n WHERE n.message_id=m.id AND n.box_id=$2) AND m.expires_at>now() AND m.received_at<=now()-interval '30 seconds' AND NOT m.quarantined AND lower(m.envelope_from)<>lower(m.envelope_to)
+ AND (($3='' AND m.box_id=$2 AND (m.address_id IS NULL OR m.address_id=$2)) OR ($3='all' AND `+mailAgentScopeSQL+`) OR ($3<>'' AND $3<>'all' AND lower(m.envelope_to)=$3 AND `+mailAgentScopeSQL+`))
+ AND ($4='' OR lower(m.header_from)=ANY(string_to_array(lower($4),','))) AND ($5='' OR position(lower($5) in lower(m.subject))>0) ORDER BY m.received_at,m.id LIMIT 21`, accountID, boxID, subscriptionAddress, senderFilter, subjectFilter)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -166,7 +170,9 @@ func selectMailBatch(ctx context.Context, tx *sql.Tx, accountID, boxID, senderFi
 	more := 0
 	if len(items) == 20 {
 		// Count the remaining messages so the notice accurately reports backlog.
-		err := tx.QueryRowContext(ctx, `SELECT count(*) FROM mail_messages WHERE account_id=$1 AND box_id=$2 AND notified_at IS NULL AND expires_at>now() AND received_at<=now()-interval '30 seconds' AND NOT quarantined AND lower(envelope_from)<>lower(envelope_to) AND ($3='' OR lower(header_from)=ANY(string_to_array(lower($3),','))) AND ($4='' OR position(lower($4) in lower(subject))>0)`, accountID, boxID, senderFilter, subjectFilter).Scan(&more)
+		err := tx.QueryRowContext(ctx, `SELECT count(*) FROM mail_messages m WHERE m.account_id=$1 AND NOT EXISTS(SELECT 1 FROM mail_message_notifications n WHERE n.message_id=m.id AND n.box_id=$2) AND m.expires_at>now() AND m.received_at<=now()-interval '30 seconds' AND NOT m.quarantined AND lower(m.envelope_from)<>lower(m.envelope_to)
+ AND (($3='' AND m.box_id=$2 AND (m.address_id IS NULL OR m.address_id=$2)) OR ($3='all' AND `+mailAgentScopeSQL+`) OR ($3<>'' AND $3<>'all' AND lower(m.envelope_to)=$3 AND `+mailAgentScopeSQL+`))
+ AND ($4='' OR lower(m.header_from)=ANY(string_to_array(lower($4),','))) AND ($5='' OR position(lower($5) in lower(m.subject))>0)`, accountID, boxID, subscriptionAddress, senderFilter, subjectFilter).Scan(&more)
 		if err != nil {
 			return nil, nil, 0, err
 		}

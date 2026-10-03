@@ -86,6 +86,7 @@ type mailMessageDetail struct {
 type mailOutboxRow struct {
 	OutboxID    string     `json:"outboxId"`
 	To          []string   `json:"to"`
+	From        string     `json:"from"`
 	Subject     string     `json:"subject"`
 	Text        string     `json:"text"`
 	Status      string     `json:"status"`

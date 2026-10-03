@@ -373,6 +373,35 @@ CREATE TABLE IF NOT EXISTS box_mail_settings (
 );
 CREATE INDEX IF NOT EXISTS box_mail_settings_recipient_idx
   ON box_mail_settings(lower(address)) WHERE enabled;
+CREATE TABLE IF NOT EXISTS mail_addresses (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  local_part text NOT NULL,
+  address text NOT NULL UNIQUE,
+  label text NOT NULL DEFAULT '',
+  owning_box_id uuid UNIQUE REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  enabled boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS mail_addresses_account_idx ON mail_addresses(account_id,address);
+INSERT INTO mail_addresses(id,account_id,local_part,address,label,owning_box_id,enabled)
+ SELECT m.box_id,m.account_id,split_part(m.address,'@',1),m.address,b.name,m.box_id,m.enabled
+ FROM box_mail_settings m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id
+ WHERE m.address IS NOT NULL
+ ON CONFLICT(id) DO UPDATE SET address=excluded.address,local_part=excluded.local_part,
+   label=excluded.label,enabled=excluded.enabled;
+CREATE TABLE IF NOT EXISTS mail_address_grants (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  address_id uuid NOT NULL REFERENCES mail_addresses(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  PRIMARY KEY(address_id,box_id)
+);
+CREATE INDEX IF NOT EXISTS mail_address_grants_box_idx ON mail_address_grants(account_id,box_id);
+CREATE TABLE IF NOT EXISTS mail_account_settings (
+  account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  keep_unknown boolean NOT NULL DEFAULT false
+);
+CREATE UNIQUE INDEX IF NOT EXISTS mail_one_catchall_idx ON mail_account_settings(keep_unknown) WHERE keep_unknown;
 CREATE TABLE IF NOT EXISTS mail_messages (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -398,6 +427,22 @@ CREATE TABLE IF NOT EXISTS mail_messages (
 );
 CREATE INDEX IF NOT EXISTS mail_messages_box_received_idx ON mail_messages(account_id,box_id,received_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS mail_messages_unread_idx ON mail_messages(account_id,box_id,received_at DESC) WHERE read_at IS NULL AND NOT quarantined;
+ALTER TABLE mail_messages ALTER COLUMN box_id DROP NOT NULL;
+ALTER TABLE mail_messages ADD COLUMN IF NOT EXISTS address_id uuid REFERENCES mail_addresses(id) ON DELETE SET NULL;
+UPDATE mail_messages SET address_id=box_id WHERE address_id IS NULL AND box_id IS NOT NULL;
+UPDATE mail_messages SET ingest_key=lower(envelope_to)||':'||ingest_key WHERE position(':' in ingest_key)=0;
+CREATE INDEX IF NOT EXISTS mail_messages_address_idx ON mail_messages(account_id,address_id,received_at DESC);
+CREATE TABLE IF NOT EXISTS mail_message_notifications (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  message_id uuid NOT NULL REFERENCES mail_messages(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  notified_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(message_id,box_id)
+);
+CREATE INDEX IF NOT EXISTS mail_message_notifications_box_idx ON mail_message_notifications(account_id,box_id,notified_at);
+INSERT INTO mail_message_notifications(account_id,message_id,box_id,notified_at)
+ SELECT account_id,id,box_id,notified_at FROM mail_messages WHERE notified_at IS NOT NULL AND box_id IS NOT NULL
+ ON CONFLICT(message_id,box_id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS mail_notice_queue (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -442,6 +487,7 @@ CREATE TABLE IF NOT EXISTS mail_outbox (
 );
 CREATE INDEX IF NOT EXISTS mail_outbox_box_time_idx ON mail_outbox(account_id,box_id,created_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS mail_outbox_pending_idx ON mail_outbox(account_id,created_at DESC) WHERE status='pending_approval';
+ALTER TABLE mail_outbox ADD COLUMN IF NOT EXISTS from_address text NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS mail_events (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -454,6 +500,8 @@ CREATE TABLE IF NOT EXISTS mail_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS mail_events_box_time_idx ON mail_events(account_id,box_id,created_at DESC);
+ALTER TABLE mail_events ALTER COLUMN box_id DROP NOT NULL;
+ALTER TABLE box_mail_settings ADD COLUMN IF NOT EXISTS subscription_address text NOT NULL DEFAULT '';
 ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS chat_key text;
 ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS parent_message_id uuid REFERENCES box_messages(id) ON DELETE SET NULL;
 ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS thread_id uuid;

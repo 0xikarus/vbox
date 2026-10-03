@@ -115,14 +115,14 @@ func (s *Server) ownerMailOutboxItem(w http.ResponseWriter, r *http.Request, p P
 }
 
 func (s *Store) mailOutboxItem(ctx context.Context, accountID, boxID, id string) (mailOutboxRow, error) {
-	return scanMailOutbox(s.DB.QueryRowContext(ctx, `SELECT id::text,recipient_list,subject,reviewed_text,status,reason,version,created_at,decided_at,sent_at FROM mail_outbox WHERE account_id=$1 AND box_id=$2 AND id=$3`, accountID, boxID, id))
+	return scanMailOutbox(s.DB.QueryRowContext(ctx, `SELECT id::text,recipient_list,COALESCE(NULLIF(from_address,''),(SELECT address FROM box_mail_settings WHERE account_id=$1 AND box_id=$2),''),subject,reviewed_text,status,reason,version,created_at,decided_at,sent_at FROM mail_outbox WHERE account_id=$1 AND box_id=$2 AND id=$3`, accountID, boxID, id))
 }
 
 func appendMailEvent(ctx context.Context, tx *sql.Tx, accountID, boxID, messageID, outboxID, kind, actor string, detail []byte) error {
 	if len(detail) == 0 {
 		detail = []byte(`{}`)
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO mail_events(id,account_id,box_id,message_id,outbox_id,kind,actor,detail) VALUES($1,$2,$3,NULLIF($4,'')::uuid,NULLIF($5,'')::uuid,$6,$7,$8::jsonb)`, uuid(), accountID, boxID, messageID, outboxID, kind, actor, string(detail))
+	_, err := tx.ExecContext(ctx, `INSERT INTO mail_events(id,account_id,box_id,message_id,outbox_id,kind,actor,detail) VALUES($1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,NULLIF($5,'')::uuid,$6,$7,$8::jsonb)`, uuid(), accountID, boxID, messageID, outboxID, kind, actor, string(detail))
 	return err
 }
 
@@ -156,7 +156,7 @@ func (s *Server) ownerMailApprove(w http.ResponseWriter, r *http.Request, p Prin
 	var status, address, subject, text string
 	var version int
 	var toRaw []byte
-	err = tx.QueryRowContext(r.Context(), `SELECT o.status,o.version,COALESCE(m.address,''),o.recipient_list,o.subject,o.reviewed_text FROM mail_outbox o JOIN box_mail_settings m ON m.box_id=o.box_id AND m.account_id=o.account_id WHERE o.account_id=$1 AND o.box_id=$2 AND o.id=$3 FOR UPDATE OF o`, p.AccountID, box.ID, id).Scan(&status, &version, &address, &toRaw, &subject, &text)
+	err = tx.QueryRowContext(r.Context(), `SELECT o.status,o.version,COALESCE(NULLIF(o.from_address,''),m.address,''),o.recipient_list,o.subject,o.reviewed_text FROM mail_outbox o JOIN box_mail_settings m ON m.box_id=o.box_id AND m.account_id=o.account_id WHERE o.account_id=$1 AND o.box_id=$2 AND o.id=$3 FOR UPDATE OF o`, p.AccountID, box.ID, id).Scan(&status, &version, &address, &toRaw, &subject, &text)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, 404, fmt.Errorf("outbox item unavailable"))
 		return
@@ -171,6 +171,15 @@ func (s *Server) ownerMailApprove(w http.ResponseWriter, r *http.Request, p Prin
 	}
 	if address == "" {
 		writeError(w, 409, fmt.Errorf("box mail address unavailable"))
+		return
+	}
+	var fromGranted bool
+	if err := tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM mail_addresses a LEFT JOIN mail_address_grants g ON g.account_id=a.account_id AND g.address_id=a.id AND g.box_id=$2 WHERE a.account_id=$1 AND lower(a.address)=lower($3) AND a.enabled AND (a.owning_box_id=$2 OR g.box_id=$2))`, p.AccountID, box.ID, address).Scan(&fromGranted); err != nil {
+		writeError(w, 500, fmt.Errorf("from address unavailable"))
+		return
+	}
+	if !fromGranted {
+		writeError(w, 409, fmt.Errorf("from address is no longer granted"))
 		return
 	}
 	var to []string
@@ -259,7 +268,7 @@ func (s *Server) ReconcileStaleMailSendsNow(ctx context.Context) error {
 	if mailDomain() == "" || os.Getenv("VMBOX_RESEND_API_KEY") == "" || s.Store == nil || s.Store.DB == nil {
 		return nil
 	}
-	rows, err := s.Store.DB.QueryContext(ctx, `SELECT o.account_id::text,o.box_id::text,o.id::text,m.address,o.recipient_list,o.subject,o.reviewed_text FROM mail_outbox o JOIN box_mail_settings m ON m.account_id=o.account_id AND m.box_id=o.box_id WHERE o.status='sending' AND o.updated_at<now()-interval '1 minute' ORDER BY o.updated_at LIMIT 20`)
+	rows, err := s.Store.DB.QueryContext(ctx, `SELECT o.account_id::text,o.box_id::text,o.id::text,COALESCE(NULLIF(o.from_address,''),m.address,''),o.recipient_list,o.subject,o.reviewed_text FROM mail_outbox o JOIN box_mail_settings m ON m.account_id=o.account_id AND m.box_id=o.box_id WHERE o.status='sending' AND o.updated_at<now()-interval '1 minute' ORDER BY o.updated_at LIMIT 20`)
 	if err != nil {
 		return err
 	}

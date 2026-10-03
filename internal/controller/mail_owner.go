@@ -79,10 +79,25 @@ func (s *Store) saveMailSettings(ctx context.Context, accountID string, box v1.L
 		if value.Enabled && address == "" {
 			address = mailBoxSlug(box.Name) + "-" + strings.ReplaceAll(uuid(), "-", "")[:4] + "@" + domain
 		}
-		_, err := s.DB.ExecContext(ctx, `INSERT INTO box_mail_settings(account_id,box_id,enabled,address,subscribed,sender_filter,subject_filter) VALUES($1,$2,$3,NULLIF($4,''),$5,$6,$7)
+		tx, err := s.DB.BeginTx(ctx, nil)
+		if err != nil {
+			return value, err
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO box_mail_settings(account_id,box_id,enabled,address,subscribed,sender_filter,subject_filter) VALUES($1,$2,$3,NULLIF($4,''),$5,$6,$7)
    ON CONFLICT(box_id) DO UPDATE SET enabled=excluded.enabled,address=COALESCE(box_mail_settings.address,excluded.address),subscribed=excluded.subscribed,sender_filter=excluded.sender_filter,subject_filter=excluded.subject_filter,updated_at=now()`, accountID, box.ID, value.Enabled, address, value.Subscribed, value.Filters.Sender, value.Filters.Subject)
 		if err == nil {
-			return s.loadMailSettings(ctx, accountID, box.ID)
+			err = tx.QueryRowContext(ctx, `SELECT COALESCE(address,'') FROM box_mail_settings WHERE account_id=$1 AND box_id=$2`, accountID, box.ID).Scan(&address)
+		}
+		if err == nil && address != "" {
+			_, err = tx.ExecContext(ctx, `INSERT INTO mail_addresses(id,account_id,local_part,address,label,owning_box_id,enabled) VALUES($1,$2,$3,$4,$5,$1,$6) ON CONFLICT(id) DO UPDATE SET local_part=excluded.local_part,address=excluded.address,label=excluded.label,enabled=excluded.enabled`, box.ID, accountID, strings.SplitN(address, "@", 2)[0], address, box.Name, value.Enabled)
+		}
+		if err == nil {
+			err = tx.Commit()
+			if err == nil {
+				return s.loadMailSettings(ctx, accountID, box.ID)
+			}
+		} else {
+			_ = tx.Rollback()
 		}
 		var pgerr *pgconn.PgError
 		if !errors.As(err, &pgerr) || pgerr.Code != "23505" || value.Address != "" {
@@ -231,9 +246,7 @@ func (s *Server) ownerMailMessage(w http.ResponseWriter, r *http.Request, p Prin
 		writeError(w, 404, fmt.Errorf("mail message unavailable"))
 		return
 	}
-	row := s.Store.DB.QueryRowContext(r.Context(), `SELECT `+mailMessageFields+`,text_body FROM mail_messages WHERE account_id=$1 AND box_id=$2 AND id=$3 AND expires_at>now()`, p.AccountID, box.ID, r.PathValue("mid"))
-	var value mailMessageDetail
-	err := row.Scan(&value.ID, &value.From, &value.FromName, &value.Subject, &value.Preview, &value.ReceivedAt, &value.Unread, &value.HasAttachments, &value.Quarantined, &value.SPF, &value.DKIM, &value.Text)
+	value, err := s.Store.loadMailMessageDetail(r.Context(), p.AccountID, box.ID, r.PathValue("mid"))
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, 404, fmt.Errorf("mail message unavailable"))
 		return
@@ -242,26 +255,33 @@ func (s *Server) ownerMailMessage(w http.ResponseWriter, r *http.Request, p Prin
 		writeError(w, 500, fmt.Errorf("mail message unavailable"))
 		return
 	}
-	value.Attachments = []mailAttachmentRow{}
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id::text,name,content_type,size_bytes FROM mail_attachments WHERE account_id=$1 AND message_id=$2 ORDER BY id`, p.AccountID, value.ID)
+	writeJSON(w, 200, value)
+}
+
+func (s *Store) loadMailMessageDetail(ctx context.Context, accountID, boxID, messageID string) (mailMessageDetail, error) {
+	row := s.DB.QueryRowContext(ctx, `SELECT `+mailMessageFields+`,text_body FROM mail_messages WHERE account_id=$1 AND ($2='' OR box_id=$2) AND id=$3 AND expires_at>now()`, accountID, boxID, messageID)
+	var value mailMessageDetail
+	err := row.Scan(&value.ID, &value.From, &value.FromName, &value.Subject, &value.Preview, &value.ReceivedAt, &value.Unread, &value.HasAttachments, &value.Quarantined, &value.SPF, &value.DKIM, &value.Text)
 	if err != nil {
-		writeError(w, 500, fmt.Errorf("mail attachments unavailable"))
-		return
+		return value, err
+	}
+	value.Attachments = []mailAttachmentRow{}
+	rows, err := s.DB.QueryContext(ctx, `SELECT id::text,name,content_type,size_bytes FROM mail_attachments WHERE account_id=$1 AND message_id=$2 ORDER BY id`, accountID, value.ID)
+	if err != nil {
+		return value, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var attachment mailAttachmentRow
 		if err := rows.Scan(&attachment.ID, &attachment.Name, &attachment.ContentType, &attachment.Size); err != nil {
-			writeError(w, 500, fmt.Errorf("mail attachments unavailable"))
-			return
+			return value, err
 		}
 		value.Attachments = append(value.Attachments, attachment)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, 500, fmt.Errorf("mail attachments unavailable"))
-		return
+		return value, err
 	}
-	writeJSON(w, 200, value)
+	return value, nil
 }
 
 func (s *Server) ownerMailRead(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -341,7 +361,7 @@ func (s *Server) ownerMailOutbox(w http.ResponseWriter, r *http.Request, p Princ
 		writeError(w, 400, err)
 		return
 	}
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id::text,recipient_list,subject,reviewed_text,status,reason,version,created_at,decided_at,sent_at FROM mail_outbox WHERE account_id=$1 AND box_id=$2 AND ($3='' OR status=$3) AND ($4::timestamptz IS NULL OR (created_at,id::text)<($4::timestamptz,$5)) ORDER BY created_at DESC,id DESC LIMIT 51`, p.AccountID, box.ID, status, nullableMailCursorTime(cursor.At), cursor.ID)
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id::text,recipient_list,COALESCE(NULLIF(from_address,''),(SELECT address FROM box_mail_settings WHERE account_id=$1 AND box_id=$2),''),subject,reviewed_text,status,reason,version,created_at,decided_at,sent_at FROM mail_outbox WHERE account_id=$1 AND box_id=$2 AND ($3='' OR status=$3) AND ($4::timestamptz IS NULL OR (created_at,id::text)<($4::timestamptz,$5)) ORDER BY created_at DESC,id DESC LIMIT 51`, p.AccountID, box.ID, status, nullableMailCursorTime(cursor.At), cursor.ID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("outbox unavailable"))
 		return
@@ -371,7 +391,7 @@ func (s *Server) ownerMailOutbox(w http.ResponseWriter, r *http.Request, p Princ
 func scanMailOutbox(scanner interface{ Scan(...any) error }) (mailOutboxRow, error) {
 	var item mailOutboxRow
 	var recipients []byte
-	err := scanner.Scan(&item.OutboxID, &recipients, &item.Subject, &item.Text, &item.Status, &item.Reason, &item.Version, &item.SubmittedAt, &item.DecidedAt, &item.SentAt)
+	err := scanner.Scan(&item.OutboxID, &recipients, &item.From, &item.Subject, &item.Text, &item.Status, &item.Reason, &item.Version, &item.SubmittedAt, &item.DecidedAt, &item.SentAt)
 	if err == nil {
 		err = json.Unmarshal(recipients, &item.To)
 	}
