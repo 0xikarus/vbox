@@ -47,4 +47,5 @@
  .mail-panel-row{min-height:98px}
  .mail-panel-detail-scroll{padding:11px}
  .mail-address-dialog{top:0;left:0;right:0;bottom:0;width:100%;max-height:100dvh;border:0;border-radius:0;transform:none}.mail-address-shell{height:100dvh;max-height:none}.mail-address-scroll{flex:1}.mail-address-fields{grid-template-columns:1fr}
+ .mail-address-row button[data-address-grants]{flex:none;max-width:132px;padding:5px 8px;white-space:normal;line-height:1.2}
 }

@@ -92,9 +92,60 @@ func TestProviderDeleteRemovesCredentialAndFleetConfig(t *testing.T) {
 	mock.ExpectQuery(`SELECT deleting FROM provider_credentials.*FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"deleting"}).AddRow(true))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM logical_boxes`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM compute_slots`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT provider,name FROM provider_credentials`).WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows([]string{"provider", "name"}))
 	mock.ExpectExec(`DELETE FROM controller_defaults`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`DELETE FROM compute_slots`).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(`DELETE FROM fleet_settings`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`DELETE FROM provider_credentials`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO audit_log`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	w := httptest.NewRecorder()
+	server.deleteProviderCredential(w, deleteRequest([]byte(`{"newDefault":null}`)), owner)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProviderDeleteMovesDefaultToSoleRemainingCredential(t *testing.T) {
+	server, mock, owner := deleteFixture(t)
+	mock.ExpectExec(`UPDATE provider_credentials SET deleting=true`).WillReturnResult(sqlmock.NewResult(0, 1))
+	expectProviderPlan(mock, true, true, sqlmock.NewRows([]string{"id", "name", "state"}), sqlmock.NewRows([]string{"id", "state", "service_id", "service_name"}))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT deleting FROM provider_credentials.*FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"deleting"}).AddRow(true))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM logical_boxes`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM compute_slots`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT provider,name FROM provider_credentials`).WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows([]string{"provider", "name"}).AddRow("shared-worker", "local"))
+	mock.ExpectExec(`UPDATE controller_defaults SET provider`).WithArgs("account-a", "railway", "primary", "shared-worker", "local").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`DELETE FROM compute_slots`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`DELETE FROM fleet_settings`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`DELETE FROM provider_credentials`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO audit_log`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	w := httptest.NewRecorder()
+	server.deleteProviderCredential(w, deleteRequest([]byte(`{"newDefault":null}`)), owner)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProviderDeleteClearsDefaultWhenMultipleCredentialsRemain(t *testing.T) {
+	server, mock, owner := deleteFixture(t)
+	mock.ExpectExec(`UPDATE provider_credentials SET deleting=true`).WillReturnResult(sqlmock.NewResult(0, 1))
+	expectProviderPlan(mock, true, true, sqlmock.NewRows([]string{"id", "name", "state"}), sqlmock.NewRows([]string{"id", "state", "service_id", "service_name"}))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT deleting FROM provider_credentials.*FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"deleting"}).AddRow(true))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM logical_boxes`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM compute_slots`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT provider,name FROM provider_credentials`).WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows([]string{"provider", "name"}).AddRow("shared-worker", "local").AddRow("railway", "backup"))
+	mock.ExpectExec(`DELETE FROM controller_defaults`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`DELETE FROM compute_slots`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`DELETE FROM fleet_settings`).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(`DELETE FROM provider_credentials`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`INSERT INTO audit_log`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()

@@ -11,7 +11,7 @@
   function card(title,items,feature,compact){
    const section=document.createElement('section');section.className='inline-permission-group';section.dataset.permissionGroup=title.toLowerCase().replaceAll(' ','-');
    if(feature)section.dataset.mailFeature='';
-   if(!compact){const heading=document.createElement('h3');heading.className='ip-heading';heading.textContent=title;section.append(heading);}
+   if(!compact){const heading=document.createElement('div');heading.className='inline-permission-group-heading';const label=document.createElement('h3');label.className='ip-heading';label.textContent=title;heading.append(label);section.append(heading);}
    const surface=document.createElement('div');surface.className='ip-card inline-permission-card';
    for(const item of items)if(item)surface.append(item);
    section.append(surface);sections.push(section);return surface;
@@ -29,17 +29,56 @@
    for(const input of checks)list.append(input.closest('label'));
    row.append(list);return row;
   }
+  function addMaster(surface,title,names,compact,existing){
+   const section=surface.parentElement;
+   const members=[...surface.querySelectorAll('input[name]')].filter(input=>names.includes(input.name));
+   const input=existing||document.createElement('input');input.type='checkbox';input.classList.add('inline-permission-master');input.dataset.permissionMaster=section.dataset.permissionGroup;input.setAttribute('aria-label','Allow all '+title.toLowerCase()+' permissions');
+   const label=document.createElement('label');label.className='inline-permission-master-switch';label.append(input,document.createElement('span'));
+   if(compact){const summary=surface.querySelector('.inline-permission-tools>summary');summary.querySelector('.inline-permission-chevron').before(label);label.addEventListener('click',event=>event.stopPropagation());}
+   else{const heading=section.querySelector('.inline-permission-group-heading'),tools=members.filter(member=>member.name==='mcpTools');if(tools.length){const count=document.createElement('span');count.className='inline-permission-group-count';heading.append(count)}heading.append(label);}
+   section.permissionMembers=members;return input;
+  }
+  function addQuick(surface,key,title,values){
+   const members=[...surface.querySelectorAll('input[name=mcpTools]')].filter(input=>values.includes(input.value));
+   const row=document.createElement('label');row.className='role-capability-toggle inline-permission-quick-row';row.dataset.quickPermission=key;
+   const text=document.createElement('span');const strong=document.createElement('strong');strong.textContent=title;text.append(strong);
+   const input=document.createElement('input');input.type='checkbox';input.className='inline-permission-quick';input.dataset.quickPermission=key;input.setAttribute('aria-label',title);
+   row.append(text,input);surface.querySelector('.inline-permission-tools').before(row);row.permissionMembers=members;return input;
+  }
   if(create){create.classList.add('inline-create');create.hidden=false;create.querySelector('.role-capability-options')?.removeAttribute('open');create.querySelector('.role-capability-options>summary').textContent='Advanced limits';}
   for(const field of [control,mail]){const legend=field?.querySelector('legend');if(legend)legend.remove();}
   const manage=card('Manage boxes',[control,create,tools('Tools',false,group('admin_work'),group('lifecycle'))]);
-  card('Mail',[mail,tools('Tools',false,group('mail'))],true);
-  card('Computer use',[tools('Computer use',true,group('computer_use'))],false,true);
-  card('Passwords',[tools('Passwords',true,group('passwords'))],false,true);
-  card('All contacts',[contacts]);
+  addMaster(manage,'Manage boxes',['controlOtherDesktops','createAgentBoxEnabled','mcpTools']);
+  addQuick(manage,'see-boxes','See other boxes',['list_agent_boxes','get_agent_box']);
+  addQuick(manage,'see-box-screens',"See other boxes' screens",['get_agent_box_screenshot']);
+  addQuick(manage,'restart-boxes','Restart, wake and reset boxes',['restart_agent_box','wake_agent_box','clear_agent_box_context','compact_agent_box_context']);
+  addQuick(manage,'tag-budget','Tag boxes and set run budgets',['set_agent_box_tags','set_agent_box_run_budget']);
+  addQuick(manage,'delete-boxes','Delete boxes',['delete_agent_box']);
+  addQuick(manage,'heartbeat','Heartbeat',['heartbeat']);
+  const mailCard=card('Mail',[mail,tools('Tools',false,group('mail'))],true);
+  addMaster(mailCard,'Mail',['mailRead','mailCompose','mcpTools']);
+  const computer=card('Computer use',[tools('Tools',false,group('computer_use'))]);
+  addMaster(computer,'Computer use',['mcpTools']);
+  addQuick(computer,'see-screen',"See this box's screen",['take_screenshot','capture_window']);
+  addQuick(computer,'mouse-keyboard','Use mouse and keyboard',['move_mouse','click_mouse','drag_mouse','scroll_mouse','type_text','press_keys']);
+  const passwords=card('Passwords',[tools('Tools',false,group('passwords'))]);
+  addMaster(passwords,'Passwords',['mcpTools']);
+  addQuick(passwords,'ask-password','Ask me for a password',['secret_request']);
+  addQuick(passwords,'generate-password','Generate passwords',['generate_password']);
+  addQuick(passwords,'type-password','Type saved passwords',['type_secret']);
+  const allContacts=card('All contacts',[contacts]);
+  addMaster(allContacts,'All contacts',['allContactsEnabled'],false,contacts.querySelector('input[name=allContactsEnabled]'));
   form.replaceChildren(...[...form.querySelectorAll('input[type=hidden],textarea[hidden]')],status,...sections);
   const retry=document.createElement('button');retry.type='button';retry.className='inline-permission-retry';retry.textContent='Retry';retry.hidden=true;status.after(retry);
-  const update=()=>{for(const row of form.querySelectorAll('.inline-permission-tools')){const checks=[...row.querySelectorAll('input[name=mcpTools]')];row.querySelector('.inline-permission-count').textContent=checks.filter(input=>input.checked).length+' of '+checks.length+(row.classList.contains('inline-permission-tools-compact')?' tools':'');}};
-  form.addEventListener('change',update);update();return {update,manage,retry};
+  const update=()=>{
+   for(const row of form.querySelectorAll('.inline-permission-tools')){const checks=[...row.querySelectorAll('input[name=mcpTools]')];row.querySelector('.inline-permission-count').textContent=checks.filter(input=>input.checked).length+' of '+checks.length+(row.classList.contains('inline-permission-tools-compact')?' tools':'');}
+   for(const row of form.querySelectorAll('.inline-permission-quick-row')){const input=row.querySelector('.inline-permission-quick'),members=row.permissionMembers||[],count=members.filter(member=>member.checked).length;input.checked=count===members.length;input.indeterminate=count>0&&count<members.length;input.dataset.mixed=String(input.indeterminate);input.setAttribute('aria-checked',input.indeterminate?'mixed':String(input.checked));}
+   for(const [name,values] of [['mailRead',['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox']],['mailCompose',['send_email','list_outbox','get_outbox_status']]]){const input=form.elements[name],members=[...mailCard.querySelectorAll('input[name=mcpTools]')].filter(member=>values.includes(member.value)),count=members.filter(member=>member.checked).length;input.indeterminate=count>0&&count<members.length;input.dataset.mixed=String(input.indeterminate);input.setAttribute('aria-checked',input.indeterminate?'mixed':String(input.checked));}
+   for(const section of sections){const input=section.querySelector('.inline-permission-master'),members=section.permissionMembers||[];if(!input||!members.length)continue;const count=members.filter(member=>member.checked).length,tools=members.filter(member=>member.name==='mcpTools'),groupCount=section.querySelector('.inline-permission-group-count');if(groupCount)groupCount.textContent=tools.filter(member=>member.checked).length+' of '+tools.length;input.checked=count===members.length;input.indeterminate=count>0&&count<members.length;input.dataset.mixed=String(input.indeterminate);input.setAttribute('aria-checked',input.indeterminate?'mixed':String(input.checked));}
+  };
+  const applyMaster=input=>{const section=input.closest('.inline-permission-group'),on=input.dataset.mixed==='true'||input.checked;for(const member of section.permissionMembers||[])member.checked=on;update();};
+  const applyQuick=input=>{const row=input.closest('.inline-permission-quick-row'),on=input.dataset.mixed==='true'||input.checked;for(const member of row.permissionMembers||[])member.checked=on;update();};
+  update();return {update,applyMaster,applyQuick,manage,retry};
  }
  window.VBoxPermissionLayout={layout};
 })();
@@ -351,7 +390,7 @@ function renderProviders(providers){
  for(const provider of providers){
   const key=poolKey(provider.provider,provider.name),open=key===openProviderKey;
   const fleet=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));
-  const isDefault=defaults?.provider===provider.provider&&defaults?.providerCredential===provider.name;
+  const isDefault=!defaults?.inferred&&defaults?.provider===provider.provider&&defaults?.providerCredential===provider.name;
   const row=node('tr');row.className='provider-row'+(open?' is-open':'');rows.append(row);
   const snapshot=fleet?fleet.providerSnapshot:{fleet:null,config:null,host:null,hostError:'',errors:[]};
   workspaceNav.renderProviderRow(row,provider,isDefault,snapshot,cell=>{
@@ -605,7 +644,7 @@ function renderPermissionBoxes(boxes){
  root.append(list);if(!editor.isConnected){editor.hidden=true;root.append(editor)}
 }
 function populatePolicyEditor(box,cap={}){const form=$('#role-editor-form'),limit=$('#role-create-limit'),limitParent=limit.parentNode;limit.remove();form.reset();limitParent.append(limit);form.elements.id.value='box:'+box.id;form.elements.name.value=box.name;const set=(name,value)=>{if(value===undefined||value===null)return;const input=form.elements[name];if(input.type==='number'&&input.min!==''&&Number(value)<Number(input.min))return;input.value=String(value)},check=(name,value)=>form.elements[name].checked=!!value;check('allContactsEnabled',cap.allContacts?.enabled);check('createAgentBoxEnabled',cap.createAgentBox?.enabled);check('mailRead',cap.mail?.read);check('mailCompose',cap.mail?.compose);check('controlOtherDesktops',cap.manageAgentBoxes?.control);set('maxBoxes',cap.createAgentBox?.maxBoxes);set('maxDiskGiB',cap.createAgentBox?.maxDiskGiB);const allowed=new Set(cap.createAgentBox?.allowedAgents||[]);form.querySelectorAll('input[name=allowedAgents]').forEach(input=>input.checked=!allowed.size||allowed.has(input.value));const allowedMCP=new Set(cap.mcpTools?.enabled?(cap.mcpTools.allowedTools||[]):[]);form.querySelectorAll('input[name=mcpTools]').forEach(input=>input.checked=allowedMCP.has(input.value));form.querySelectorAll('.inline-permission-tools').forEach(details=>details.open=false);syncMCPToolGroups(form);permissionLayout.update();$('#role-editor-status').textContent='';$('#role-editor-inline').hidden=false;void api('/v1/mail/approvals').then(()=>form.querySelectorAll('[data-mail-feature]').forEach(node=>node.hidden=false)).catch(()=>form.querySelectorAll('[data-mail-feature]').forEach(node=>node.hidden=true))}
-function syncMCPToolGroups(form=$('#role-editor-form')){const restart=form.querySelector('input[name=mcpTools][value=restart_agent_box]'),wake=form.querySelector('input[name=mcpTools][value=wake_agent_box]');if(restart&&wake){wake.disabled=restart.checked;if(restart.checked)wake.checked=true}for(const group of form.querySelectorAll('.mcp-tool-group')){const tools=[...group.querySelectorAll('input[name=mcpTools]')],toggle=group.querySelector('.mcp-tool-group-toggle'),selected=tools.filter(input=>input.checked).length;toggle.checked=selected===tools.length;toggle.indeterminate=selected>0&&selected<tools.length}}
+function syncMCPToolGroups(form=$('#role-editor-form')){const restart=form.querySelector('input[name=mcpTools][value=restart_agent_box]');if(restart)for(const value of ['wake_agent_box','clear_agent_box_context','compact_agent_box_context']){const companion=form.querySelector('input[name=mcpTools][value='+value+']');if(companion){companion.disabled=restart.checked;if(restart.checked)companion.checked=true}}for(const group of form.querySelectorAll('.mcp-tool-group')){const tools=[...group.querySelectorAll('input[name=mcpTools]')],toggle=group.querySelector('.mcp-tool-group-toggle'),selected=tools.filter(input=>input.checked).length;toggle.checked=selected===tools.length;toggle.indeterminate=selected>0&&selected<tools.length}}
 const mailReadTools=['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'],mailComposeTools=['send_email','list_outbox','get_outbox_status'];
 function syncToolGrants(form,source){
  const remote=form.querySelector('input[name=mcpTools][value=remote_control_box]');
@@ -616,7 +655,7 @@ function syncToolGrants(form,source){
  const group=source.closest('[data-mail-feature]');
  if(source.name==='mailRead'||source.name==='mailCompose'){
   const names=source.name==='mailRead'?mailReadTools:mailComposeTools;
-  for(const input of form.querySelectorAll('input[name=mcpTools]'))if(names.includes(input.value))input.checked=source.checked;
+  const on=source.dataset.mixed==='true'||source.checked;source.checked=on;for(const input of form.querySelectorAll('input[name=mcpTools]'))if(names.includes(input.value))input.checked=on;
  }else if(group&&source.matches('input[name=mcpTools],.mcp-tool-group-toggle')){
   form.elements.mailRead.checked=mailReadTools.some(name=>form.querySelector(`input[name=mcpTools][value=${name}]`)?.checked);
   form.elements.mailCompose.checked=mailComposeTools.some(name=>form.querySelector(`input[name=mcpTools][value=${name}]`)?.checked);
@@ -626,7 +665,7 @@ function syncToolGrants(form,source){
 function changeMCPToolGroup(toggle){for(const input of toggle.closest('.mcp-tool-group').querySelectorAll('input[name=mcpTools]'))input.checked=toggle.checked;syncToolGrants(toggle.form,toggle)}
 function controllerDirectPolicyBody(form){
  const f=form.elements,num=name=>Number.parseInt(f[name].value,10)||0,allowedTools=[...form.querySelectorAll('input[name=mcpTools]:checked')].map(input=>input.value),hasTool=name=>allowedTools.includes(name),chosenAgents=[...form.querySelectorAll('input[name=allowedAgents]:checked')].map(input=>input.value);
- return {capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},mail:{read:f.mailRead.checked,compose:f.mailCompose.checked},createAgentBox:{enabled:hasTool('create_agent_box'),maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:chosenAgents.length?chosenAgents:['codex','claude','opencode']},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box')||hasTool('get_agent_box_screenshot'),control:f.controlOtherDesktops.checked,tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box')||hasTool('wake_agent_box')||hasTool('set_agent_box_run_budget'),delete:hasTool('delete_agent_box')},mcpTools:{enabled:true,allowedTools}}};
+ return {capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},mail:{read:f.mailRead.checked,compose:f.mailCompose.checked},createAgentBox:{enabled:hasTool('create_agent_box'),maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:chosenAgents.length?chosenAgents:['codex','claude','opencode']},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box')||hasTool('get_agent_box_screenshot'),control:f.controlOtherDesktops.checked,tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box')||hasTool('wake_agent_box')||hasTool('clear_agent_box_context')||hasTool('compact_agent_box_context')||hasTool('set_agent_box_run_budget'),delete:hasTool('delete_agent_box')},mcpTools:{enabled:true,allowedTools}}};
 }
 const permissionLayout=window.VBoxPermissionLayout.layout($('#role-editor-form'));
 const inlineCreateLimit=document.createElement('div');inlineCreateLimit.id='role-create-limit';permissionLayout.manage.append(inlineCreateLimit);
@@ -648,8 +687,10 @@ async function saveInlinePermissions(){
  permissionSaving=false;if(permissionPending&&form.elements.id.value!==id)void saveInlinePermissions();
 }
 $('#role-editor-form').addEventListener('change',event=>{
- if(!event.target.matches('input[name]'))return;
- if(event.target.classList.contains('mcp-tool-group-toggle'))changeMCPToolGroup(event.target);
+ if(!event.target.matches('input[name],.inline-permission-master,.inline-permission-quick'))return;
+ if(event.target.classList.contains('inline-permission-master')){permissionLayout.applyMaster(event.target);syncMCPToolGroups(event.currentTarget)}
+ else if(event.target.classList.contains('inline-permission-quick')){permissionLayout.applyQuick(event.target);syncMCPToolGroups(event.currentTarget)}
+ else if(event.target.classList.contains('mcp-tool-group-toggle'))changeMCPToolGroup(event.target);
  else syncToolGrants(event.currentTarget,event.target);
  permissionLayout.update();void saveInlinePermissions();
 });
@@ -658,10 +699,10 @@ $('#role-editor-form').onsubmit=event=>event.preventDefault();
 async function openBoxPolicyEditor(box,retry=false){
  if(!ownerTools)return;
  if(!retry&&activePermissionBoxId===box.id&&!$('#role-editor-inline').hidden){activePermissionBoxId='';$('#role-editor-inline').hidden=true;renderPermissionBoxes(roleBoxes);return}
- activePermissionBoxId=box.id;renderPermissionBoxes(roleBoxes);const form=$('#role-editor-form');form.elements.id.value='box:'+box.id;form.querySelectorAll('input[name]').forEach(input=>input.disabled=true);$('#role-editor-inline').hidden=false;permissionLayout.retry.hidden=true;currentPermissionPolicy=null;$('#role-editor-status').textContent='Loading permissions…';
+ activePermissionBoxId=box.id;renderPermissionBoxes(roleBoxes);const form=$('#role-editor-form');form.elements.id.value='box:'+box.id;form.querySelectorAll('input[name],.inline-permission-master,.inline-permission-quick').forEach(input=>input.disabled=true);$('#role-editor-inline').hidden=false;permissionLayout.retry.hidden=true;currentPermissionPolicy=null;$('#role-editor-status').textContent='Loading permissions…';
  try{
   const policy=await api(bp(box.id)+'/agent-policy');if(activePermissionBoxId!==box.id)return;
-  currentPermissionPolicy=policy;populatePolicyEditor(box,policy.capabilities||{});form.querySelectorAll('input[name]').forEach(input=>input.disabled=false);syncMCPToolGroups(form);
+  currentPermissionPolicy=policy;populatePolicyEditor(box,policy.capabilities||{});form.querySelectorAll('input[name],.inline-permission-master,.inline-permission-quick').forEach(input=>input.disabled=false);syncMCPToolGroups(form);
   window.VMBoxCreateLimit?.mount(inlineCreateLimit,{boxId:box.id,showWhenDisabled:true,showStateToggle:true,request:body=>api(bp(box.id)+'/agent-policy',body?'PUT':'GET',body),onSaved:saved=>{currentPermissionPolicy=saved;const form=$('#role-editor-form');if(form.elements.id.value==='box:'+box.id){form.elements.maxBoxes.value=String(saved.capabilities?.createAgentBox?.maxBoxes||3);if(!saved.capabilities?.createAgentBox?.enabled){form.elements.createAgentBoxEnabled.checked=false;form.querySelector('input[value=create_agent_box]').checked=false;permissionLayout.update()}}}});
   $('#role-editor-status').textContent='';permissionLayout.retry.onclick=()=>void saveInlinePermissions();
  }catch(error){if(activePermissionBoxId===box.id){$('#role-editor-status').dataset.state='error';$('#role-editor-status').textContent=error.message;permissionLayout.retry.hidden=false;permissionLayout.retry.onclick=()=>void openBoxPolicyEditor(box,true)}}
@@ -845,7 +886,7 @@ async function refresh(){
  void loadAgentCLIVersionChoices(version);
  renderProviders(providers);
  renderProviderTypes(schema);renderNotifications(notifications);defaults=null;
- try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
+ try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent=d.inferred?'Choose a default provider. Currently using '+d.provider+' / '+d.providerCredential+'.':'Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent=providers.length?'Choose a default provider. Open a pool and select Use as default.':'Choose a default provider. Add one to get started.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#login-error').textContent='';$('#app').hidden=false;openProfileFromLink()}));
 $('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;$('#role-editor-inline').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());closeProviderPanel();$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));

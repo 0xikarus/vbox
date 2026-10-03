@@ -1688,6 +1688,7 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #create-box input,#create-box textarea{width:100%;padding:.55rem .7rem;border:1px solid var(--vb-line-strong);border-radius:var(--r-control);background-color:var(--vb-bg-soft);color:var(--vb-ink);font:inherit}
 #create-box select{width:100%;padding:.55rem 2.1rem .55rem .7rem;border:1px solid var(--vb-line-strong);border-radius:var(--r-control);background-color:var(--vb-bg-soft);color:var(--vb-ink);font:inherit;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b6b7f' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right .6rem center;background-size:1rem}
 #create-box .tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.45rem;border:0;padding:0;margin:.5rem 0 0;overflow:visible}
+#create-box .tools[hidden]{display:none}
 #create-box .tools legend{display:none}
 #create-box .tools label{display:flex;align-items:center;gap:.5rem;margin:0;padding:.5rem .6rem;border:1px solid var(--vb-line);border-radius:var(--r-control);background:var(--vb-bg-soft);font-weight:560;color:var(--vb-ink)}
 #create-box .tools input{width:auto;margin:0}
@@ -1717,6 +1718,9 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .new-box-footer #new-box-summary{display:none}
 .new-box-footer #new-box-status{margin:0;font-size:var(--vb-type-rem-0-78);color:var(--vb-danger-text)}
 #create-pool-status{margin:.55rem 0 0;color:var(--vb-ink-soft);font-size:var(--vb-type-px-13)}
+#create-provider-status,#profile-choices-status,#create-tools-status,#create-instructions-status{margin:.55rem 0 0;color:var(--vb-ink-soft);font-size:var(--vb-type-px-13)}
+#create-provider-status:empty,#profile-choices-status:empty,#create-tools-status:empty,#create-instructions-status:empty{display:none}
+#create-provider-status a{color:var(--vb-ink);text-decoration:underline}
 #create-pool-status summary{cursor:pointer;list-style:none}
 #create-pool-status summary::-webkit-details-marker{display:none}
 #create-pool-status summary::after{content:' · Details';color:var(--vb-ink-faint)}
@@ -3070,6 +3074,20 @@ dialog:not([open]){display:none}
 .inline-permission-editor form,#role-editor-form{display:grid;gap:12px;margin:0}
 .inline-permission-group{display:grid;gap:6px;min-width:0;margin:0!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important}
 .inline-permission-group .ip-heading{margin:0;padding:0 2px;color:var(--vb-ink-soft);font-size:11px;font-weight:750;letter-spacing:.09em;line-height:1.5;text-transform:uppercase}
+.inline-permission-group-heading{display:flex;align-items:center;gap:8px;min-height:38px}
+.inline-permission-group-heading .ip-heading{flex:1}
+.inline-permission-group-count{color:var(--vb-ink-soft);font-size:12px;font-weight:500;white-space:nowrap}
+.inline-permission-master-switch{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:48px;height:40px;cursor:pointer}
+.inline-permission-master-switch input{position:absolute;inset:0;width:100%!important;height:100%!important;margin:0;opacity:0;cursor:pointer}
+.inline-permission-master-switch span{position:relative;width:42px;height:25px;border-radius:99px;background:color-mix(in srgb,var(--vb-ink) 30%,var(--vb-surface));transition:background .18s}
+.inline-permission-master-switch span::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:var(--vb-surface);box-shadow:0 1px 3px #0003;transition:transform .18s}
+.inline-permission-master-switch input:checked+span{background:var(--vb-ink)}
+.inline-permission-master-switch input:checked+span::after{transform:translateX(17px)}
+.inline-permission-master-switch input:indeterminate+span{background:var(--vb-ink-soft)}
+.inline-permission-master-switch input:indeterminate+span::before{content:"";position:absolute;z-index:1;top:11.5px;left:16.5px;width:9px;height:2px;border-radius:2px;background:var(--vb-ink-soft)}
+.inline-permission-master-switch input:indeterminate+span::after{transform:translateX(8.5px)}
+.inline-permission-master-switch input:focus-visible+span{outline:2px solid var(--vb-ink);outline-offset:3px}
+.inline-permission-master-switch input:disabled+span{opacity:.55}
 .inline-permission-card{min-width:0;margin:0!important;padding:0!important;border:1px solid var(--vb-line)!important;border-radius:12px!important;background:var(--vb-surface)!important;box-shadow:none!important;overflow:hidden}
 .inline-permission-card>.role-capability{display:block!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
 .inline-permission-card .role-capability-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;margin:0;padding:9px 15px;border-bottom:1px solid var(--vb-line)}
@@ -3080,6 +3098,9 @@ dialog:not([open]){display:none}
 .inline-permission-card .role-capability-toggle input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:var(--vb-surface);box-shadow:0 1px 3px #0003;transition:transform .18s}
 .inline-permission-card .role-capability-toggle input[type=checkbox]:checked{background:var(--vb-ink)!important}
 .inline-permission-card .role-capability-toggle input[type=checkbox]:checked::after{transform:translateX(17px)}
+.inline-permission-card .role-capability-toggle input[type=checkbox]:indeterminate{background:var(--vb-ink-soft)!important}
+.inline-permission-card .role-capability-toggle input[type=checkbox]:indeterminate::before{content:"";position:absolute;z-index:1;top:11.5px;left:16.5px;width:9px;height:2px;border-radius:2px;background:var(--vb-ink-soft)}
+.inline-permission-card .role-capability-toggle input[type=checkbox]:indeterminate::after{transform:translateX(8.5px)}
 .inline-permission-card .role-capability-toggle input[type=checkbox]:disabled{opacity:.55!important;cursor:default}
 .inline-permission-card .role-capability-toggle input[type=checkbox]:focus-visible{outline:2px solid var(--vb-ink);outline-offset:3px}
 .inline-permission-card .inline-permission-tool-list input[type=checkbox]{width:18px!important;height:18px!important;min-width:18px;flex:none;accent-color:var(--vb-ink)}
