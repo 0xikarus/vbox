@@ -3469,7 +3469,7 @@ function pairTileStatus(tile,mode,label){
  }
   /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
   const newBoxModal=$('#new-box-modal'),createForm=$('#create-box'),previewCard=$('#create-preview-card');
-  let extrasLoaded=false,poolChoices=[],autoPoolIndex='',profileUsageLoadError=false,renderCreateProfileUsage=()=>{};
+  let extrasLoaded=false,poolChoices=[],autoPoolIndex='',profileUsageLoadError=false,profileChoicesError=false,renderCreateProfileUsage=()=>{};
   const money=n=>'$'+(n>=0.1?n.toFixed(2):n.toFixed(3));
   const ctxLabel=n=>n>=1e6?(n/1e6).toFixed(n%1e6?1:0)+'M':n>=1e3?Math.round(n/1e3)+'k':n?'':'';
   function previewRows(){
@@ -3483,7 +3483,7 @@ function pairTileStatus(tile,mode,label){
     if(pickerModel?.context)rows.push(['Context',ctxLabel(pickerModel.context)+' tokens']);
     if(f.agentReasoningEffort?.value)rows.push(['Reasoning',f.agentReasoningEffort.value]);
     if(poolChoices.length){
-     const poolIndex=f.pool?.value??'',pool=poolChoices[Number(poolIndex)]||poolChoices[Number(createForm.dataset.autoPool)];
+     const poolIndex=f.pool?.value||createForm.dataset.autoPool||'',pool=poolIndex===''?null:poolChoices[Number(poolIndex)];
      if(pool)rows.push(['Pool',pool.label]);
     }
     if(!$('#create-memory-settings').hidden)rows.push(['RAM / swap',(f.memoryGiB?.value||'2')+' / '+(f.swapGiB?.value||'1')+' GiB']);
@@ -3510,7 +3510,7 @@ function pairTileStatus(tile,mode,label){
    $('#create-memory-settings').hidden=pool?.provider!=='shared-worker';
    if(pool?.provider==='shared-worker')applyWorkerBoxBounds(pool);
    const agent=createForm.elements.defaultAgent.selectedOptions[0]?.textContent||createForm.elements.defaultAgent.value;
-   const placement=pool?.provider?pool.provider+(pool.providerCredential?'/'+pool.providerCredential:''):createForm.dataset.provider?(createForm.dataset.provider+(createForm.dataset.providerCredential?'/'+createForm.dataset.providerCredential:'')):'Automatic pool';
+   const placement=pool?.provider?pool.provider+(pool.providerCredential?'/'+pool.providerCredential:''):createForm.dataset.provider?(createForm.dataset.provider+(createForm.dataset.providerCredential?'/'+createForm.dataset.providerCredential:'')):createForm.dataset.providerRequired==='1'?'Choose provider':'Automatic pool';
    const name=createForm.elements.name.value.trim()||'my-agent-box';
    const summary=$('#new-box-summary');summary.textContent=name+' · '+agent+' · '+placement;summary.title=summary.textContent;
    $('#create-preview-name').textContent=name;
@@ -3581,7 +3581,9 @@ function pairTileStatus(tile,mode,label){
    const choices=profiles.filter(profile=>profile.application===app);
    for(const profile of choices){const option=new Option(profile.name,JSON.stringify({application:profile.application,name:profile.name}));option.dataset.model=profile.model||'';profileSelect.append(option)}modelPicker.setApplication(app);
    if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
-   profileLabel.hidden=app==='shell'||choices.length===0;root.hidden=profileLabel.hidden&&githubLabel.hidden;syncModel();
+   profileLabel.hidden=app==='shell'||choices.length===0;root.hidden=profileLabel.hidden&&githubLabel.hidden;
+   $('#profile-choices-status').textContent=app==='shell'?'':profileChoicesError?'Could not load saved logins. Reopen New box to retry.':choices.length?'':'No saved '+(agentSelect.selectedOptions[0]?.textContent||app)+' login. Add one in Profiles if needed.';
+   syncModel();
   };
    profileSelect.addEventListener('change',syncModel);agentSelect.onchange=populate;populate();
    modelInput.addEventListener('change',renderPreview);
@@ -3591,9 +3593,23 @@ function pairTileStatus(tile,mode,label){
  async function primeBoxExtras(){
   if(extrasLoaded)return;
   try{
-   const [tools,profiles,defaults,providers,presetList]=await Promise.all([api('/v1/tool-presets'),api('/v1/login-profiles'),api('/v1/controller-defaults'),api('/v1/provider-credentials').catch(()=>[]),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);
-   applyInstructionPresets(presetList);
-   const pools=(providers||[]).map(p=>({provider:p.provider,providerCredential:p.name||''}));
+   const [toolsResult,profilesResult,defaultsResult,providersResult,presetsResult]=await Promise.allSettled([api('/v1/tool-presets'),api('/v1/login-profiles'),api('/v1/controller-defaults'),api('/v1/provider-credentials'),api('/v1/instruction-presets')]);
+   const toolsReady=toolsResult.status==='fulfilled'&&Array.isArray(toolsResult.value),profilesReady=profilesResult.status==='fulfilled'&&Array.isArray(profilesResult.value),providersReady=providersResult.status==='fulfilled'&&Array.isArray(providersResult.value),presetsReady=presetsResult.status==='fulfilled'&&Array.isArray(presetsResult.value?.presets);
+   const tools=toolsReady?toolsResult.value:[],profiles=profilesReady?profilesResult.value:[],providers=providersReady?providersResult.value:[],defaults=defaultsResult.status==='fulfilled'?defaultsResult.value:null;
+   applyInstructionPresets(presetsReady?presetsResult.value:{defaultName:'',presets:[]});
+   $('#create-instructions-status').textContent=presetsReady?(presetsResult.value.presets.length?'':'No saved instruction presets. You can customize instructions below.'):'Could not load saved instructions. Reopen New box to retry.';
+   profileChoicesError=!profilesReady;
+   renderCreationProfileChoices(profiles);
+   const toolsSet=$('#create-tools');toolsSet.replaceChildren();
+   for(const tool of tools){
+    if(tool.id==='desktop')continue;
+    const label=document.createElement('label'),input=document.createElement('input');
+    input.type='checkbox';input.value=tool.id;input.name='tool';input.title=tool.description||tool.name;
+    label.append(input,document.createTextNode(' '+tool.name));toolsSet.append(label);
+   }
+   toolsSet.hidden=!toolsSet.children.length;
+   $('#create-tools-status').textContent=toolsReady?(toolsSet.children.length?'':'No optional tool presets available.'):'Could not load tool presets. Reopen New box to retry.';
+   const pools=providers.map(p=>({provider:p.provider,providerCredential:p.name||''}));
    const poolStatuses=await Promise.all(pools.map(async pool=>{
     try{
      const fleet=await api('/v1/fleet/status?'+new URLSearchParams({provider:pool.provider,providerCredential:pool.providerCredential}));
@@ -3611,18 +3627,28 @@ function pairTileStatus(tile,mode,label){
     if(!status||status.free<1)return;
     if(autoIndex===''||status.free>Number(poolStatuses[Number(autoIndex)]?.free||0))autoIndex=String(index);
    });
-   createForm.dataset.autoPool=autoIndex;
+   if(autoIndex===''&&pools.length)autoIndex='0';
+   const mustChoose=!defaults?.provider&&pools.length>1;
+   createForm.dataset.autoPool=mustChoose?'':autoIndex;
+   createForm.dataset.providerRequired=defaults?.provider?'':'1';
    const poolSelect=$('#create-pool');
-   poolSelect.replaceChildren(new Option(autoIndex===''?'Automatic (every pool is busy right now)':'Automatic (least busy pool with free slots)',''));
+   poolSelect.replaceChildren(new Option(mustChoose?'Choose a provider':poolStatuses.some(status=>status?.free>0)?'Automatic (least busy pool with free slots)':'Automatic (every pool is busy right now)',''));
+   poolSelect.required=mustChoose;poolSelect.options[0].disabled=mustChoose;
    pools.forEach((pool,index)=>{
     const status=poolStatuses[index],option=new Option(poolLabel(pool,status),String(index));
     option.title=status?('desired '+status.desired+' · actual '+status.actual+' · free '+status.free+' · occupied '+status.occupied+(status.queued?' · '+status.queued+' queued':'')):'slot status unavailable';
-    option.disabled=!!status&&status.free===0;
     poolSelect.append(option);
    });
-   poolChoices=pools.map((pool,index)=>({pool,label:(poolLabel(pool,poolStatuses[index]).replace('Dedicated · ','').replace('Shared worker','shared').split(' — ')[0])+(index===Number(autoIndex)?' (auto)':'')}));
+   poolChoices=pools.map((pool,index)=>({pool,label:(poolLabel(pool,poolStatuses[index]).replace('Dedicated · ','').replace('Shared worker','shared').split(' — ')[0])+(autoIndex!==''&&!mustChoose&&index===Number(autoIndex)?' (auto)':'')}));
    poolSelect.addEventListener('change',renderPreview);
-   $('#create-pool-label').hidden=pools.length===0;
+   const poolField=$('#create-pool-label');poolField.hidden=pools.length===0;poolField.firstChild.textContent=mustChoose?'Provider ':'Worker pool ';
+   const providerStatus=$('#create-provider-status');providerStatus.replaceChildren();
+   if(defaults?.inferred||!defaults?.provider){
+    const message=defaults?.inferred?'Using the sole provider. Choose it as your default in ':!providersReady?'Could not load providers. Open ':pools.length?'Choose a provider for this box, or set your default in ':'Choose a default provider in ';
+    const link=document.createElement('a');link.href='/#providers';link.textContent='Providers';
+    providerStatus.append(document.createTextNode(message),link);
+    providerStatus.append(document.createTextNode('.'));
+   }
    const poolHint=$('#create-pool-status');
    poolHint.hidden=pools.length===0;
    if(pools.length){
@@ -3632,19 +3658,11 @@ function pairTileStatus(tile,mode,label){
     poolHint.querySelector('p').textContent=pools.map((pool,index)=>poolLabel(pool,poolStatuses[index]).replace('Dedicated · ','').replace('Shared worker','shared')).join(' · ')+' · Boxes wait in the controller queue when their pool has no free slots.';
    }
    createForm.dataset.pools=JSON.stringify(pools);
-   if(defaults.provider){createForm.dataset.provider=defaults.provider;createForm.dataset.providerCredential=defaults.providerCredential||''}
-   renderCreationProfileChoices(profiles);
-   const toolsSet=$('#create-tools');toolsSet.replaceChildren();
-   for(const tool of tools){
-    if(tool.id==='desktop')continue;
-    const label=document.createElement('label'),input=document.createElement('input');
-    input.type='checkbox';input.value=tool.id;input.name='tool';input.title=tool.description||tool.name;
-    label.append(input,document.createTextNode(' '+tool.name));toolsSet.append(label);
-   }
-   toolsSet.hidden=!toolsSet.children.length;
-   extrasLoaded=true;
+   createForm.dataset.provider=defaults?.provider||'';createForm.dataset.providerCredential=defaults?.providerCredential||'';
+   extrasLoaded=toolsReady&&profilesReady&&providersReady&&presetsReady;
+   $('#new-box-status').textContent=defaults?.provider||pools.length?'':providersReady?'Choose a default provider in Providers.':'Could not load providers. Reopen New box to retry.';
    renderPreview();
-  }catch(e){$('#new-box-status').textContent=e.message}
+  }catch(e){$('#new-box-status').textContent='Could not load box options. Please try again.'}
  }
   let newBoxTarget=null;
   function currentNewBoxTarget(){
@@ -3694,6 +3712,7 @@ function pairTileStatus(tile,mode,label){
   const body={name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true};
   const poolIndex=(f.pool.value||createForm.dataset.autoPool||'');
   if(poolIndex!==''){const pool=JSON.parse(createForm.dataset.pools||'[]')[Number(poolIndex)];if(pool){body.provider=pool.provider;body.providerCredential=pool.providerCredential||''}}
+  if(!body.provider){$('#new-box-status').textContent='Choose a provider in Providers before creating a box.';submit.disabled=false;return}
   if(body.provider==='shared-worker'){body.memoryGiB=Number(f.memoryGiB.value);body.swapGiB=Number(f.swapGiB.value)}
   if(loginProfiles.length)body.loginProfiles=loginProfiles;
   if(tools.length)body.tools=tools;

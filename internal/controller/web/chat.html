@@ -209,11 +209,12 @@
      <label>Disk (GiB) <input name="disk" type="number" min="1" max="1024" value="10"></label>
      <div id="create-memory-settings" hidden><label>RAM GiB <input name="memoryGiB" type="number" min="1" max="8" value="2"></label><label>Swap GiB <input name="swapGiB" type="number" min="0" max="4" value="1"></label></div>
      <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
+     <p id="create-provider-status" class="hint"></p>
      <details id="create-pool-status" class="hint" hidden><summary></summary><p></p></details>
     </fieldset>
-    <fieldset class="nb-step"><legend>2 · Logins</legend><div id="profile-choices" class="profiles"></div></fieldset>
-    <fieldset class="nb-step"><legend>3 · Tools</legend><fieldset id="create-tools" class="tools"></fieldset><details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label><p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details></fieldset>
-    <fieldset class="nb-step"><legend>4 · Instructions</legend><label>Instructions <select id="create-instructions"><option value="auto">Account default / none</option></select></label><details id="create-instructions-editor" hidden><summary>Customize Markdown</summary><textarea id="create-instructions-custom" rows="5" maxlength="65536" aria-label="Custom instructions Markdown"></textarea><div id="create-instructions-preview" class="md-preview" hidden></div></details></fieldset>
+    <fieldset class="nb-step"><legend>2 · Logins</legend><div id="profile-choices" class="profiles"></div><p id="profile-choices-status" class="hint" role="status"></p></fieldset>
+    <fieldset class="nb-step"><legend>3 · Tools</legend><fieldset id="create-tools" class="tools"></fieldset><p id="create-tools-status" class="hint" role="status"></p><details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label><p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details></fieldset>
+    <fieldset class="nb-step"><legend>4 · Instructions</legend><label>Instructions <select id="create-instructions"><option value="auto">Account default / none</option></select></label><p id="create-instructions-status" class="hint" role="status"></p><details id="create-instructions-editor" hidden><summary>Customize Markdown</summary><textarea id="create-instructions-custom" rows="5" maxlength="65536" aria-label="Custom instructions Markdown"></textarea><div id="create-instructions-preview" class="md-preview" hidden></div></details></fieldset>
    </form>
    <aside id="create-preview" aria-label="Launch preview">
     <div class="preview-card">

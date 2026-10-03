@@ -15,6 +15,8 @@ const vboxCSS=await readFile('internal/controller/web/vbox-c.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
+const sheetScrollCSS=await readFile('internal/controller/web/sheet-scroll.css','utf8');
+const sheetScrollJS=await readFile('internal/controller/web/sheet-scroll.js','utf8');
 
 const boxes=[
  {id:'builder',name:'Builder',state:'running',defaultAgent:'claude',provider:'railway',volumeName:'v1'},
@@ -52,6 +54,8 @@ async function withChat(fn,messages=threadMessages,{boxList=boxes,holdPosts=fals
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
   if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
   if(path==='/model-picker.js'){res.setHeader('Content-Type','text/javascript');return res.end(modelPickerJS)}
+  if(path==='/sheet-scroll.css'){res.setHeader('Content-Type','text/css');return res.end(sheetScrollCSS)}
+  if(path==='/sheet-scroll.js'){res.setHeader('Content-Type','text/javascript');return res.end(sheetScrollJS)}
   if(!path.startsWith('/v1/'))return res.end('');
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
@@ -170,6 +174,7 @@ test('a disabled Send button shows why the box cannot accept a message',async()=
  await withChat(async(browser,base,posts)=>{
   const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-input');
   await p.type('#chat-input','Keep this draft');
+  await p.waitForFunction(()=>!document.querySelector('#send-blocked-reason').hidden);
   assert.equal(await p.$eval('#send',button=>button.disabled),true);
   assert.equal(await p.$eval('#send-blocked-reason',reason=>reason.hidden),false,'the reason is visible below the composer');
   assert.equal(await p.$eval('#send-blocked-reason',reason=>reason.textContent),'Wait for this box to be running before sending');
