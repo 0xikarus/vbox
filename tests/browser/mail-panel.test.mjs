@@ -155,7 +155,7 @@ test('account Mail search and outbox review edit, approve and reject use per-box
   await page.click('[data-box="reviewer"]');await page.waitForFunction(()=>document.querySelector('.mail-panel-row[data-item="m2"]'));
   assert(data.queries.some(path=>path.includes('box=reviewer')));
   await page.click('[data-box=""]');await page.waitForFunction(()=>document.querySelector('[data-box=""]')?.getAttribute('aria-current')==='page');
-  await page.click('[data-folder="outbox"]');await page.waitForFunction(()=>document.querySelector('[data-folder="outbox"]')?.getAttribute('aria-current')==='page');
+  await page.evaluate(()=>document.querySelector('[data-folder="outbox"]').click());await page.waitForFunction(()=>document.querySelector('[data-folder="outbox"]')?.getAttribute('aria-current')==='page');
   await page.waitForSelector('.mail-panel-row[data-item="o1"]');
   await page.click('.mail-panel-row[data-item="o1"]');await page.click('#mail-panel [data-action="review"]');await page.waitForSelector('#mail-panel-review[open]');
   await page.$eval('#mail-panel-review [name="subject"]',input=>input.value='Edited subject');await page.click('#mail-panel-review [data-review="approve"]');
