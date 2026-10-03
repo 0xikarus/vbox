@@ -213,9 +213,6 @@
   for(const [key,until] of Object.entries(saved.mutes&&typeof saved.mutes==='object'?saved.mutes:{}))if(until===null||typeof until==='string')chatMutes.set(key,until);
   for(const key of Object.keys(sectionCollapsed))sectionCollapsed[key]=!!saved.sections?.[key];
   if(Array.isArray(saved.pins)){pins.clear();for(const key of saved.pins)if(typeof key==='string')pins.add(key);savePins()}
-  let pinsChanged=false;
-  for(const key of chatGroupMembers.keys())if(pins.delete(key))pinsChanged=true;
-  if(pinsChanged)savePins();
   groupNodes.clear();
  }
  async function loadChatGroups(accountId){
@@ -246,7 +243,7 @@
   if(key.startsWith('pair:'))return true;
   if(activeMute(key))return true;
   const group=groupForChat(key);
-  return group?activeMute('group:'+group.id):activeMute(pins.has(key)?'section:pinned':'section:boxes');
+  return group?activeMute('group:'+group.id):activeMute('section:boxes');
  }
  function setChatMute(key,minutes){
   if(key==='section:pairs'||key.startsWith('pair:'))return;
@@ -268,7 +265,7 @@
  }
  function savePins(){try{localStorage.setItem('vmboxChatPins',JSON.stringify([...pins]))}catch{}}
  function togglePin(key){
-  if(pins.has(key))pins.delete(key);else{pins.add(key);if(chatGroupMembers.delete(key))saveChatGroups()}
+  if(pins.has(key))pins.delete(key);else pins.add(key);
   savePins();saveChatGroups();
   renderRows();
  }
@@ -276,7 +273,6 @@
   const group=chatGroups.find(group=>group.id===id);
   if(!group)return;
   chatGroupMembers.set(key,id);group.collapsed=false;
-  if(pins.delete(key))savePins();
   saveChatGroups();
   renderRows();
  }
@@ -1311,22 +1307,24 @@
   if(last)queueReadMarker('pair:'+pairKey(pair),last);
  }
  const pairGroup=mk('li');pairGroup.className='conversation-group';
- const pinnedGroup=mk('li');pinnedGroup.className='conversation-group';
+ const pinDrop=mk('li','Pin chat');pinDrop.className='chat-pin-drop';pinDrop.setAttribute('aria-label','Pin chat in its current group');
  const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';
  const groupNodes=new Map();
  const knownChatKey=key=>key.startsWith('box:')?boxes.has(key.slice(4)):key.startsWith('pair:')?pairs.has(key.slice(5)):false;
  const draggedChatKey=event=>event.dataTransfer?.getData('application/x-vmbox-chat')||'';
+ const showPinDrop=()=>{listEl.classList.add('chat-drag-active');listEl.prepend(pinDrop)};
+ const hidePinDrop=()=>{listEl.classList.remove('chat-drag-active');pinDrop.remove()};
  function bindChatDrag(row,key){
   row.draggable=true;
-  row.addEventListener('dragstart',event=>{if(!event.dataTransfer)return;event.dataTransfer.setData('application/x-vmbox-chat',key);event.dataTransfer.effectAllowed='move';row.classList.add('dragging')});
-  row.addEventListener('dragend',()=>row.classList.remove('dragging'));
+  row.addEventListener('dragstart',event=>{if(!event.dataTransfer)return;event.dataTransfer.setData('application/x-vmbox-chat',key);event.dataTransfer.effectAllowed='move';row.classList.add('dragging');showPinDrop()});
+  row.addEventListener('dragend',()=>{row.classList.remove('dragging');hidePinDrop()});
  }
  function bindChatDrop(target,move){
   target.addEventListener('dragover',event=>{if(!Array.from(event.dataTransfer?.types||[]).includes('application/x-vmbox-chat'))return;event.preventDefault();event.dataTransfer.dropEffect='move';target.classList.add('drop-target')});
   target.addEventListener('dragleave',event=>{if(!target.contains(event.relatedTarget))target.classList.remove('drop-target')});
   target.addEventListener('drop',event=>{target.classList.remove('drop-target');const key=draggedChatKey(event);if(!knownChatKey(key))return;event.preventDefault();move(key)});
  }
- function moveChatToPinned(key){if(chatGroupMembers.delete(key))saveChatGroups();if(!pins.has(key)){pins.add(key);savePins();saveChatGroups()}renderRows()}
+ function moveChatToPinned(key){if(!pins.has(key)){pins.add(key);savePins();saveChatGroups()}renderRows()}
  function moveChatToOther(key){if(chatGroupMembers.delete(key))saveChatGroups();if(pins.delete(key)){savePins();saveChatGroups()}renderRows()}
  function bindPressFeedback(row){
   row.addEventListener('touchstart',()=>row.classList.add('pressing'),{passive:true});
@@ -1346,6 +1344,67 @@
   row.addEventListener('touchmove',event=>{const touch=event.touches[0];if(touch)move(touch.clientX,touch.clientY)},{passive:true});
   row.addEventListener('touchend',end,{passive:true});
   row.addEventListener('touchcancel',()=>{tap.invalid=true;end()},{passive:true});
+ }
+ function touchChatDropTarget(row,key,x,y){
+  const target=document.elementFromPoint(x,y)?.closest('#chat-entries li');
+  if(!target||target===row)return null;
+  if(target===pinDrop)return {node:target,move:()=>moveChatToPinned(key)};
+  if(target.dataset.groupId)return {node:target,move:()=>moveChatToGroup(key,target.dataset.groupId)};
+  const targetKey=target.dataset.boxId?'box:'+target.dataset.boxId:target.dataset.pairKey?'pair:'+target.dataset.pairKey:'';
+  if(targetKey&&targetKey!==key){
+   const group=groupForChat(targetKey);
+   if(group)return {node:target,move:()=>moveChatToGroup(key,group.id)};
+   if(targetKey.split(':')[0]===key.split(':')[0])return {node:target,move:()=>moveChatToOther(key)};
+  }
+  if((target.dataset.section==='boxes'&&key.startsWith('box:'))||(target.dataset.section==='pairs'&&key.startsWith('pair:')))return {node:target,move:()=>moveChatToOther(key)};
+  return null;
+ }
+ function bindChatTouchDrag(row,key,openMenu){
+  let gesture=null,timer=0,drop=null,suppressContextUntil=0;
+  const clearDrop=()=>{drop?.node.classList.remove('drop-target');drop=null};
+  const cleanup=()=>{clearTimeout(timer);timer=0;clearDrop();row.classList.remove('drag-armed','touch-chat-dragging');row.style.removeProperty('transform');row.draggable=true;hidePinDrop();gesture=null};
+  row.addEventListener('contextmenu',event=>{if(!gesture&&Date.now()>=suppressContextUntil)return;event.preventDefault();event.stopImmediatePropagation()},true);
+  row.addEventListener('touchstart',event=>{
+   if(event.touches.length!==1){cleanup();return}
+   const touch=event.touches[0];cleanup();row.draggable=false;
+   gesture={id:touch.identifier,x:touch.clientX,y:touch.clientY,armed:false,dragging:false};
+   timer=setTimeout(()=>{if(!gesture)return;gesture.armed=true;row.classList.add('drag-armed');if(row._chatTap)row._chatTap.invalid=true;suppressGestureClick()},450);
+  },{passive:true});
+  row.addEventListener('touchmove',event=>{
+   if(!gesture)return;
+   const touch=[...event.touches].find(item=>item.identifier===gesture.id);
+   if(!touch){cleanup();return}
+   const dx=touch.clientX-gesture.x,dy=touch.clientY-gesture.y;
+   if(!gesture.armed){if(Math.hypot(dx,dy)>8)cleanup();return}
+   if(!gesture.dragging&&Math.hypot(dx,dy)>8){
+    // A sideways swipe remains navigation; vertical movement after the hold
+    // takes ownership of this touch sequence for the chat drag.
+    if(Math.abs(dx)>Math.abs(dy)*1.25){cleanup();return}
+   gesture.dragging=true;navSwipe=null;row.classList.remove('pressing','drag-armed');row.classList.add('touch-chat-dragging');
+   const before=row.getBoundingClientRect().top;showPinDrop();gesture.layoutShift=before-row.getBoundingClientRect().top;
+   }
+   if(!gesture.dragging)return;
+   if(event.cancelable)event.preventDefault();event.stopPropagation();
+   row.style.transform=`translate3d(${dx}px,${dy+(gesture.layoutShift||0)}px,0)`;
+   const bounds=listEl.getBoundingClientRect();
+   if(touch.clientY<bounds.top+40)listEl.scrollTop-=18;
+   else if(touch.clientY>bounds.bottom-40)listEl.scrollTop+=18;
+   const next=touchChatDropTarget(row,key,touch.clientX,touch.clientY);
+   if(next?.node!==drop?.node){clearDrop();drop=next;drop?.node.classList.add('drop-target')}
+  },{passive:false});
+  row.addEventListener('touchend',event=>{
+   if(!gesture)return;
+   const changed=[...event.changedTouches].find(item=>item.identifier===gesture.id);
+   if(!changed)return;
+   const {armed,dragging,x,y}=gesture,move=drop?.move;
+   cleanup();
+   if(!armed)return;
+   suppressContextUntil=Date.now()+700;
+   event.preventDefault();event.stopPropagation();suppressGestureClick();
+   if(dragging){move?.();return}
+   openMenu(x,y);
+  },{passive:false});
+  row.addEventListener('touchcancel',()=>{if(gesture?.armed)suppressContextUntil=Date.now()+700;cleanup()},{passive:true});
  }
  function cleanChatRowClick(row,event){
   if(event.detail===0&&!event.isTrusted)return true;
@@ -1373,9 +1432,10 @@
   row.querySelector('.mute-bell').hidden=!muted;
   return row;
  }
- bindChatDrop(pinnedGroup,moveChatToPinned);
+ bindChatDrop(pinDrop,moveChatToPinned);
  bindChatDrop(unpinnedDivider,moveChatToOther);
- document.addEventListener('dragend',()=>document.querySelectorAll('.drop-target').forEach(node=>node.classList.remove('drop-target')));
+ bindChatDrop(pairGroup,moveChatToOther);
+ document.addEventListener('dragend',()=>{hidePinDrop();document.querySelectorAll('.drop-target').forEach(node=>node.classList.remove('drop-target'))});
  function groupHeader(group,count,unread,alertUnread=unread){
   let row=groupNodes.get(group.id);
   if(!row){
@@ -1406,7 +1466,7 @@
   const matchesGroup=key=>groupForChat(key)?.name.toLowerCase().includes(filter);
   const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter)||matchesGroup(pinKey('box',b.id)));
   // Keep the list stable: activity must not reshuffle rows under the pointer.
-  list.sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
+  list.sort((a,b)=>Number(pins.has(pinKey('box',b.id)))-Number(pins.has(pinKey('box',a.id)))||a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
   for(const box of list){
    let row=rows.get(box.id);
    if(!row){
@@ -1415,16 +1475,17 @@
     bindChatDrag(row,pinKey('box',box.id));
     bindPressFeedback(row);
     bindChatTapGuard(row);
-    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{x,y})});
+    bindChatTouchDrag(row,pinKey('box',box.id),(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{x,y})});
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu({box},{x:event.clientX,y:event.clientY})};
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open chat with '+box.name);
-    const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,bell,time);
+    const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const pin=mk('span');pin.className='chat-row-pin';pin.innerHTML=IC.pin;pin.setAttribute('aria-label','Pinned');const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,pin,bell,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
     meta.append(r1,r2);row.append(meta);
     row.onclick=event=>{if(!cleanChatRowClick(row,event))return;location.hash='box='+box.id;openBox(box.id)};
     rows.set(box.id,row);
    }
    row.classList.toggle('active',box.id===selected&&!selectedPair);
+   row.querySelector('.chat-row-pin').hidden=!pins.has(pinKey('box',box.id));
    // Make the box state readable at a glance, not just a tiny dot.
    const starting=['creating','attaching','reserved','starting','allocating','restoring','pending'];
    const stateClass=box.state==='running'?'running':box.state==='failed'?'failed':starting.includes(box.state)?'starting':'muted';
@@ -1448,7 +1509,7 @@
   }
   for(const [id,row] of rows){if(!boxes.has(id)){row.remove();rows.delete(id)}}
   const pairList=owner?[...pairs.values()].filter(pair=>!filter||(pair.boxAName+' '+pair.boxBName).toLowerCase().includes(filter)||matchesGroup(pinKey('pair',pairKey(pair)))):[];
-  pairList.sort((a,b)=>a.boxAName.localeCompare(b.boxAName)||a.boxBName.localeCompare(b.boxBName));
+  pairList.sort((a,b)=>Number(pins.has(pinKey('pair',pairKey(b))))-Number(pins.has(pinKey('pair',pairKey(a))))||a.boxAName.localeCompare(b.boxAName)||a.boxBName.localeCompare(b.boxBName));
   for(const pair of pairList){
    const key=pairKey(pair);let row=pairRows.get(key);
    if(!row){
@@ -1457,11 +1518,11 @@
     bindChatDrag(row,pinKey('pair',key));
     bindPressFeedback(row);
     bindChatTapGuard(row);
-    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({pair},{x,y})});
+    bindChatTouchDrag(row,pinKey('pair',key),(x,y)=>{if(rowMenu.hidden)openRowMenu({pair},{x,y})});
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu({pair},{x:event.clientX,y:event.clientY})};
     const avatar=pairAvatarNode(pair);
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
-    const first=document.createElement('div');first.className='row1';const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),bell,document.createElement('time'));first.firstChild.className='name';
+    const first=document.createElement('div');first.className='row1';const pin=mk('span');pin.className='chat-row-pin';pin.innerHTML=IC.pin;pin.setAttribute('aria-label','Pinned');const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),pin,bell,document.createElement('time'));first.firstChild.className='name';
     const second=document.createElement('div');second.className='row2';const badge=mk('span','Box ↔ Box');badge.className='agent-badge';const preview=mk('span');preview.className='preview';const unread=mk('span');unread.className='unread';unread.hidden=true;second.append(badge,preview,unread);
     meta.append(first,second);row.append(avatar,meta);row.onclick=event=>{if(!cleanChatRowClick(row,event))return;location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
    }
@@ -1469,6 +1530,7 @@
    row.querySelector('.name').textContent=name;row.querySelector('.name').title=name;
    row.querySelector('.mute-bell').hidden=false;
    row.classList.toggle('active',key===selectedPair);
+   row.querySelector('.chat-row-pin').hidden=!pins.has(pinKey('pair',key));
    syncPairAvatar(row.querySelector('.pair-avatar-stack'),pair);
    row.querySelector('time').textContent=pair.lastAt?fmtTime(pair.lastAt):'';
    row.querySelector('.preview').textContent=pair.lastText?plainPreview(pair.lastText):'No messages yet';
@@ -1477,18 +1539,11 @@
    row.querySelector('time').classList.toggle('recent',!!count);
   }
   for(const [key,row] of pairRows)if(!pairs.has(key)){row.remove();pairRows.delete(key)}
-  const ungrouped=key=>!pins.has(key)&&!groupForChat(key);
-  const pinnedBoxes=list.filter(box=>pins.has(pinKey('box',box.id))&&!groupForChat(pinKey('box',box.id))).map(box=>rows.get(box.id));
-  const pinnedPairs=pairList.filter(pair=>pins.has(pinKey('pair',pairKey(pair)))&&!groupForChat(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
+  const ungrouped=key=>!groupForChat(key);
   const otherBoxes=list.filter(box=>ungrouped(pinKey('box',box.id))).map(box=>rows.get(box.id));
   const otherPairs=pairList.filter(pair=>ungrouped(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
   const desired=[];
-  if(pinnedBoxes.length||pinnedPairs.length){
-   const unread=pinnedBoxes.reduce((sum,row)=>sum+(boxes.get(row.dataset.boxId)?.unread||0),0)+pinnedPairs.reduce((sum,row)=>sum+pairUnreadCount(pairs.get(row.dataset.pairKey)),0);
-   const alertUnread=pinnedBoxes.reduce((sum,row)=>sum+(isChatMuted(pinKey('box',row.dataset.boxId))?0:boxes.get(row.dataset.boxId)?.unread||0),0);
-   desired.push(sectionHeader(pinnedGroup,'pinned','Pinned',unread,alertUnread));
-   if(!sectionCollapsed.pinned||filter)desired.push(...pinnedBoxes,...pinnedPairs);
-  }
+  if(listEl.classList.contains('chat-drag-active'))desired.push(pinDrop);
   for(const group of chatGroups){
    const members=list.filter(box=>chatGroupMembers.get(pinKey('box',box.id))===group.id).map(box=>rows.get(box.id));
    const memberPairs=pairList.filter(pair=>chatGroupMembers.get(pinKey('pair',pairKey(pair)))===group.id).map(pair=>pairRows.get(pairKey(pair)));
@@ -1498,7 +1553,7 @@
    const unread=groupBoxes.reduce((sum,box)=>sum+(box.unread||0),0)+groupPairs.reduce((sum,pair)=>sum+pairUnreadCount(pair),0);
    const alertUnread=groupBoxes.reduce((sum,box)=>sum+(isChatMuted(pinKey('box',box.id))?0:box.unread||0),0);
    desired.push(groupHeader(group,groupBoxes.length+groupPairs.length,unread,alertUnread));
-   if(!group.collapsed||filter)desired.push(...members,...memberPairs);
+   if(!group.collapsed||filter)desired.push(...members.filter(row=>pins.has(pinKey('box',row.dataset.boxId))),...memberPairs.filter(row=>pins.has(pinKey('pair',row.dataset.pairKey))),...members.filter(row=>!pins.has(pinKey('box',row.dataset.boxId))),...memberPairs.filter(row=>!pins.has(pinKey('pair',row.dataset.pairKey))));
   }
   if(otherBoxes.length){
    const unread=otherBoxes.reduce((sum,row)=>sum+(boxes.get(row.dataset.boxId)?.unread||0),0);
@@ -3769,7 +3824,7 @@ function pairTileStatus(tile,mode,label){
    const target=currentNewBoxTarget(),line=$('#new-box-target');
    line.hidden=!target;
    if(!target)return;
-   const name=target.kind==='group'?chatGroups.find(group=>group.id===target.id).name:target.kind==='pinned'?'Pinned':'Boxes';
+   const name=target.kind==='group'?chatGroups.find(group=>group.id===target.id).name:target.kind==='pinned'?'Pinned in Chats':'Boxes';
    line.querySelector('.new-box-target-icon').innerHTML=target.kind==='pinned'?IC.pin:IC.folder;
    $('#new-box-target-label').textContent='Added to: '+name;
   }
@@ -3976,6 +4031,7 @@ function pairTileStatus(tile,mode,label){
  function openSectionMenu(id,point){
   showActionMenu([
    ...(owner&&id!=='pairs'?[['New box here',()=>openNewBoxModal({kind:id}),null,null,lucide('plus').outerHTML]]:[]),
+   ...(owner&&id==='boxes'?[['New pinned box here',()=>openNewBoxModal({kind:'pinned'}),null,null,IC.pin]]:[]),
    ['Mark all as read',()=>markSectionRead(id),null,null,menuIcons.read],
    muteMenuItem('section:'+id),
    [sectionCollapsed[id]?'Expand':'Collapse',()=>{sectionCollapsed[id]=!sectionCollapsed[id];saveChatGroups();renderRows()},null,null,sectionCollapsed[id]?menuIcons.down:menuIcons.up],
