@@ -2140,6 +2140,15 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-entries .chat-folder-toggle{min-width:0;flex:1}
 #chat-entries .chat-folder .mute-bell{margin-left:2px}
 #chat-entries li.chat-folder,#chat-entries li.conversation-group,#chat-entries li.conversation-divider{user-select:none;-webkit-user-select:none;touch-action:pan-y;transition:transform .15s var(--vb-ease)}
+#chat-entries .chat-pin-drop{display:none;min-height:42px;margin:4px 8px 8px;padding:8px 12px;border:1px dashed var(--vb-line-strong);border-radius:var(--r-control);background:var(--vb-surface-2);color:var(--vb-ink-soft);font-size:var(--vb-type-px-13);font-weight:650}
+#chat-entries.chat-drag-active .chat-pin-drop{display:flex}
+#chat-entries .chat-pin-drop.drop-target{border-color:var(--vb-ink);background:var(--vb-surface-2)}
+#chat-entries li.drop-target{position:relative;z-index:9;outline-color:var(--vb-ink)}
+#chat-entries .chat-row-pin{display:inline-flex;flex:none;color:var(--vb-ink-soft)}
+#chat-entries .chat-row-pin[hidden]{display:none}
+#chat-entries .chat-row-pin svg{width:14px;height:14px}
+#chat-entries li.drag-armed{background:var(--vb-surface-2)}
+#chat-entries li.touch-chat-dragging{position:relative;z-index:8;background:var(--vb-surface);pointer-events:none;transition:none;box-shadow:var(--vb-shadow-md)}
 #chat-entries li.pressing{transform:scale(.985)}
 #row-menu button:disabled{opacity:.55;cursor:default}
 @media(max-width:600px){

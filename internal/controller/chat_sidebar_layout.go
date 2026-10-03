@@ -78,11 +78,11 @@ func activeChatMute(mutes map[string]*time.Time, key string, now time.Time) bool
 	return exists && (until == nil || until.After(now))
 }
 
-// isBoxPushMuted uses the account's saved layout, including pin membership,
-// so section and group mutes suppress pushes on every browser consistently.
+// isBoxPushMuted uses the account's saved layout so section and group mutes
+// suppress pushes on every browser consistently. Pins do not change sections.
 func (s *Server) isBoxPushMuted(ctx context.Context, accountID, boxID string) (bool, error) {
-	var membersJSON, mutesJSON, pinsJSON []byte
-	err := s.Store.DB.QueryRowContext(ctx, `SELECT members_json,mutes_json,pins_json FROM chat_sidebar_layouts WHERE account_id=$1`, accountID).Scan(&membersJSON, &mutesJSON, &pinsJSON)
+	var membersJSON, mutesJSON []byte
+	err := s.Store.DB.QueryRowContext(ctx, `SELECT members_json,mutes_json FROM chat_sidebar_layouts WHERE account_id=$1`, accountID).Scan(&membersJSON, &mutesJSON)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -91,14 +91,10 @@ func (s *Server) isBoxPushMuted(ctx context.Context, accountID, boxID string) (b
 	}
 	var members map[string]string
 	var mutes map[string]*time.Time
-	var pins []string
 	if err := json.Unmarshal(membersJSON, &members); err != nil {
 		return false, err
 	}
 	if err := json.Unmarshal(mutesJSON, &mutes); err != nil {
-		return false, err
-	}
-	if err := json.Unmarshal(pinsJSON, &pins); err != nil {
 		return false, err
 	}
 	key, now := "box:"+boxID, time.Now().UTC()
@@ -107,11 +103,6 @@ func (s *Server) isBoxPushMuted(ctx context.Context, accountID, boxID string) (b
 	}
 	if groupID := members[key]; groupID != "" {
 		return activeChatMute(mutes, "group:"+groupID, now), nil
-	}
-	for _, pin := range pins {
-		if pin == key {
-			return activeChatMute(mutes, "section:pinned", now), nil
-		}
 	}
 	return activeChatMute(mutes, "section:boxes", now), nil
 }
