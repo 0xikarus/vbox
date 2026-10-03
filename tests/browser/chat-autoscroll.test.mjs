@@ -77,6 +77,7 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   await page.type('#chat-input','MY NEW MESSAGE');
   await page.click('#send');
   await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('MY NEW MESSAGE'));
+  await page.waitForFunction(()=>document.querySelector('#chat-messages .msg.user[data-key^="sent-"]')?.textContent.includes('MY NEW MESSAGE')&&!document.querySelector('#chat-messages .msg[data-key="pending"]'));
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.ok(await page.$eval('#chat-messages',atBottom)<3,'sending a new message moves the conversation to the bottom');
 

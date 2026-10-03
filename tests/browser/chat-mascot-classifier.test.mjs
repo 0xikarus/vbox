@@ -23,7 +23,7 @@ test('controller classification drives the chat mascot and expires cleanly',asyn
   if(path==='/v1/tool-presets')return res.end('[]');
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   if(path==='/v1/logical-boxes/builder/messages'){
-   res.setHeader('X-Vmbox-Agent-Busy','false');
+   res.setHeader('X-Vmbox-Agent-Busy',activity==='working'?'true':'false');
    if(mood)res.setHeader('X-Vmbox-Mascot-Mood',mood);
    if(activity)res.setHeader('X-Vmbox-Mascot-Activity',activity);
    return res.end(JSON.stringify(messages));
