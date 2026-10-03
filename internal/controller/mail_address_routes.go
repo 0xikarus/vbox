@@ -343,7 +343,7 @@ func (s *Server) agentMailAddresses(w http.ResponseWriter, r *http.Request, p Pr
 	if !s.agentMailAllowed(w, r, p, "list_mail_addresses") {
 		return
 	}
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT a.id::text,a.address,a.label,COALESCE(a.owning_box_id=$2,false),(SELECT count(*) FROM mail_messages m WHERE m.account_id=a.account_id AND m.address_id=a.id AND m.read_at IS NULL AND NOT m.quarantined AND m.archived_at IS NULL AND m.expires_at>now()) FROM mail_addresses a WHERE a.account_id=$1 AND a.enabled AND (a.owning_box_id=$2 OR EXISTS(SELECT 1 FROM mail_address_grants g WHERE g.account_id=a.account_id AND g.address_id=a.id AND g.box_id=$2)) ORDER BY a.address`, p.AccountID, agentBoxID(p))
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT a.id::text,a.address,a.label,COALESCE(a.owning_box_id=$2,false),(SELECT count(*) FROM mail_messages m WHERE m.account_id=a.account_id AND m.address_id=a.id AND m.read_at IS NULL AND NOT m.quarantined AND m.expires_at>now()) FROM mail_addresses a WHERE a.account_id=$1 AND a.enabled AND (a.owning_box_id=$2 OR EXISTS(SELECT 1 FROM mail_address_grants g WHERE g.account_id=a.account_id AND g.address_id=a.id AND g.box_id=$2)) ORDER BY a.address`, p.AccountID, agentBoxID(p))
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("mail addresses unavailable"))
 		return
