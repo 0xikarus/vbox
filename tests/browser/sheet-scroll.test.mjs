@@ -52,7 +52,7 @@ test('mobile menu scrolls natively and inline permission tools keep touch target
   assert.equal((await menu()).below,false);
   assert.ok(await page.$eval('#chat-menu-sheet .menu-logout',el=>el.getBoundingClientRect().bottom<=el.closest('.sheet-scroll-body').getBoundingClientRect().bottom+1));
 
-  await page.evaluate(()=>{document.querySelector('#chat-menu-sheet').hidden=true;const editor=document.querySelector('#role-editor-inline');editor.hidden=false;document.body.append(editor);document.querySelector('.inline-permission-tools').open=true});
+  await page.evaluate(()=>{document.querySelector('#chat-menu-sheet').hidden=true;const editor=document.querySelector('#role-editor-inline');editor.hidden=false;document.body.append(editor)});
   const tool=await page.$eval('input[name=mcpTools]',input=>({width:input.getBoundingClientRect().width,height:input.getBoundingClientRect().height,before:input.checked,row:input.closest('label').getBoundingClientRect().height}));
   assert.ok(tool.width>=18&&tool.height>=18,'MCP choices keep a visible checkbox');
   assert.ok(tool.row>=44,'the whole tool row is a tap target');

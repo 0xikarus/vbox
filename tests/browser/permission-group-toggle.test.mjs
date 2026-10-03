@@ -14,36 +14,33 @@ const baseline={
  mcpTools:{enabled:true,allowedTools:[],unknown:'keep'},requestMoreTime:{maxExtensionMinutes:7,maxTotalMinutes:14}
 };
 const clone=value=>structuredClone(value);
-const groups=[['manage-boxes','manage'],['mail','mail'],['computer-use','computer'],['passwords','passwords'],['all-contacts','contacts']];
-const quickRows=[
- ['see-boxes',['list_agent_boxes','get_agent_box'],['list','inspect']],
- ['see-box-screens',['get_agent_box_screenshot'],['inspect']],
- ['restart-boxes',['restart_agent_box','wake_agent_box','clear_agent_box_context','compact_agent_box_context'],['restart']],
- ['tag-budget',['set_agent_box_tags','set_agent_box_run_budget'],['tag','restart']],
- ['delete-boxes',['delete_agent_box'],['delete']],
- ['heartbeat',['heartbeat'],[]],
- ['see-screen',['take_screenshot','capture_window'],[]],
- ['mouse-keyboard',['move_mouse','click_mouse','drag_mouse','scroll_mouse','type_text','press_keys'],[]],
- ['ask-password',['secret_request'],[]],['generate-password',['generate_password'],[]],['type-password',['type_secret'],[]]
-];
-function expected(group,on,tools){
- const cap=clone(baseline);cap.mcpTools.allowedTools=on?tools:[];
- if(group==='manage-boxes'){
-  cap.createAgentBox.enabled=on;
-  for(const key of ['list','inspect','control','tag','restart','delete'])cap.manageAgentBoxes[key]=on;
- }else if(group==='mail'){cap.mail.read=on;cap.mail.compose=on}
- else if(group==='all-contacts')cap.allContacts.enabled=on;
+const groups=['manage-boxes','mail','computer-use','passwords','all-contacts'];
+const readTools=['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'];
+const composeTools=['send_email','list_outbox','get_outbox_status'];
+const companions=['wake_agent_box','clear_agent_box_context','compact_agent_box_context'];
+function expected(selected,contacts=false){
+ const cap=clone(baseline),has=tool=>selected.includes(tool);
+ cap.allContacts.enabled=contacts;
+ cap.mail.read=readTools.some(has);cap.mail.compose=composeTools.some(has);
+ cap.createAgentBox.enabled=has('create_agent_box');
+ cap.manageAgentBoxes.list=has('list_agent_boxes');
+ cap.manageAgentBoxes.inspect=['list_agent_boxes','get_agent_box','get_agent_box_screenshot'].some(has);
+ cap.manageAgentBoxes.control=has('remote_control_box');
+ cap.manageAgentBoxes.tag=has('set_agent_box_tags');
+ cap.manageAgentBoxes.restart=['restart_agent_box','wake_agent_box','clear_agent_box_context','compact_agent_box_context','set_agent_box_run_budget'].some(has);
+ cap.manageAgentBoxes.delete=has('delete_agent_box');
+ cap.mcpTools.allowedTools=selected;
  return {capabilities:cap};
 }
 
-test('Details and Manage group switches save all, none, and mixed grants in one PUT',async()=>{
+test('Details and Manage show one master and visible tool checkboxes with exact derived policy PUTs',async()=>{
  let policy={capabilities:clone(baseline)},writes=[];
  const server=http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://fixture').pathname;
   if(path.startsWith('/v1/')){
    res.setHeader('Content-Type','application/json');const send=value=>res.end(JSON.stringify(value));
    if(path==='/v1/logical-boxes/builder/agent-policy'){
-    if(req.method==='PUT'){let text='';for await(const chunk of req)text+=chunk;const body=JSON.parse(text);writes.push(body);policy=body}
+    if(req.method==='PUT'){let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);writes.push(body);policy=body}
     return send(policy);
    }
    if(path==='/v1/whoami')return send({role:'owner',accountId:'acct'});
@@ -79,93 +76,67 @@ test('Details and Manage group switches save all, none, and mixed grants in one 
    }else{await page.waitForSelector('#roles .role-assignment-toggle');await page.click('#roles .role-assignment-toggle')}
    await page.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#role-editor-status').textContent==='');
    await page.waitForFunction(()=>!document.querySelector('[data-permission-group="mail"]').hidden);
-   for(const [id] of groups){
-    const selector=`[data-permission-group="${id}"]`,master=selector+' .inline-permission-master';
-    const tools=await page.$$eval(selector+' input[name=mcpTools]',nodes=>nodes.map(node=>node.value));
-    if(tools.length){
-     await page.$eval(selector+' .inline-permission-tools',node=>node.open=true);
-     const before=writes.length;await page.$eval(selector+' input[name=mcpTools]',node=>node.click());
+   const root='#role-editor-form',limit=view==='chat'?'#inspect-create-limit':'#role-create-limit';
+   assert.equal(await page.$eval(root,form=>form.querySelectorAll('.inline-permission-quick,.inline-permission-tools,.mcp-tool-group-toggle,input[name=mailRead],input[name=mailCompose],input[name=controlOtherDesktops],input[name=createAgentBoxEnabled]').length),0,view+' has no extra toggles or Tools disclosures');
+   assert.equal(await page.$eval(limit,node=>node.querySelectorAll('input[type=checkbox]').length),0,view+' limit has no switch');
+   assert.deepEqual(await page.$$eval('[data-permission-group="manage-boxes"] .inline-permission-tool-list > *',nodes=>nodes.map(node=>node.matches('label')?node.querySelector('input[name=mcpTools]')?.value:node.id==='inspect-create-limit'||node.id==='role-create-limit'?'limit':node.classList.contains('role-capability-options')?'advanced':'').filter(Boolean).slice(3,7)),['remote_control_box','create_agent_box','limit','advanced'],view+' places limit under create_agent_box');
+   for(const id of groups){
+    const section=`[data-permission-group="${id}"]`,master=section+' .inline-permission-master';
+    const values=await page.$$eval(section+' input[name=mcpTools]',nodes=>nodes.map(node=>node.value));
+    assert.equal(await page.$$eval(section+' .inline-permission-master',nodes=>nodes.length),1,view+' '+id+' has one category switch');
+    if(values.length){
+     assert.equal(await page.$$eval(section+' .inline-permission-tool-row',nodes=>nodes.every(node=>node.querySelector('strong')?.textContent===node.querySelector('input')?.value&&!!node.querySelector('small')?.textContent)),true,view+' '+id+' lists each tool and description');
+     const before=writes.length;await page.$eval(section+' input[name=mcpTools]',node=>node.click());
      await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
-     assert.equal(writes.length,before+1,view+' '+id+' single tool writes once');
-     assert.equal(await page.$eval(master,node=>node.indeterminate),true,view+' '+id+' mixed');
-     assert.equal(await page.$eval(master,node=>node.getAttribute('aria-checked')),'mixed');
-     assert.match(await page.$eval(selector+' .inline-permission-count',node=>node.textContent),new RegExp(`^1 of ${tools.length}`));
-     if(id==='manage-boxes'){
-      assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',node=>node.checked),false,'individual list tool does not grant control');
-      await page.$eval(selector+' input[value=get_agent_box_screenshot]',node=>node.click());
-      await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
-      assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',node=>node.checked),false,'screenshot remains independent');
-     }
+     assert.equal(writes.length,before+1,view+' '+id+' one checkbox writes once');
+     assert.deepEqual(writes.at(-1),expected([values[0]]),view+' '+id+' exact checkbox body');
+     assert.equal(await page.$eval(master,node=>node.indeterminate&&node.getAttribute('aria-checked')==='mixed'),true,view+' '+id+' master is mixed');
+     assert.equal(await page.$eval(section+' .inline-permission-group-count',node=>node.textContent),'1 of '+values.length);
     }
-    if(id==='computer-use'||id==='passwords')await page.$eval(selector+' .inline-permission-tools',node=>node.open=false);
-    const beforeOn=writes.length;if(id==='computer-use'||id==='passwords')await page.click(master);else await page.$eval(master,node=>node.click());
+    const beforeOn=writes.length;await page.$eval(master,node=>node.click());
     await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
     assert.equal(writes.length,beforeOn+1,view+' '+id+' master on writes once');
-    if(id==='computer-use'||id==='passwords')assert.equal(await page.$eval(selector+' .inline-permission-tools',node=>node.open),false,'master does not expand tools');
-    assert.equal(await page.$eval(master,node=>node.checked&&!node.indeterminate),true,view+' '+id+' master should turn a mixed group on');
-    assert.deepEqual(writes.at(-1),expected(id,true,tools),view+' '+id+' exact on body');
+    assert.equal(await page.$eval(master,node=>node.checked&&!node.indeterminate),true);
+    assert.deepEqual(writes.at(-1),expected(values,id==='all-contacts'),view+' '+id+' exact master on body');
     const beforeOff=writes.length;await page.$eval(master,node=>node.click());
     await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
     assert.equal(writes.length,beforeOff+1,view+' '+id+' master off writes once');
-    assert.equal(await page.$eval(master,node=>node.checked||node.indeterminate),false);
-    assert.deepEqual(writes.at(-1),expected(id,false,tools),view+' '+id+' exact off body');
+    assert.deepEqual(writes.at(-1),expected([]),view+' '+id+' exact master off body');
    }
-   for(const [key,tools,caps] of quickRows){
-    const quick=`[data-quick-permission="${key}"] .inline-permission-quick`;
-    assert.ok(await page.$(quick),view+' has '+key+' quick row');
-    if(tools.length>1){
-     const partial=key==='restart-boxes'?'wake_agent_box':tools[0];
-     await page.$eval(`#role-editor-form input[name=mcpTools][value=${partial}]`,node=>node.click());
-     await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
-     assert.equal(await page.$eval(quick,node=>node.indeterminate),true,view+' '+key+' mixed quick row');
-    }
-    const beforeOn=writes.length;await page.$eval(quick,node=>node.click());
+   const allTools=await page.$$eval('#role-editor-form input[name=mcpTools]',nodes=>nodes.map(node=>node.value));
+   for(const tool of allTools){
+    const selector=`#role-editor-form input[name=mcpTools][value="${tool}"]`,before=writes.length;
+    await page.$eval(selector,node=>node.click());
     await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
-    assert.equal(writes.length,beforeOn+1,view+' '+key+' quick on writes once');
-    const expectedOn=expected('',true,tools);for(const cap of caps)expectedOn.capabilities.manageAgentBoxes[cap]=true;
-    assert.deepEqual(writes.at(-1),expectedOn,view+' '+key+' exact on body');
-    if(key==='see-box-screens')assert.equal(await page.$eval('#role-editor-form [name=controlOtherDesktops]',node=>node.checked),false,'quick screenshot stays independent');
-    const beforeOff=writes.length;await page.$eval(quick,node=>node.click());
+    assert.equal(writes.length,before+1,view+' '+tool+' checkbox writes once');
+    const selected=allTools.filter(value=>value===tool||tool==='restart_agent_box'&&companions.includes(value));
+    assert.deepEqual(writes.at(-1),expected(selected),view+' '+tool+' exact tool body');
+    if(tool==='get_agent_box_screenshot')assert.equal(writes.at(-1).capabilities.manageAgentBoxes.control,false,'screenshot stays independent of control');
+    if(tool==='remote_control_box')assert.equal(writes.at(-1).capabilities.manageAgentBoxes.inspect,false,'control stays independent of screenshot');
+    if(tool==='create_agent_box')await page.waitForFunction(selector=>!document.querySelector(selector).disabled,{},limit+' .idle-policy-controls input');
+    const group=await page.$eval(selector,node=>node.closest('.inline-permission-group').dataset.permissionGroup);
+    const master=`[data-permission-group="${group}"] .inline-permission-master`;
+    await page.$eval(master,node=>node.click());
     await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
-    assert.equal(writes.length,beforeOff+1,view+' '+key+' quick off writes once');
-    assert.deepEqual(writes.at(-1),expected('',false,[]),view+' '+key+' exact off body');
+    const beforeClear=writes.length;await page.$eval(master,node=>node.click());
+    await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
+    assert.equal(writes.length,beforeClear+1,view+' '+tool+' reset writes once');
+    assert.deepEqual(writes.at(-1),expected([]),view+' '+tool+' reset body');
    }
-   for(const [name,tools,cap] of [['mailRead',['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'],'read'],['mailCompose',['send_email','list_outbox','get_outbox_status'],'compose']]){
-    await page.$eval(`#role-editor-form input[name=mcpTools][value=${tools[0]}]`,node=>node.click());
-    await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
-    assert.equal(await page.$eval(`#role-editor-form input[name=${name}]`,node=>node.indeterminate),true,view+' '+name+' mixed');
-    const beforeOn=writes.length;await page.$eval(`#role-editor-form input[name=${name}]`,node=>node.click());
-    await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
-    assert.equal(writes.length,beforeOn+1,view+' '+name+' on writes once');
-    const expectedOn=expected('',true,tools);expectedOn.capabilities.mail[cap]=true;
-    assert.deepEqual(writes.at(-1),expectedOn,view+' '+name+' exact on body');
-    const beforeOff=writes.length;await page.$eval(`#role-editor-form input[name=${name}]`,node=>node.click());
-    await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
-    assert.equal(writes.length,beforeOff+1,view+' '+name+' off writes once');
-    assert.deepEqual(writes.at(-1),expected('',false,[]),view+' '+name+' exact off body');
-   }
-   await page.$eval('#role-editor-form [name=controlOtherDesktops]',node=>node.click());
-   await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
-   assert.equal(await page.$eval('#role-editor-form input[value=get_agent_box_screenshot]',node=>node.checked),false,view+' control alone does not grant screenshots');
-   await page.$eval('#role-editor-form [name=controlOtherDesktops]',node=>node.click());
-   await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
-   await page.$eval('[data-permission-group="manage-boxes"] input[value=get_agent_box_screenshot]',node=>node.click());
-   await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
+   await page.waitForFunction(selector=>document.querySelector(selector)?.disabled,{},limit+' .idle-policy-controls input');
    await page.close();
    const capture=process.env.PERMISSION_GROUP_CAPTURE_DIR;if(capture){
-    await mkdir(capture,{recursive:true});
-    for(const width of [390,1440])for(const theme of ['light','dark']){
-     const shot=await browser.newPage();await shot.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});await shot.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
-     await shot.goto(view==='chat'?base+'/chat#box=builder':base+'/#roles');
-     if(view==='chat'){await shot.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);await shot.click('#chat-info');await shot.waitForSelector('[data-ip-row="access"]');await shot.$eval('[data-ip-row="access"]',node=>node.click())}
-     else{await shot.waitForSelector('#roles .role-assignment-toggle');await shot.click('#roles .role-assignment-toggle')}
-     await shot.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#role-editor-status').textContent==='');
-     assert.equal(await shot.$eval('[data-quick-permission="see-box-screens"] .inline-permission-quick',node=>node.disabled),false,view+' captured quick switches remain enabled');
-     await shot.screenshot({path:resolve(capture,`${view}-groups-${width}-${theme}.png`)});
-     if(view==='chat'&&width===390){await shot.$eval('#inspect-prototype-page',node=>node.scrollTop=node.scrollHeight/2);await shot.screenshot({path:resolve(capture,`${view}-groups-middle-${width}-${theme}.png`)});await shot.$eval('#inspect-prototype-page',node=>node.scrollTop=node.scrollHeight);await shot.screenshot({path:resolve(capture,`${view}-groups-bottom-${width}-${theme}.png`)})}
-     if(view==='manage'&&width===390){await shot.evaluate(()=>window.scrollTo(0,document.body.scrollHeight/2));await shot.screenshot({path:resolve(capture,`${view}-groups-middle-${width}-${theme}.png`)});await shot.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await shot.screenshot({path:resolve(capture,`${view}-groups-bottom-${width}-${theme}.png`)})}
-     await shot.close();
-    }
+    await mkdir(capture,{recursive:true});const shot=await browser.newPage();await shot.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+    await shot.goto(view==='chat'?base+'/chat#box=builder':base+'/#roles');
+    if(view==='chat'){await shot.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);await shot.click('#chat-info');await shot.waitForSelector('[data-ip-row="access"]');await shot.$eval('[data-ip-row="access"]',node=>node.click())}
+    else{await shot.waitForSelector('#roles .role-assignment-toggle');await shot.click('#roles .role-assignment-toggle')}
+    await shot.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#role-editor-status').textContent==='');
+    await shot.screenshot({path:resolve(capture,`${view}-tools-390-light.png`)});
+    await shot.waitForFunction(()=>!document.querySelector('[data-permission-group="mail"]').hidden);
+    await shot.$eval('[data-permission-group="mail"]',node=>{node.scrollIntoView({block:'start',behavior:'instant'});let parent=node.parentElement;while(parent&&parent.scrollHeight<=parent.clientHeight)parent=parent.parentElement;(parent||document.scrollingElement).scrollTop-=100});
+    await shot.waitForFunction(()=>{const top=document.querySelector('[data-permission-group="mail"]').getBoundingClientRect().top;return top>=60&&top<160});
+    await shot.screenshot({path:resolve(capture,`${view}-mail-390-light.png`)});
+    await shot.close();
    }
   }
  }finally{await browser.close();await new Promise(done=>server.close(done))}

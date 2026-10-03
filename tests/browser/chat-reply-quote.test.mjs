@@ -111,6 +111,7 @@ test('reply strips are immediate, short, and keep a fixed height while parent lo
     await page.type('#chat-input','I will review the short summary.');
     await page.click('#send');
     await page.waitForSelector('.msg[data-key="pending"]');
+    await page.waitForFunction(()=>document.querySelector('.msg[data-key="pending"]')?.getBoundingClientRect().height>0);
     const pending=await page.$eval('.msg[data-key="pending"]',row=>({quote:row.querySelector('.msg-parent')?.textContent,body:row.querySelector('.text')?.textContent,height:row.getBoundingClientRect().height}));
     if(!before){assert.ok(pending.quote?.startsWith('Agent:'));assert.ok(pending.quote.length<=80);assert.equal(pending.body,'I will review the short summary.');assert.deepEqual(posts,[{text:'I will review the short summary.',images:[],parentMessageId:agentParent,mentionedBoxIds:[]}])}
     if(captureDir)await page.screenshot({path:resolve(captureDir,width+'-pending.png')});
