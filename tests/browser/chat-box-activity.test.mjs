@@ -7,11 +7,13 @@ import puppeteer from 'puppeteer-core';
 const names=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js'];
 const assets=Object.fromEntries(await Promise.all(names.map(async name=>['/'+name,await readFile('internal/controller/web/'+name)])));
 
-test('one activity batch updates all box rows, the header, and the processing bubble',async()=>{
+test('one activity batch updates all box rows, the header, and the processing bubble',async t=>{
  const boxes=[
   {id:'builder',name:'Builder',state:'running',defaultAgent:'codex'},
   {id:'quiet',name:'Quiet',state:'running',defaultAgent:'claude'},
   {id:'unknown',name:'Unknown',state:'running',defaultAgent:'codex'},
+  {id:'unknownReply',name:'Unknown Reply',state:'running',defaultAgent:'codex'},
+  {id:'falseRecent',name:'False Recent',state:'running',defaultAgent:'codex'},
   {id:'sleeping',name:'Sleeping',state:'hibernated',defaultAgent:'claude'},
  ];
  const now=new Date().toISOString();
@@ -19,6 +21,8 @@ test('one activity batch updates all box rows, the header, and the processing bu
   builder:[{id:'b1',direction:'user',state:'delivered',text:'Please fix the tooltip.',createdAt:now,updatedAt:now}],
   quiet:[{id:'q1',direction:'agent',state:'delivered',text:'Done.',createdAt:now,updatedAt:now}],
   unknown:[{id:'u1',direction:'user',state:'delivered',text:'Please investigate.',createdAt:now,updatedAt:now}],
+  unknownReply:[{id:'ur1',direction:'user',state:'delivered',text:'Please check.',createdAt:now,updatedAt:now},{id:'ur2',direction:'agent',state:'delivered',text:'Finished.',createdAt:now,updatedAt:now}],
+  falseRecent:[{id:'f1',direction:'user',state:'delivered',text:'Recent request.',createdAt:now,updatedAt:now}],
   sleeping:[{id:'s1',direction:'user',state:'delivered',text:'Old request.',createdAt:now,updatedAt:now}],
  };
  let activityRequests=0,quietMood='happy',builderPhrase='Editing chat.js';
@@ -26,6 +30,8 @@ test('one activity batch updates all box rows, the header, and the processing bu
   {boxId:'builder',busy:true,busySince:now,mood:'idle',activity:'working',phrase:builderPhrase,observedAt:new Date().toISOString()},
   {boxId:'quiet',busy:false,mood:quietMood,activity:'idle',observedAt:new Date().toISOString()},
   {boxId:'unknown',busy:null},
+  {boxId:'unknownReply',busy:null},
+  {boxId:'falseRecent',busy:false},
   {boxId:'sleeping',busy:true,busySince:now,mood:'idle',activity:'working',phrase:'Old work',observedAt:new Date().toISOString()},
  ];
  const server=http.createServer((req,res)=>{
@@ -39,8 +45,8 @@ test('one activity batch updates all box rows, the header, and the processing bu
   if(path==='/v1/box-activity'){activityRequests++;return res.end(JSON.stringify(activity()))}
   if(path==='/v1/tool-presets'||path==='/v1/box-conversations')return res.end('[]');
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
-  const match=path.match(/^\/v1\/logical-boxes\/(builder|quiet|unknown|sleeping)\/messages$/);
-  if(match)return res.end(JSON.stringify(messages[match[1]]));
+  const match=path.match(/^\/v1\/logical-boxes\/(builder|quiet|unknown|unknownReply|falseRecent|sleeping)\/messages$/);
+  if(match){if(match[1]==='falseRecent')res.setHeader('X-Vmbox-Agent-Busy','false');return res.end(JSON.stringify(messages[match[1]]))}
   if(path.endsWith('/messages'))return res.end('[]');
   return res.end('{}');
  });
@@ -58,6 +64,8 @@ test('one activity batch updates all box rows, the header, and the processing bu
    assert.equal(await page.$eval('[data-box-id="builder"] .preview',el=>el.textContent),'Editing chat.js');
    assert.equal(await page.$eval('[data-box-id="quiet"] .preview',el=>el.textContent),'Done.');
    assert.equal(await page.$eval('[data-box-id="unknown"] .preview',el=>el.textContent),'working…','unknown busy retains the recent user-message fallback');
+   assert.equal(await page.$eval('[data-box-id="unknownReply"] .preview',el=>el.textContent),'Finished.','unknown busy with an agent reply is idle');
+   assert.equal(await page.$eval('[data-box-id="falseRecent"] .preview',el=>el.textContent),'You: Recent request.','explicit false overrides a recent user message');
    assert.equal(await page.$eval('[data-box-id="sleeping"] .preview',el=>el.textContent),'You: Old request.');
    assert.equal(await page.$eval('[data-box-id="sleeping"]',el=>el.textContent.includes('processing')||el.textContent.includes('working')),false);
    assert.equal(await page.$eval('#chat-header-state',el=>el.textContent),'codex · Editing chat.js');
@@ -75,6 +83,21 @@ test('one activity batch updates all box rows, the header, and the processing bu
     await page.$eval('[data-box-id="sleeping"] .chat-meta',el=>el.click());
     await page.waitForFunction(()=>document.querySelector('#chat-header-state')?.textContent==='claude · hibernated');
     assert.equal(await page.$('#chat-messages .msg.processing'),null,'hibernated box has no processing bubble');
+    await t.test('unknown busy plus recent user message is working',async()=>{
+     await page.$eval('[data-box-id="unknown"] .chat-meta',el=>el.click());
+     await page.waitForFunction(()=>document.querySelector('#chat-header-state')?.textContent==='codex · working');
+     assert.ok(await page.$('#chat-messages .msg.processing'));
+    });
+    await t.test('unknown busy plus agent reply is idle',async()=>{
+     await page.$eval('[data-box-id="unknownReply"] .chat-meta',el=>el.click());
+     await page.waitForFunction(()=>document.querySelector('#chat-header-state')?.textContent==='codex · idle');
+     assert.equal(await page.$('#chat-messages .msg.processing'),null);
+    });
+    await t.test('explicit busy false overrides a recent user message',async()=>{
+     await page.$eval('[data-box-id="falseRecent"] .chat-meta',el=>el.click());
+     await page.waitForFunction(()=>document.querySelector('#chat-header-state')?.textContent==='codex · idle');
+     assert.equal(await page.$('#chat-messages .msg.processing'),null);
+    });
     await page.$eval('[data-box-id="builder"] .chat-meta',el=>el.click());
     quietMood='angry';
     await page.waitForFunction(()=>document.querySelector('[data-box-id="quiet"] .avatar-mascot svg')?.dataset.mood==='angry',{timeout:9000});
