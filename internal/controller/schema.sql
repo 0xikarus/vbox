@@ -398,6 +398,17 @@ CREATE TABLE IF NOT EXISTS mail_messages (
 );
 CREATE INDEX IF NOT EXISTS mail_messages_box_received_idx ON mail_messages(account_id,box_id,received_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS mail_messages_unread_idx ON mail_messages(account_id,box_id,received_at DESC) WHERE read_at IS NULL AND NOT quarantined;
+CREATE TABLE IF NOT EXISTS mail_notice_queue (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  notice_key text NOT NULL,
+  body text NOT NULL,
+  delivered_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,notice_key)
+);
+CREATE INDEX IF NOT EXISTS mail_notice_queue_pending_idx ON mail_notice_queue(account_id,box_id,created_at) WHERE delivered_at IS NULL;
 CREATE TABLE IF NOT EXISTS mail_attachments (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

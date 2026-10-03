@@ -776,6 +776,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileAgentFollowupsNow(ctx); err != nil {
 		s.Logger.Error("initial agent follow-up reconciliation failed", "error", err)
 	}
+	if err := s.ReconcileMailNoticesNow(ctx); err != nil {
+		s.Logger.Error("initial mail notice reconciliation failed", "error", err)
+	}
 	if err := s.ReconcileLogicalBoxDeletesNow(ctx); err != nil {
 		s.Logger.Error("initial logical box deletion reconciliation failed", "error", err)
 	}
@@ -820,6 +823,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 				}
 				if err := s.ReconcileAgentFollowupsNow(ctx); err != nil {
 					s.Logger.Error("agent follow-up reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileMailNoticesNow(ctx); err != nil {
+					s.Logger.Error("mail notice reconciliation failed", "error", err)
 				}
 				if err := s.ReconcileLogicalBoxHibernatesNow(ctx); err != nil {
 					s.Logger.Error("logical box hibernate reconciliation failed", "error", err)

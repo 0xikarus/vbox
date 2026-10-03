@@ -320,7 +320,3 @@ func (s *Server) ownerMailReject(w http.ResponseWriter, r *http.Request, p Princ
 	}
 	writeJSON(w, 200, item)
 }
-
-// notifyBoxMailStatus is implemented by the chat batch dispatcher below.
-func (s *Server) notifyBoxMailStatus(accountID, boxID, outboxID string, to []string, subject, status, reason string) {
-}
