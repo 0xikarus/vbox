@@ -15,6 +15,16 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+func (s *Server) mailConfigured(next handler) handler {
+	return func(w http.ResponseWriter, r *http.Request, p Principal) {
+		if mailDomain() == "" {
+			writeError(w, http.StatusNotFound, fmt.Errorf("mail is not configured"))
+			return
+		}
+		next(w, r, p)
+	}
+}
+
 func (s *Server) ownerMailBox(w http.ResponseWriter, r *http.Request, p Principal) (v1.LogicalBox, bool) {
 	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
 	if err != nil {
