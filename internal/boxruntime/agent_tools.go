@@ -77,18 +77,33 @@ func desktopAgentAPIWithTimeout(ctx context.Context, assignment, method, path, i
 // desktopAgentScreenshot reads a bounded image through the assignment-scoped
 // agent credential. It does not persist the target image in either box.
 func desktopAgentScreenshot(ctx context.Context, assignment, path string) ([]byte, error) {
+	return desktopAgentImageRequest(ctx, assignment, http.MethodGet, path, nil)
+}
+
+func desktopAgentImageRequest(ctx context.Context, assignment, method, path string, input any) ([]byte, error) {
 	config, err := readDesktopAgentConfig(assignment)
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(config.Controller, "/")+path, nil)
+	var body io.Reader
+	if input != nil {
+		encoded, err := json.Marshal(input)
+		if err != nil {
+			return nil, fmt.Errorf("invalid desktop request")
+		}
+		body = bytes.NewReader(encoded)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(config.Controller, "/")+path, body)
 	if err != nil {
 		return nil, fmt.Errorf("controller request unavailable")
 	}
 	request.Header.Set("Authorization", "DesktopAgent "+config.Token)
+	if input != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
 	transport := &http.Transport{Proxy: nil}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Transport: transport, Timeout: 50 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("controller request failed")

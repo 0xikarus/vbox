@@ -359,6 +359,34 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+CREATE TABLE IF NOT EXISTS remote_control_actions (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  actor_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  target_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  action text NOT NULL,
+  x integer,
+  y integer,
+  to_x integer,
+  to_y integer,
+  dx integer,
+  dy integer,
+  text_length integer NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'reserved',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS remote_control_actions_rate_idx ON remote_control_actions(account_id,actor_box_id,target_box_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS remote_control_sessions (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  actor_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  target_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  notice_id uuid NOT NULL,
+  action_count integer NOT NULL,
+  started_at timestamptz NOT NULL,
+  last_at timestamptz NOT NULL,
+  PRIMARY KEY(account_id,actor_box_id,target_box_id)
+);
+
 -- One durable, owner-controlled mailbox per logical box. Addresses are never
 -- reused by another live box; disabling a mailbox retains its history.
 CREATE TABLE IF NOT EXISTS box_mail_settings (
