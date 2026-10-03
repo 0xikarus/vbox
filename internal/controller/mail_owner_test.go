@@ -10,7 +10,7 @@ import (
 func TestMailOwnerRoutesAreUnavailableWithoutDomain(t *testing.T) {
 	t.Setenv("VMBOX_MAIL_DOMAIN", "")
 	s := &Server{}
-	for _, path := range []string{"/v1/mail/approvals", "/v1/mail/messages", "/v1/mail/messages/message-id", "/v1/mail/outbox", "/v1/mail/summary", "/v1/logical-boxes/box-1/mail", "/v1/logical-boxes/box-1/mail/messages", "/v1/logical-boxes/box-1/mail/outbox/draft-1"} {
+	for _, path := range []string{"/v1/mail/approvals", "/v1/mail/messages", "/v1/mail/messages/message-id", "/v1/mail/outbox", "/v1/mail/summary", "/v1/mail/addresses", "/v1/mail/addresses/address-id", "/v1/mail/settings", "/v1/logical-boxes/box-1/mail", "/v1/logical-boxes/box-1/mail/messages", "/v1/logical-boxes/box-1/mail/outbox/draft-1"} {
 		t.Run(path, func(t *testing.T) {
 			called := false
 			wrapped := s.mailConfigured(func(http.ResponseWriter, *http.Request, Principal) { called = true })

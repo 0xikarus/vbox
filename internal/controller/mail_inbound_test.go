@@ -51,7 +51,7 @@ func TestInboundRecipientUsesWorkerSignedJSONWithoutIdempotency(t *testing.T) {
 	body := []byte(`{"to":"box@example.test"}`)
 	req := signedMailRequest(http.MethodPost, "/v1/inbound-mail/recipient", body, fmt.Sprint(time.Now().Unix()), "synthetic-secret")
 	req.Header.Set("Content-Type", "application/json")
-	mock.ExpectQuery("SELECT EXISTS\\(SELECT 1 FROM box_mail_settings").WithArgs("box@example.test").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery("SELECT a.account_id::text,a.id::text,a.owning_box_id::text").WithArgs("box@example.test").WillReturnRows(sqlmock.NewRows([]string{"account", "address", "box", "name", "enabled", "state"}).AddRow("account-a", panelTestBox, panelTestBox, "Builder", true, "running"))
 	response := httptest.NewRecorder()
 	(&Server{Store: store}).inboundMailRecipient(response, req)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), `"accept":true`) {
@@ -74,7 +74,7 @@ func TestInboundMailDuplicateKeyReturnsAcceptedWithoutSecondRow(t *testing.T) {
 	}{{"duplicate", key, 202}, {"collision", strings.Repeat("0", 64), 409}} {
 		t.Run(tc.name, func(t *testing.T) {
 			store, mock := testStore(t)
-			mock.ExpectQuery("SELECT raw_sha256,envelope_to,id::text FROM mail_messages").WithArgs(key).
+			mock.ExpectQuery("SELECT raw_sha256,envelope_to,id::text FROM mail_messages").WithArgs("box@example.test:" + key).
 				WillReturnRows(sqlmock.NewRows([]string{"raw_sha256", "envelope_to", "id"}).AddRow(tc.storedHash, "box@example.test", "00000000-0000-4000-8000-000000000001"))
 			req := signedMailRequest(http.MethodPost, "/v1/inbound-mail", body, fmt.Sprint(time.Now().Unix()), "synthetic-secret")
 			req.Header.Set("X-Vbox-Rcpt", "box@example.test")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"strings"
 )
@@ -14,6 +15,8 @@ type mailPanelMessageRow struct {
 	BoxID      string `json:"boxId"`
 	BoxName    string `json:"boxName"`
 	BoxAddress string `json:"boxAddress"`
+	Address    string `json:"address"`
+	AddressID  string `json:"addressId"`
 }
 
 type mailPanelOutboxRow struct {
@@ -50,19 +53,25 @@ func (s *Server) ownerMailPanelMessages(w http.ResponseWriter, r *http.Request, 
 		writeError(w, 400, fmt.Errorf("mail search is too long"))
 		return
 	}
+	address := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("address")))
+	if address != "" && address != "unassigned" && !validMailAddress(address) && !mailUUIDPattern.MatchString(address) {
+		writeError(w, 400, fmt.Errorf("invalid address filter"))
+		return
+	}
 	cursor, err := mailListCursor(r)
 	if err != nil {
 		writeError(w, 400, err)
 		return
 	}
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT m.id::text,m.header_from,m.from_name,m.subject,m.preview,m.received_at,m.read_at IS NULL,m.has_attachments,m.quarantined,m.spf,m.dkim,m.box_id::text,b.name,COALESCE(ms.address,'')
- FROM mail_messages m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT m.id::text,m.header_from,m.from_name,m.subject,m.preview,m.received_at,m.read_at IS NULL,m.has_attachments,m.quarantined,m.spf,m.dkim,COALESCE(m.box_id::text,''),COALESCE(b.name,'Unassigned'),COALESCE(ms.address,''),m.envelope_to,COALESCE(m.address_id::text,'')
+ FROM mail_messages m LEFT JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id
  LEFT JOIN box_mail_settings ms ON ms.box_id=m.box_id AND ms.account_id=m.account_id
  WHERE m.account_id=$1 AND m.expires_at>now() AND ($2='' OR m.box_id::text=$2)
  AND (($3='all' AND NOT m.quarantined) OR ($3='unread' AND m.read_at IS NULL AND NOT m.quarantined) OR ($3='quarantine' AND m.quarantined))
  AND ($4='' OR position(lower($4) in lower(m.header_from||' '||m.from_name||' '||m.subject||' '||m.text_body))>0)
  AND ($5::timestamptz IS NULL OR (m.received_at,m.id::text)<($5::timestamptz,$6))
- ORDER BY m.received_at DESC,m.id DESC LIMIT 51`, p.AccountID, box, folder, q, nullableMailCursorTime(cursor.At), cursor.ID)
+ AND ($7='' OR ($7='unassigned' AND m.address_id IS NULL) OR lower(m.envelope_to)=$7 OR m.address_id::text=$7)
+ ORDER BY m.received_at DESC,m.id DESC LIMIT 51`, p.AccountID, box, folder, q, nullableMailCursorTime(cursor.At), cursor.ID, address)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("mail list unavailable"))
 		return
@@ -71,7 +80,7 @@ func (s *Server) ownerMailPanelMessages(w http.ResponseWriter, r *http.Request, 
 	messages := []mailPanelMessageRow{}
 	for rows.Next() {
 		var value mailPanelMessageRow
-		if err := rows.Scan(&value.ID, &value.From, &value.FromName, &value.Subject, &value.Preview, &value.ReceivedAt, &value.Unread, &value.HasAttachments, &value.Quarantined, &value.SPF, &value.DKIM, &value.BoxID, &value.BoxName, &value.BoxAddress); err != nil {
+		if err := rows.Scan(&value.ID, &value.From, &value.FromName, &value.Subject, &value.Preview, &value.ReceivedAt, &value.Unread, &value.HasAttachments, &value.Quarantined, &value.SPF, &value.DKIM, &value.BoxID, &value.BoxName, &value.BoxAddress, &value.Address, &value.AddressID); err != nil {
 			writeError(w, 500, fmt.Errorf("mail list unavailable"))
 			return
 		}
@@ -97,7 +106,7 @@ func (s *Server) panelMailBoxForMessage(w http.ResponseWriter, r *http.Request, 
 		writeError(w, 404, fmt.Errorf("mail message unavailable"))
 		return box, false
 	}
-	err := s.Store.DB.QueryRowContext(r.Context(), `SELECT m.box_id::text,b.name,COALESCE(ms.address,'') FROM mail_messages m JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id LEFT JOIN box_mail_settings ms ON ms.box_id=m.box_id AND ms.account_id=m.account_id WHERE m.account_id=$1 AND m.id=$2 AND m.expires_at>now()`, p.AccountID, id).Scan(&box.BoxID, &box.BoxName, &box.BoxAddress)
+	err := s.Store.DB.QueryRowContext(r.Context(), `SELECT COALESCE(m.box_id::text,''),COALESCE(b.name,'Unassigned'),COALESCE(ms.address,''),m.envelope_to,COALESCE(m.address_id::text,'') FROM mail_messages m LEFT JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id LEFT JOIN box_mail_settings ms ON ms.box_id=m.box_id AND ms.account_id=m.account_id WHERE m.account_id=$1 AND m.id=$2 AND m.expires_at>now()`, p.AccountID, id).Scan(&box.BoxID, &box.BoxName, &box.BoxAddress, &box.Address, &box.AddressID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, 404, fmt.Errorf("mail message unavailable"))
 		return box, false
@@ -128,25 +137,62 @@ func (s *Server) ownerMailPanelMessage(w http.ResponseWriter, r *http.Request, p
 		BoxID      string `json:"boxId"`
 		BoxName    string `json:"boxName"`
 		BoxAddress string `json:"boxAddress"`
-	}{value, box.BoxID, box.BoxName, box.BoxAddress})
+		Address    string `json:"address"`
+		AddressID  string `json:"addressId"`
+	}{value, box.BoxID, box.BoxName, box.BoxAddress, box.Address, box.AddressID})
 }
 
 func (s *Server) ownerMailPanelRead(w http.ResponseWriter, r *http.Request, p Principal) {
-	box, ok := s.panelMailBoxForMessage(w, r, p)
-	if !ok {
+	if !mailUUIDPattern.MatchString(r.PathValue("mid")) {
+		writeError(w, 404, fmt.Errorf("mail message unavailable"))
 		return
 	}
-	r.SetPathValue("id", box.BoxID)
-	s.ownerMailRead(w, r, p)
+	var request struct {
+		Read *bool `json:"read"`
+	}
+	if err := decodeJSON(r, &request); err != nil || request.Read == nil {
+		writeError(w, 400, fmt.Errorf("read must be true or false"))
+		return
+	}
+	var unread bool
+	err := s.Store.DB.QueryRowContext(r.Context(), `UPDATE mail_messages SET read_at=CASE WHEN $3::bool THEN now() ELSE NULL END WHERE account_id=$1 AND id=$2 AND expires_at>now() RETURNING read_at IS NULL`, p.AccountID, r.PathValue("mid"), *request.Read).Scan(&unread)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, 404, fmt.Errorf("mail message unavailable"))
+		return
+	}
+	if err != nil {
+		writeError(w, 500, fmt.Errorf("read state unavailable"))
+		return
+	}
+	writeJSON(w, 200, map[string]any{"id": r.PathValue("mid"), "unread": unread})
 }
 
 func (s *Server) ownerMailPanelAttachment(w http.ResponseWriter, r *http.Request, p Principal) {
-	box, ok := s.panelMailBoxForMessage(w, r, p)
-	if !ok {
+	if !mailUUIDPattern.MatchString(r.PathValue("mid")) || !mailUUIDPattern.MatchString(r.PathValue("aid")) {
+		writeError(w, 404, fmt.Errorf("mail attachment unavailable"))
 		return
 	}
-	r.SetPathValue("id", box.BoxID)
-	s.ownerMailAttachment(w, r, p)
+	var name, scanState string
+	var data []byte
+	var quarantined bool
+	err := s.Store.DB.QueryRowContext(r.Context(), `SELECT a.name,a.data,a.scan_state,m.quarantined FROM mail_attachments a JOIN mail_messages m ON m.id=a.message_id AND m.account_id=a.account_id WHERE a.account_id=$1 AND m.id=$2 AND a.id=$3 AND m.expires_at>now()`, p.AccountID, r.PathValue("mid"), r.PathValue("aid")).Scan(&name, &data, &scanState, &quarantined)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, 404, fmt.Errorf("mail attachment unavailable"))
+		return
+	}
+	if err != nil {
+		writeError(w, 500, fmt.Errorf("mail attachment unavailable"))
+		return
+	}
+	if quarantined || scanState != "type_checked" {
+		writeError(w, 423, fmt.Errorf("mail attachment quarantined"))
+		return
+	}
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
 }
 
 func (s *Server) ownerMailPanelRelease(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -201,7 +247,7 @@ func (s *Server) ownerMailPanelOutbox(w http.ResponseWriter, r *http.Request, p 
 		writeError(w, 400, err)
 		return
 	}
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT o.id::text,o.recipient_list,o.subject,o.reviewed_text,o.status,o.reason,o.version,o.created_at,o.decided_at,o.sent_at,o.box_id::text,b.name,COALESCE(ms.address,'') FROM mail_outbox o JOIN logical_boxes b ON b.id=o.box_id AND b.account_id=o.account_id LEFT JOIN box_mail_settings ms ON ms.box_id=o.box_id AND ms.account_id=o.account_id WHERE o.account_id=$1 AND ($2='' OR o.box_id::text=$2) AND ($3='' OR o.status=$3) AND ($4::timestamptz IS NULL OR (o.created_at,o.id::text)<($4::timestamptz,$5)) ORDER BY o.created_at DESC,o.id DESC LIMIT 51`, p.AccountID, box, status, nullableMailCursorTime(cursor.At), cursor.ID)
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT o.id::text,o.recipient_list,COALESCE(NULLIF(o.from_address,''),ms.address,''),o.subject,o.reviewed_text,o.status,o.reason,o.version,o.created_at,o.decided_at,o.sent_at,o.box_id::text,b.name,COALESCE(ms.address,'') FROM mail_outbox o JOIN logical_boxes b ON b.id=o.box_id AND b.account_id=o.account_id LEFT JOIN box_mail_settings ms ON ms.box_id=o.box_id AND ms.account_id=o.account_id WHERE o.account_id=$1 AND ($2='' OR o.box_id::text=$2) AND ($3='' OR o.status=$3) AND ($4::timestamptz IS NULL OR (o.created_at,o.id::text)<($4::timestamptz,$5)) ORDER BY o.created_at DESC,o.id DESC LIMIT 51`, p.AccountID, box, status, nullableMailCursorTime(cursor.At), cursor.ID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("outbox unavailable"))
 		return
@@ -211,7 +257,7 @@ func (s *Server) ownerMailPanelOutbox(w http.ResponseWriter, r *http.Request, p 
 	for rows.Next() {
 		var item mailPanelOutboxRow
 		var recipients []byte
-		if err := rows.Scan(&item.OutboxID, &recipients, &item.Subject, &item.Text, &item.Status, &item.Reason, &item.Version, &item.SubmittedAt, &item.DecidedAt, &item.SentAt, &item.BoxID, &item.BoxName, &item.BoxAddress); err != nil {
+		if err := rows.Scan(&item.OutboxID, &recipients, &item.From, &item.Subject, &item.Text, &item.Status, &item.Reason, &item.Version, &item.SubmittedAt, &item.DecidedAt, &item.SentAt, &item.BoxID, &item.BoxName, &item.BoxAddress); err != nil {
 			writeError(w, 500, fmt.Errorf("outbox unavailable"))
 			return
 		}
@@ -258,10 +304,13 @@ func (s *Server) ownerMailPanelSummary(w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		boxes = append(boxes, item)
-		unread += item.Unread
-		quarantine += quarantined
+		_ = quarantined
 	}
 	if err := rows.Err(); err != nil {
+		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
+		return
+	}
+	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT count(*) FILTER (WHERE read_at IS NULL AND NOT quarantined),count(*) FILTER (WHERE quarantined) FROM mail_messages WHERE account_id=$1 AND expires_at>now()`, p.AccountID).Scan(&unread, &quarantine); err != nil {
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
 	}

@@ -30,10 +30,10 @@ func TestMailPanelRoutesAreRegistered(t *testing.T) {
 func TestMailPanelListScopesAndSearchesAcrossBoxes(t *testing.T) {
 	store, mock := testStore(t)
 	now := time.Now().UTC()
-	rows := sqlmock.NewRows([]string{"id", "from", "from_name", "subject", "preview", "received", "unread", "attachments", "quarantined", "spf", "dkim", "box_id", "box_name", "box_address"}).
-		AddRow(panelTestMail, "sender@example.test", "Sender", "Project update", "Preview", now, true, false, false, "pass", "pass", panelTestBox, "Builder", "builder@example.test")
-	mock.ExpectQuery(`(?s)FROM mail_messages m JOIN logical_boxes b.*WHERE m.account_id=\$1.*m.box_id::text=\$2.*\$3='unread'.*position\(lower\(\$4\).*ORDER BY m.received_at DESC`).
-		WithArgs("account-a", panelTestBox, "unread", "project", nil, "").WillReturnRows(rows)
+	rows := sqlmock.NewRows([]string{"id", "from", "from_name", "subject", "preview", "received", "unread", "attachments", "quarantined", "spf", "dkim", "box_id", "box_name", "box_address", "address", "address_id"}).
+		AddRow(panelTestMail, "sender@example.test", "Sender", "Project update", "Preview", now, true, false, false, "pass", "pass", panelTestBox, "Builder", "builder@example.test", "builder@example.test", panelTestBox)
+	mock.ExpectQuery(`(?s)FROM mail_messages m LEFT JOIN logical_boxes b.*WHERE m.account_id=\$1.*m.box_id::text=\$2.*\$3='unread'.*position\(lower\(\$4\).*ORDER BY m.received_at DESC`).
+		WithArgs("account-a", panelTestBox, "unread", "project", nil, "", "").WillReturnRows(rows)
 	s := &Server{Store: store}
 	r := httptest.NewRequest(http.MethodGet, "/v1/mail/messages?box="+panelTestBox+"&folder=unread&q=project", nil)
 	w := httptest.NewRecorder()
@@ -58,7 +58,7 @@ func TestMailPanelListScopesAndSearchesAcrossBoxes(t *testing.T) {
 
 func TestMailPanelOtherAccountDetailIsHidden(t *testing.T) {
 	store, mock := testStore(t)
-	mock.ExpectQuery(`SELECT m.box_id::text,b.name,COALESCE\(ms.address,''\).*WHERE m.account_id=\$1 AND m.id=\$2`).
+	mock.ExpectQuery(`SELECT COALESCE\(m.box_id::text,''\).*WHERE m.account_id=\$1 AND m.id=\$2`).
 		WithArgs("account-a", panelTestMail).WillReturnError(sql.ErrNoRows)
 	s := &Server{Store: store}
 	r := httptest.NewRequest(http.MethodGet, "/v1/mail/messages/"+panelTestMail, nil)
@@ -76,7 +76,7 @@ func TestMailPanelOtherAccountDetailIsHidden(t *testing.T) {
 func TestMailPanelQuarantineFilterAndInvalidParameters(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectQuery(`(?s)FROM mail_messages m.*m.account_id=\$1.*\$3='quarantine'.*m.quarantined`).
-		WithArgs("account-a", "", "quarantine", "", nil, "").WillReturnRows(sqlmock.NewRows([]string{"id", "from", "from_name", "subject", "preview", "received", "unread", "attachments", "quarantined", "spf", "dkim", "box_id", "box_name", "box_address"}))
+		WithArgs("account-a", "", "quarantine", "", nil, "", "").WillReturnRows(sqlmock.NewRows([]string{"id", "from", "from_name", "subject", "preview", "received", "unread", "attachments", "quarantined", "spf", "dkim", "box_id", "box_name", "box_address", "address", "address_id"}))
 	s := &Server{Store: store}
 	w := httptest.NewRecorder()
 	s.ownerMailPanelMessages(w, httptest.NewRequest(http.MethodGet, "/v1/mail/messages?folder=quarantine", nil), Principal{AccountID: "account-a"})
@@ -95,6 +95,22 @@ func TestMailPanelQuarantineFilterAndInvalidParameters(t *testing.T) {
 	}
 }
 
+func TestMailPanelAddressFilterIncludesUnassignedMailbox(t *testing.T) {
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	rows := sqlmock.NewRows([]string{"id", "from", "from_name", "subject", "preview", "received", "unread", "attachments", "quarantined", "spf", "dkim", "box_id", "box_name", "box_address", "address", "address_id"}).
+		AddRow(panelTestMail, "sender@example.test", "Sender", "Order", "Preview", now, true, false, false, "pass", "pass", "", "Unassigned", "", "shop@example.test", panelTestBox)
+	mock.ExpectQuery(`(?s)FROM mail_messages m LEFT JOIN logical_boxes b.*m.account_id=\$1.*m.address_id::text=\$7`).WithArgs("account-a", "", "all", "", nil, "", "shop@example.test").WillReturnRows(rows)
+	w := httptest.NewRecorder()
+	(&Server{Store: store}).ownerMailPanelMessages(w, httptest.NewRequest(http.MethodGet, "/v1/mail/messages?address=shop@example.test", nil), Principal{AccountID: "account-a"})
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"address":"shop@example.test"`) || !strings.Contains(w.Body.String(), `"boxName":"Unassigned"`) {
+		t.Fatalf("address filter status=%d body=%s", w.Code, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMailPanelOutboxFiltersAndSummaryTotals(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectQuery(`(?s)FROM mail_outbox o JOIN logical_boxes b.*WHERE o.account_id=\$1.*o.box_id::text=\$2.*o.status=\$3`).
@@ -106,10 +122,11 @@ func TestMailPanelOutboxFiltersAndSummaryTotals(t *testing.T) {
 		t.Fatalf("outbox status=%d body=%s", w.Code, w.Body.String())
 	}
 	mock.ExpectQuery(`(?s)FROM logical_boxes b LEFT JOIN box_mail_settings ms.*WHERE b.account_id=\$1`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"id", "name", "address", "enabled", "unread", "quarantine"}).AddRow(panelTestBox, "Builder", "builder@example.test", true, 3, 2))
+	mock.ExpectQuery(`SELECT count\(\*\) FILTER \(WHERE read_at IS NULL`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"unread", "quarantine"}).AddRow(5, 2))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM mail_outbox WHERE account_id=\$1`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"pending"}).AddRow(1))
 	w = httptest.NewRecorder()
 	s.ownerMailPanelSummary(w, httptest.NewRequest(http.MethodGet, "/v1/mail/summary", nil), Principal{AccountID: "account-a"})
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"unread":3`) || !strings.Contains(w.Body.String(), `"quarantine":2`) || !strings.Contains(w.Body.String(), `"pending":1`) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"unread":5`) || !strings.Contains(w.Body.String(), `"quarantine":2`) || !strings.Contains(w.Body.String(), `"pending":1`) {
 		t.Fatalf("summary status=%d body=%s", w.Code, w.Body.String())
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

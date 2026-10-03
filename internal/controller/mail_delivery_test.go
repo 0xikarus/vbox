@@ -20,9 +20,9 @@ func TestMailBatchSelectsTwentyAndReportsRemaining(t *testing.T) {
 	for i := 0; i < 21; i++ {
 		rows.AddRow("mail-"+string(rune('a'+i)), "sender@example.com", "Sender", "Subject", "Preview", false)
 	}
-	mock.ExpectQuery("SELECT id::text,header_from,from_name,subject,preview,quarantined FROM mail_messages").WithArgs("account-a", "box-a", "", "").WillReturnRows(rows)
-	mock.ExpectQuery("SELECT count\\(\\*\\) FROM mail_messages").WithArgs("account-a", "box-a", "", "").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(23))
-	items, ids, more, err := selectMailBatch(context.Background(), tx, "account-a", "box-a", "", "")
+	mock.ExpectQuery("SELECT m.id::text,m.header_from,m.from_name,m.subject,m.preview,m.quarantined FROM mail_messages").WithArgs("account-a", "box-a", "", "", "").WillReturnRows(rows)
+	mock.ExpectQuery("SELECT count\\(\\*\\) FROM mail_messages").WithArgs("account-a", "box-a", "", "", "").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(23))
+	items, ids, more, err := selectMailBatch(context.Background(), tx, "account-a", "box-a", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

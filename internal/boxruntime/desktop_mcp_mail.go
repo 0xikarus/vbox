@@ -17,7 +17,7 @@ import (
 
 func isDesktopMailTool(name string) bool {
 	switch name {
-	case "list_emails", "read_email", "search_emails", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox", "send_email", "list_outbox", "get_outbox_status":
+	case "list_mail_addresses", "list_emails", "read_email", "search_emails", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox", "send_email", "list_outbox", "get_outbox_status":
 		return true
 	}
 	return false
@@ -41,6 +41,8 @@ func callDesktopMailTool(ctx context.Context, assignment, name string, args json
 		AttachmentID    string   `json:"attachmentId"`
 		Path            string   `json:"path"`
 		Query           string   `json:"query"`
+		Address         string   `json:"address"`
+		From            string   `json:"from"`
 		Limit           int      `json:"limit"`
 		Cursor          string   `json:"cursor"`
 		UnreadOnly      bool     `json:"unreadOnly"`
@@ -60,6 +62,8 @@ func callDesktopMailTool(ctx context.Context, assignment, name string, args json
 	var method, endpoint string
 	var input any
 	switch name {
+	case "list_mail_addresses":
+		method, endpoint = http.MethodGet, base+"/addresses"
 	case "list_emails", "search_emails":
 		if request.Limit < 0 || request.Limit > 50 || (name == "search_emails" && strings.TrimSpace(request.Query) == "") {
 			return nil, fmt.Errorf("invalid mail search or limit")
@@ -73,6 +77,9 @@ func callDesktopMailTool(ctx context.Context, assignment, name string, args json
 		}
 		if request.UnreadOnly {
 			query.Set("unreadOnly", "true")
+		}
+		if request.Address != "" {
+			query.Set("address", request.Address)
 		}
 		if name == "search_emails" {
 			query.Set("query", strings.TrimSpace(request.Query))
@@ -95,12 +102,12 @@ func callDesktopMailTool(ctx context.Context, assignment, name string, args json
 		return downloadDesktopMailAttachment(ctx, assignment, base+"/messages/"+url.PathEscape(request.ID)+"/attachments/"+url.PathEscape(request.AttachmentID), request.Path)
 	case "subscribe_inbox":
 		method, endpoint = http.MethodPut, base+"/subscription"
-		input = map[string]any{"senderFilters": request.SenderFilters, "subjectContains": request.SubjectContains}
+		input = map[string]any{"address": request.Address, "senderFilters": request.SenderFilters, "subjectContains": request.SubjectContains}
 	case "unsubscribe_inbox":
 		method, endpoint = http.MethodDelete, base+"/subscription"
 	case "send_email":
 		method, endpoint = http.MethodPost, base+"/outbox"
-		input = map[string]any{"to": request.To, "subject": request.Subject, "text": request.Text, "idempotencyKey": request.IdempotencyKey}
+		input = map[string]any{"from": request.From, "to": request.To, "subject": request.Subject, "text": request.Text, "idempotencyKey": request.IdempotencyKey}
 	case "list_outbox":
 		if request.Limit < 0 || request.Limit > 50 {
 			return nil, fmt.Errorf("invalid outbox limit")
