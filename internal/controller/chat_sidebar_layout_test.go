@@ -41,8 +41,8 @@ func TestChatSidebarLayoutPersistsByAccount(t *testing.T) {
 
 func TestMutedAgentReplyDoesNotSchedulePush(t *testing.T) {
 	store, mock := testStore(t)
-	mock.ExpectQuery("SELECT members_json,mutes_json,pins_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnRows(
-		sqlmock.NewRows([]string{"members_json", "mutes_json", "pins_json"}).AddRow([]byte(`{}`), []byte(`{"box:box-1":null}`), []byte(`[]`)))
+	mock.ExpectQuery("SELECT members_json,mutes_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnRows(
+		sqlmock.NewRows([]string{"members_json", "mutes_json"}).AddRow([]byte(`{}`), []byte(`{"box:box-1":null}`)))
 	(&Server{Store: store}).pushAgentReply(context.Background(), "account-a", v1.BoxTask{LogicalBoxID: "box-1", BoxName: "Builder"}, "Completed")
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestMutedAgentReplyDoesNotSchedulePush(t *testing.T) {
 
 func TestPushLookupFailureDoesNotBypassMute(t *testing.T) {
 	store, mock := testStore(t)
-	mock.ExpectQuery("SELECT members_json,mutes_json,pins_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnError(sql.ErrConnDone)
+	mock.ExpectQuery("SELECT members_json,mutes_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnError(sql.ErrConnDone)
 	(&Server{Store: store, Logger: slog.Default()}).pushAgentReply(context.Background(), "account-a", v1.BoxTask{LogicalBoxID: "box-1"}, "Completed")
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -100,23 +100,23 @@ func TestChatSidebarMutesValidateAndSuppressPush(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	rows := func(mutes, pins string) *sqlmock.Rows {
-		return sqlmock.NewRows([]string{"members_json", "mutes_json", "pins_json"}).AddRow([]byte(`{"box:grouped":"focus"}`), []byte(mutes), []byte(pins))
+	rows := func(mutes string) *sqlmock.Rows {
+		return sqlmock.NewRows([]string{"members_json", "mutes_json"}).AddRow([]byte(`{"box:grouped":"focus"}`), []byte(mutes))
 	}
 	for _, test := range []struct {
-		name, box, mutes, pins string
-		want                   bool
+		name, box, mutes string
+		want             bool
 	}{
-		{"direct", "direct", `{"box:direct":null}`, `[]`, true},
-		{"group", "grouped", `{"group:focus":null}`, `[]`, true},
-		{"pinned", "pinned", `{"section:pinned":null}`, `["box:pinned"]`, true},
-		{"chats", "other", `{"section:boxes":null}`, `[]`, true},
-		{"expired", "direct", `{"box:direct":"2020-01-01T00:00:00Z"}`, `[]`, false},
-		{"unmuted", "other", `{}`, `[]`, false},
+		{"direct", "direct", `{"box:direct":null}`, true},
+		{"group", "grouped", `{"group:focus":null}`, true},
+		{"chats includes pinned", "pinned", `{"section:boxes":null}`, true},
+		{"legacy pinned section no longer mutes", "pinned", `{"section:pinned":null}`, false},
+		{"expired", "direct", `{"box:direct":"2020-01-01T00:00:00Z"}`, false},
+		{"unmuted", "other", `{}`, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store, mock := testStore(t)
-			mock.ExpectQuery("SELECT members_json,mutes_json,pins_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnRows(rows(test.mutes, test.pins))
+			mock.ExpectQuery("SELECT members_json,mutes_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnRows(rows(test.mutes))
 			muted, err := (&Server{Store: store}).isBoxPushMuted(context.Background(), "account-a", test.box)
 			if err != nil || muted != test.want {
 				t.Fatalf("muted=%v err=%v", muted, err)

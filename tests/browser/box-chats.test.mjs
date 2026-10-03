@@ -8,7 +8,7 @@ const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.
 const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',pairKey=a+'/'+b,now=new Date().toISOString();
 const illustration=id=>Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#142433"/><rect x="24" y="24" width="592" height="352" rx="16" fill="${id==='image-3'?'#294b48':'#244060'}" stroke="#8cb8df"/><text x="50" y="85" fill="#f3f8ff" font-family="sans-serif" font-size="28" font-weight="bold">${id==='image-1'?'Build output · 1':id==='image-2'?'Build output · 2':'Review result'}</text><path d="M90 205h460" stroke="#9bc8ec" stroke-width="7"/><g fill="#eaf3ff" font-family="sans-serif" font-size="23"><text x="68" y="175">Source</text><text x="274" y="175">Build</text><text x="472" y="175">Review</text></g><circle cx="95" cy="205" r="19" fill="#94c5ee"/><circle cx="320" cy="205" r="19" fill="#94c5ee"/><circle cx="545" cy="205" r="19" fill="#94c5ee"/></svg>`);
 
-async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null,boxMessagesB=null,role='owner',createBehavior=null,initialLayout=null}={}){
+async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null,boxMessagesB=null,role='owner',createBehavior=null,initialLayout=null,extraBoxes=[],extraPairs=[]}={}){
  let sidebarLayout=initialLayout;
  const createdBoxes=[];
  const server=http.createServer(async(request,response)=>{
@@ -31,8 +31,8 @@ async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null,boxMe
    const submitted=JSON.parse(body),box={id:'created-'+(createdBoxes.length+1),name:submitted.name,state:'running',defaultAgent:submitted.defaultAgent,provider:'railway'};
    createdBoxes.push(box);return response.end(JSON.stringify(box));
   }
-  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return response.end(JSON.stringify([{id:a,name:'Builder',state:'running',defaultAgent:'claude',provider:'railway'},{id:b,name:'Reviewer',state:'running',defaultAgent:'codex',provider:'railway'},...(createBehavior?.showCreated===false?[]:createdBoxes)]));
-  if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:pairMessages?.at(-1)?.createdAt||now,lastText:pairMessages?.at(-1)?.text||'The review is ready'}]));
+  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return response.end(JSON.stringify([{id:a,name:'Builder',state:'running',defaultAgent:'claude',provider:'railway'},{id:b,name:'Reviewer',state:'running',defaultAgent:'codex',provider:'railway'},...extraBoxes,...(createBehavior?.showCreated===false?[]:createdBoxes)]));
+  if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:pairMessages?.at(-1)?.createdAt||now,lastText:pairMessages?.at(-1)?.text||'The review is ready'},...extraPairs]));
   if(path==='/v1/box-conversations/'+a+'/'+b+'/messages'){
    if(pairDelay)await new Promise(resolve=>setTimeout(resolve,pairDelay));
    return response.end(JSON.stringify(pairMessages||[
@@ -255,7 +255,9 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   await desktop.$$eval('#row-menu > button',buttons=>buttons.find(button=>button.textContent==='Pin chat').click());
   assert.equal(new URL(desktop.url()).hash,'#box='+a,'pinning from a context menu must not navigate away from the open chat');
-  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.dataset.section?item.querySelector('.section-toggle span:nth-child(2)').textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'Chats','box:'+a]);
+  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.dataset.section?item.querySelector('.section-toggle span:nth-child(2)').textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Chats','box:'+b,'box:'+a,'Box conversations','pair:'+pairKey]);
+  assert.equal(await desktop.$eval('[data-box-id="'+b+'"] .chat-row-pin',node=>node.hidden),false);
+  assert.equal(await desktop.$eval('[data-pair-key] .chat-row-pin',node=>node.hidden),false);
   assert.equal(await desktop.$eval('#chat-entries .conversation-divider',item=>item.dataset.section),'boxes');
   await desktop.click('[data-pair-key]',{button:'right'});
   assert.ok(await desktop.$$eval('#row-menu > button',buttons=>buttons.some(button=>button.textContent==='Unpin chat')));
@@ -263,12 +265,12 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   await desktop.waitForFunction(()=>document.querySelector('#row-menu').hidden);
   await desktop.screenshot({path:'/tmp/vmbox-chat-pins-desktop.png'});
   await desktop.type('#chat-filter','Reviewer');
-  await desktop.waitForFunction(()=>!document.querySelector('#chat-entries .conversation-divider'));
+  await desktop.waitForFunction(id=>!document.querySelector('[data-box-id="'+id+'"]'),{},a);
   await desktop.$eval('#chat-filter',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
   await desktop.waitForSelector('#chat-entries .conversation-divider');
   await desktop.reload();
   await desktop.waitForSelector('[data-pair-key]');
-  assert.equal(await desktop.$eval('#chat-entries li:first-child .section-toggle span:nth-child(2)',item=>item.textContent),'Pinned','pins survive refresh');
+  assert.equal(await desktop.$eval('[data-section="boxes"] + li',item=>item.dataset.boxId),b,'pins survive refresh at the top of Chats');
 
   const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
   await mobile.goto(base+'/chat');
@@ -287,10 +289,94 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   await mobile.$$eval('#row-menu > button',buttons=>buttons.find(button=>button.textContent==='Unpin chat').click());
   await hold('[data-box-id="'+b+'"]');
   await mobile.click('#row-menu > button');
-  assert.equal(await mobile.$('#chat-entries .conversation-group:first-child'),null,'the Pinned section disappears when empty');
+  assert.equal(await mobile.$eval('[data-box-id="'+b+'"] .chat-row-pin',node=>node.hidden),true,'unpinning keeps the chat in Chats');
   assert.equal(await mobile.$eval('[data-pair-key]',row=>row.textContent.includes('Builder ↔ Reviewer')),true);
   await mobile.close();await desktop.close();
  });
+});
+
+test('pins sort first inside Chats, Box conversations, and custom groups without changing membership',async()=>{
+ const c='33333333-3333-4333-8333-333333333333',pairAC=a+'/'+c,pairBC=b+'/'+c;
+ const initialLayout={exists:true,groups:[{id:'projects',name:'Projects',collapsed:false}],members:{['box:'+a]:'projects',['pair:'+pairKey]:'projects'},pins:['box:'+b,'pair:'+pairKey,'pair:'+pairBC],mutes:{},sections:{}};
+ await withChat(async(browser,base,savedLayout)=>{
+  const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  await page.goto(base+'/chat');await page.waitForSelector('[data-pair-key="'+pairBC+'"]');
+  const order=()=>page.evaluate(()=>{
+   const result={};let section='';
+   for(const row of document.querySelectorAll('#chat-entries > li')){
+    if(row.dataset.groupId)section=row.dataset.groupId;
+    else if(row.dataset.section)section=row.dataset.section;
+    else if(row.dataset.boxId||row.dataset.pairKey)(result[section]??=[]).push(row.dataset.boxId?'box:'+row.dataset.boxId:'pair:'+row.dataset.pairKey);
+   }
+   return result;
+  });
+  assert.deepEqual(await order(),{projects:['pair:'+pairKey,'box:'+a],boxes:['box:'+b,'box:'+c],pairs:['pair:'+pairBC,'pair:'+pairAC]});
+  await page.click('[data-box-id="'+a+'"]',{button:'right'});
+  await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  await page.$$eval('#row-menu > button',buttons=>buttons.find(button=>button.textContent==='Pin chat').click());
+  assert.deepEqual((await order()).projects,['box:'+a,'pair:'+pairKey]);
+  assert.equal(savedLayout().members['box:'+a],'projects','pinning does not move a chat out of its group');
+  await page.reload();await page.waitForSelector('[data-pair-key="'+pairBC+'"]');
+  assert.deepEqual((await order()).projects,['box:'+a,'pair:'+pairKey],'grouped pins survive reload');
+  await page.$eval('[data-box-id="'+c+'"]',row=>{
+   const transfer=new DataTransfer();row.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));
+   const target=document.querySelector('.chat-pin-drop');
+   target.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+   target.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+   row.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));
+  });
+  await page.waitForFunction(id=>document.querySelector('[data-section="boxes"] + li')?.dataset.boxId===id,{},c);
+  assert.ok(savedLayout().pins.includes('box:'+c),'desktop drop still pins the chat');
+  assert.equal(savedLayout().members['box:'+a],'projects','desktop pinning does not move grouped chats');
+  await page.close();
+ },{initialLayout,extraBoxes:[{id:c,name:'Alpha',state:'running',defaultAgent:'claude',provider:'railway'}],extraPairs:[{boxAId:a,boxBId:c,boxAName:'Builder',boxBName:'Alpha',lastAt:now,lastText:'A to C'},{boxAId:b,boxBId:c,boxAName:'Reviewer',boxBName:'Alpha',lastAt:now,lastText:'B to C'}]});
+});
+
+test('phone hold then move drags a chat into a group without opening its menu; a still hold opens the menu',async()=>{
+ const initialLayout={exists:true,groups:[{id:'projects',name:'Projects',collapsed:false}],members:{['box:'+a]:'projects'},pins:[],mutes:{},sections:{}};
+ await withChat(async(browser,base,savedLayout)=>{
+  const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  await page.goto(base+'/chat');await page.waitForSelector('[data-box-id="'+b+'"]');
+  const captures=process.env.VMBOX_CHAT_PIN_DRAG_CAPTURES;
+  if(captures){await mkdir(captures,{recursive:true});await page.screenshot({path:captures+'/01-before.png'})}
+  const center=selector=>page.$eval(selector,node=>{const r=node.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
+  let start=await center('[data-box-id="'+b+'"]');
+  await page.touchscreen.touchStart(start.x,start.y);
+  await page.touchscreen.touchMove(start.x,start.y-30);
+  await page.touchscreen.touchEnd();
+  assert.equal(await page.$eval('#row-menu',menu=>menu.hidden),true,'a quick vertical scroll does not open the menu');
+  assert.equal(savedLayout().members['box:'+b],undefined,'a quick vertical scroll does not drag the chat');
+  start=await center('[data-box-id="'+b+'"]');
+  await page.touchscreen.touchStart(start.x,start.y);
+  await page.touchscreen.touchMove(start.x-70,start.y);
+  await page.touchscreen.touchEnd();
+  assert.equal(await page.$eval('#row-menu',menu=>menu.hidden),true,'a quick horizontal swipe does not open the menu');
+  assert.equal(savedLayout().members['box:'+b],undefined,'a quick horizontal swipe does not drag the chat');
+  start=await center('[data-box-id="'+b+'"]');
+  await page.touchscreen.touchStart(start.x,start.y);
+  await new Promise(resolve=>setTimeout(resolve,520));
+  assert.equal(await page.$eval('#row-menu',menu=>menu.hidden),true,'holding arms a drag without opening the menu');
+  await page.touchscreen.touchMove(start.x,start.y-30);
+  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"]').classList.contains('touch-chat-dragging'),{},b);
+  if(captures)await page.screenshot({path:captures+'/02-dragging.png'});
+  const target=await center('.chat-folder');
+  await page.touchscreen.touchMove(target.x,target.y);
+  await page.waitForFunction(()=>document.querySelector('.chat-folder').classList.contains('drop-target'));
+  if(captures)await page.screenshot({path:captures+'/03-over-group.png'});
+  await page.touchscreen.touchEnd();
+  await page.waitForFunction(id=>document.querySelector('.chat-folder + li')?.dataset.boxId===id,{},a);
+  assert.equal(savedLayout().members['box:'+b],'projects','touch drop persists group membership');
+  assert.equal(await page.$eval('#row-menu',menu=>menu.hidden),true,'drag never opens the row menu');
+  if(captures)await page.screenshot({path:captures+'/04-after-drop.png'});
+  const still=await center('[data-box-id="'+b+'"]');
+  await page.touchscreen.touchStart(still.x,still.y);
+  await new Promise(resolve=>setTimeout(resolve,520));
+  await page.touchscreen.touchEnd();
+  await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  assert.equal(await page.$eval('#row-menu',menu=>menu.classList.contains('touch-mode')),true);
+  if(captures)await page.screenshot({path:captures+'/05-still-hold-menu.png'});
+  await page.close();
+ },{initialLayout});
 });
 
 test('chat groups combine unread indicators, accept dragged chats, and persist collapse state',async()=>{
@@ -342,11 +428,11 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
   await page.$eval('#chat-filter',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
   await page.waitForFunction(()=>!document.querySelector('[data-pair-key]'));
   await page.click('.chat-folder-toggle');
-  await page.click('[data-box-id="'+a+'"]',{button:'right'});
+  await page.click('[data-box-id="'+b+'"]',{button:'right'});
   await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Pin chat').click());
-  assert.equal(await page.$eval('#chat-entries li:first-child .section-toggle span:nth-child(2)',node=>node.textContent),'Pinned');
-  assert.match(await page.$eval('.chat-folder-toggle',node=>node.getAttribute('aria-label')),/2 chats/,'pinning removes the chat from its group');
+  assert.equal(await page.$eval('.chat-folder + li',node=>node.dataset.boxId),b,'pinned chat sorts first inside its group');
+  assert.match(await page.$eval('.chat-folder-toggle',node=>node.getAttribute('aria-label')),/3 chats/,'pinning preserves group membership');
   assert.equal(await page.$('.chat-folder .unread'),null,'pair unread stays on the row only');
   await page.click('.chat-folder-menu');
   await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
@@ -431,7 +517,7 @@ test('chat groups sync across browser profiles',async()=>{
  });
 });
 
-test('new boxes can be created into a group or Pinned from the section menus',async()=>{
+test('new boxes can be created into a group or pinned in Chats from the section menus',async()=>{
  const createBehavior={showCreated:false,fail:false};
  await withChat(async(browser,base,savedLayout)=>{
   const page=await browser.newPage();await page.setViewport({width:1440,height:900});
@@ -440,7 +526,7 @@ test('new boxes can be created into a group or Pinned from the section menus',as
   await page.waitForSelector('.chat-folder');
   await page.click('[data-box-id="'+a+'"]',{button:'right'});
   await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Pin chat').click());
-  await page.waitForSelector('[data-section="pinned"]');
+  await page.waitForSelector('[data-section="boxes"]');
   const firstItem=()=>page.$eval('#row-menu > button',button=>button.textContent);
   await page.click('.chat-folder-menu');assert.equal(await firstItem(),'New box here');
   await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
@@ -448,9 +534,9 @@ test('new boxes can be created into a group or Pinned from the section menus',as
   await page.click('#new-box-target-remove');assert.equal(await page.$eval('#new-box-target',node=>node.hidden),true);
   await page.click('#new-box-cancel');
   await page.click('#new-box');assert.equal(await page.$eval('#new-box-target',node=>node.hidden),true);await page.click('#new-box-close');
-  await page.click('[data-section="pinned"] .section-menu');assert.equal(await firstItem(),'New box here');
-  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
-  assert.equal(await page.$eval('#new-box-target-label',node=>node.textContent),'Added to: Pinned');
+  await page.click('[data-section="boxes"] .section-menu');assert.equal(await firstItem(),'New box here');
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New pinned box here').click());
+  assert.equal(await page.$eval('#new-box-target-label',node=>node.textContent),'Added to: Pinned in Chats');
   await page.click('#new-box-cancel');
   await page.click('[data-section="boxes"] .section-menu');assert.equal(await firstItem(),'New box here');
   await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
@@ -475,12 +561,14 @@ test('new boxes can be created into a group or Pinned from the section menus',as
   assert.equal(savedLayout().members['box:created-1'],savedLayout().groups[0].id,'reload retains server-side membership');
   assert.ok((await page.$eval('.chat-folder',header=>{const ids=[];for(let row=header.nextElementSibling;row&&!row.matches('.chat-folder,.conversation-divider,.conversation-group');row=row.nextElementSibling)if(row.dataset.boxId)ids.push(row.dataset.boxId);return ids})).includes('created-1'),'reloaded row stays in its group');
 
-  await page.click('[data-section="pinned"] .section-menu');await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
+  await page.click('[data-section="boxes"] .section-menu');await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New pinned box here').click());
   await page.type('#create-box input[name=name]','pinned-created');await page.click('#create-box-submit');
   await page.waitForFunction(()=>document.querySelector('#new-box-modal').hidden);
   await page.waitForFunction(async()=>((await (await fetch('/v1/chat-sidebar-layout')).json()).pins||[]).includes('box:created-2'));
   assert.ok(savedLayout().pins.includes('box:created-2'));
-  assert.ok((await page.$eval('[data-section="pinned"]',header=>{const ids=[];for(let row=header.nextElementSibling;row&&!row.matches('.chat-folder,.conversation-divider,.conversation-group');row=row.nextElementSibling)if(row.dataset.boxId)ids.push(row.dataset.boxId);return ids})).includes('created-2'),'new box appears under Pinned');
+  await page.waitForSelector('[data-box-id="created-2"]');
+  const chatOrder=await page.$eval('[data-section="boxes"]',header=>{const ids=[];for(let row=header.nextElementSibling;row&&!row.dataset.section;row=row.nextElementSibling)if(row.dataset.boxId)ids.push(row.dataset.boxId);return ids});
+  assert.ok(chatOrder.indexOf('created-2')>=0&&chatOrder.indexOf('created-2')<chatOrder.indexOf(b),'new pinned box sorts before unpinned Chats');
 
   await page.click('[data-section="boxes"] .section-menu');await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
   await page.type('#create-box input[name=name]','boxes-created');await page.click('#create-box-submit');
@@ -536,9 +624,10 @@ test('non-owners cannot create boxes from group or section menus',async()=>{
  const initialLayout={exists:true,groups:[{id:'saved-group',name:'Projects',collapsed:false}],members:{},pins:['box:'+a],mutes:{},sections:{}};
  await withChat(async(browser,base)=>{
   const page=await browser.newPage();await page.goto(base+'/chat');await page.waitForSelector('.chat-folder-menu');
-  for(const selector of ['.chat-folder-menu','[data-section="pinned"] .section-menu','[data-section="boxes"] .section-menu']){
+  for(const selector of ['.chat-folder-menu','[data-section="boxes"] .section-menu']){
    await page.$eval(selector,button=>button.click());
    assert.equal(await page.$$eval('#row-menu button',buttons=>buttons.some(button=>button.textContent==='New box here')),false);
+   assert.equal(await page.$$eval('#row-menu button',buttons=>buttons.some(button=>button.textContent==='New pinned box here')),false);
    await page.keyboard.press('Escape');
   }
   await page.close();
