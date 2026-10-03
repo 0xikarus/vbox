@@ -358,6 +358,91 @@ DO $$ BEGIN
       CHECK (state IN ('queued','delivering','streaming','delivered','ambiguous','failed'));
   END IF;
 END $$;
+
+-- One durable, owner-controlled mailbox per logical box. Addresses are never
+-- reused by another live box; disabling a mailbox retains its history.
+CREATE TABLE IF NOT EXISTS box_mail_settings (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid PRIMARY KEY REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  enabled boolean NOT NULL DEFAULT false,
+  address text UNIQUE,
+  subscribed boolean NOT NULL DEFAULT false,
+  sender_filter text NOT NULL DEFAULT '',
+  subject_filter text NOT NULL DEFAULT '',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS box_mail_settings_recipient_idx
+  ON box_mail_settings(lower(address)) WHERE enabled;
+CREATE TABLE IF NOT EXISTS mail_messages (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  ingest_key text NOT NULL UNIQUE,
+  raw_sha256 text NOT NULL,
+  rfc_message_id text NOT NULL DEFAULT '',
+  envelope_from text NOT NULL,
+  envelope_to text NOT NULL,
+  header_from text NOT NULL,
+  from_name text NOT NULL DEFAULT '',
+  subject text NOT NULL DEFAULT '',
+  text_body text NOT NULL DEFAULT '',
+  preview text NOT NULL DEFAULT '',
+  received_at timestamptz NOT NULL DEFAULT now(),
+  read_at timestamptz,
+  quarantined boolean NOT NULL DEFAULT false,
+  spf text NOT NULL DEFAULT 'unknown',
+  dkim text NOT NULL DEFAULT 'unknown',
+  has_attachments boolean NOT NULL DEFAULT false,
+  notified_at timestamptz,
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days')
+);
+CREATE INDEX IF NOT EXISTS mail_messages_box_received_idx ON mail_messages(account_id,box_id,received_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS mail_messages_unread_idx ON mail_messages(account_id,box_id,received_at DESC) WHERE read_at IS NULL AND NOT quarantined;
+CREATE TABLE IF NOT EXISTS mail_attachments (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  message_id uuid NOT NULL REFERENCES mail_messages(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  content_type text NOT NULL,
+  size_bytes integer NOT NULL,
+  sha256 text NOT NULL,
+  data bytea NOT NULL,
+  scan_state text NOT NULL CHECK (scan_state IN ('type_checked','blocked'))
+);
+CREATE INDEX IF NOT EXISTS mail_attachments_message_idx ON mail_attachments(account_id,message_id);
+CREATE TABLE IF NOT EXISTS mail_outbox (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  recipient_list jsonb NOT NULL,
+  subject text NOT NULL,
+  submitted_text text NOT NULL,
+  reviewed_text text NOT NULL,
+  status text NOT NULL CHECK (status IN ('pending_approval','sending','sent','rejected','failed')),
+  reason text NOT NULL DEFAULT '',
+  version integer NOT NULL DEFAULT 1,
+  idempotency_key text NOT NULL,
+  provider_id text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  decided_at timestamptz,
+  sent_at timestamptz,
+  UNIQUE(account_id,box_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS mail_outbox_box_time_idx ON mail_outbox(account_id,box_id,created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS mail_outbox_pending_idx ON mail_outbox(account_id,created_at DESC) WHERE status='pending_approval';
+CREATE TABLE IF NOT EXISTS mail_events (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  message_id uuid REFERENCES mail_messages(id) ON DELETE CASCADE,
+  outbox_id uuid REFERENCES mail_outbox(id) ON DELETE CASCADE,
+  kind text NOT NULL,
+  actor text NOT NULL,
+  detail jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS mail_events_box_time_idx ON mail_events(account_id,box_id,created_at DESC);
 ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS chat_key text;
 ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS parent_message_id uuid REFERENCES box_messages(id) ON DELETE SET NULL;
 ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS thread_id uuid;

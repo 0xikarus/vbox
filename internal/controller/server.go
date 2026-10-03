@@ -52,11 +52,14 @@ type Server struct {
 	Resolve              ProviderResolver
 	Bootstrap            func(context.Context, provider.Provider, provider.Box, []string) error
 	HTTP                 *http.Client
-	ReconcileEvery       time.Duration
-	DefaultRunBudget     time.Duration
-	EmailProvisionURL    string
-	EmailProvisionToken  string
-	Deliver              NotificationSink
+	// ResendURL is replaceable by an httptest server; production uses Resend's
+	// HTTPS API. The API key always comes from the controller environment.
+	ResendURL           string
+	ReconcileEvery      time.Duration
+	DefaultRunBudget    time.Duration
+	EmailProvisionURL   string
+	EmailProvisionToken string
+	Deliver             NotificationSink
 	// StartTask hands a freshly created task to its agent. It is a field so
 	// that tests can observe the hand-off instead of racing a detached
 	// goroutine against their fixtures.
@@ -104,6 +107,8 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("POST /v1/railway-webhooks/{secret}", s.RailwayWebhooks)
 	}
 	mux.HandleFunc("POST /v1/worker-slots/{slot}/enrollment", s.owner(s.installWorkerAgent))
+	mux.HandleFunc("POST /v1/inbound-mail/recipient", s.inboundMailRecipient)
+	mux.HandleFunc("POST /v1/inbound-mail", s.inboundMailMessage)
 	mux.HandleFunc("POST /v1/worker-slots/{slot}/activate", s.owner(s.activateWorkerAgent))
 	mux.HandleFunc("POST /v1/worker-slots/{slot}/recover", s.owner(s.recoverWorkerAgent))
 	mux.HandleFunc("POST /v1/workers/enroll", s.exchangeWorkerEnrollment)
