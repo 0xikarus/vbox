@@ -132,7 +132,9 @@ test('Details and Manage show one master and visible tool checkboxes with exact 
     else{await shot.waitForSelector('#roles .role-assignment-toggle');await shot.click('#roles .role-assignment-toggle')}
     await shot.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#role-editor-status').textContent==='');
     await shot.screenshot({path:resolve(capture,`${view}-tools-390-light.png`)});
-    await shot.$eval('[data-permission-group="mail"]',node=>node.scrollIntoView({block:'start'}));
+    await shot.waitForFunction(()=>!document.querySelector('[data-permission-group="mail"]').hidden);
+    await shot.$eval('[data-permission-group="mail"]',node=>{node.scrollIntoView({block:'start',behavior:'instant'});let parent=node.parentElement;while(parent&&parent.scrollHeight<=parent.clientHeight)parent=parent.parentElement;(parent||document.scrollingElement).scrollTop-=100});
+    await shot.waitForFunction(()=>{const top=document.querySelector('[data-permission-group="mail"]').getBoundingClientRect().top;return top>=60&&top<160});
     await shot.screenshot({path:resolve(capture,`${view}-mail-390-light.png`)});
     await shot.close();
    }
