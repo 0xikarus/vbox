@@ -34,6 +34,9 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 		selected["clear_agent_box_context"] = true
 		selected["compact_agent_box_context"] = true
 	}
+	if selected["remote_control_box"] {
+		selected["get_agent_box_screenshot"] = true
+	}
 	readMail := []string{"list_mail_addresses", "list_emails", "read_email", "search_emails", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox"}
 	for _, name := range readMail {
 		if selected[name] {
@@ -62,8 +65,12 @@ func toolCapabilityAllows(name string, capabilities v1.AgentRoleCapabilities) bo
 		return capabilities.CreateAgentBox.Enabled
 	case "list_agent_boxes":
 		return capabilities.ManageAgentBoxes.List
-	case "get_agent_box", "get_agent_box_screenshot":
+	case "get_agent_box":
 		return capabilities.ManageAgentBoxes.Inspect
+	case "get_agent_box_screenshot":
+		return capabilities.ManageAgentBoxes.Inspect || capabilities.ManageAgentBoxes.Control
+	case "remote_control_box":
+		return capabilities.ManageAgentBoxes.Control
 	case "set_agent_box_tags":
 		return capabilities.ManageAgentBoxes.Tag
 	case "set_agent_box_run_budget", "restart_agent_box", "wake_agent_box", "clear_agent_box_context", "compact_agent_box_context":

@@ -212,7 +212,7 @@ func putAgentRolePermission(ctx context.Context, tx *sql.Tx, accountID, roleID s
 		{v1.RolePermissionRequestMoreTime, request.Capabilities.RequestMoreTime.Enabled, request.Capabilities.RequestMoreTime},
 		{v1.RolePermissionQueueFollowup, request.Capabilities.QueueFollowup.Enabled, request.Capabilities.QueueFollowup},
 		{v1.RolePermissionCreateAgentBox, request.Capabilities.CreateAgentBox.Enabled, request.Capabilities.CreateAgentBox},
-		{v1.RolePermissionManageAgentBoxes, request.Capabilities.ManageAgentBoxes.List || request.Capabilities.ManageAgentBoxes.Inspect || request.Capabilities.ManageAgentBoxes.Tag || request.Capabilities.ManageAgentBoxes.Restart || request.Capabilities.ManageAgentBoxes.Delete, request.Capabilities.ManageAgentBoxes},
+		{v1.RolePermissionManageAgentBoxes, request.Capabilities.ManageAgentBoxes.List || request.Capabilities.ManageAgentBoxes.Inspect || request.Capabilities.ManageAgentBoxes.Control || request.Capabilities.ManageAgentBoxes.Tag || request.Capabilities.ManageAgentBoxes.Restart || request.Capabilities.ManageAgentBoxes.Delete, request.Capabilities.ManageAgentBoxes},
 		{v1.RolePermissionCreateEmail, request.Capabilities.CreateEmail.Enabled, request.Capabilities.CreateEmail},
 		{v1.RolePermissionSharedChats, request.Capabilities.SharedChats.Discover || request.Capabilities.SharedChats.Read || request.Capabilities.SharedChats.Subscribe || request.Capabilities.SharedChats.Create || request.Capabilities.SharedChats.Invite, request.Capabilities.SharedChats},
 		{v1.RolePermissionMail, request.Capabilities.Mail.Read || request.Capabilities.Mail.Compose, request.Capabilities.Mail},
