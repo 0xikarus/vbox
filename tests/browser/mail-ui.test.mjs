@@ -116,6 +116,7 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    assert.equal(await page.$eval('[data-mail-id="m2"] time',node=>node.textContent),'Yesterday');
    assert.equal(await page.$eval('#mail-settings-status',node=>getComputedStyle(node).display),'none');
    await save('inbox');
+   if(capture&&width===390&&theme==='light')await (await page.$('.mail-summary-card')).screenshot({path:resolve(capture,'header-receiving-390-light.png')});
    if(capture){await page.$eval('#inspect-prototype-page',node=>node.scrollTop=node.scrollHeight);await save('sidebar-bottom');await page.$eval('#inspect-prototype-page',node=>node.scrollTop=0)}
    await page.click('[data-mail-filter="quarantine"]');await page.waitForSelector('[data-mail-id="m3"]');
    assert.equal(await page.$('[data-mail-id="m1"]'),null);
@@ -129,7 +130,18 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    await page.click('#inspect-prototype-back');await page.waitForFunction(()=>document.querySelector('[data-ip-page="mail"]')?.getAttribute('aria-busy')==='false'&&document.querySelector('[data-mail-id="m2"]'));
    await page.click('#mail-enabled');await page.waitForFunction(()=>document.querySelector('#mail-enabled').checked===false&&!document.querySelector('#mail-enabled').disabled);
    assert.equal(data.writes.some(write=>write.path.endsWith('/mail')&&write.body.enabled===false),true);
-   await page.click('#mail-enabled');await page.waitForFunction(()=>document.querySelector('#mail-enabled').checked===true&&!document.querySelector('#mail-enabled').disabled);
+   assert.match(await page.$eval('.mail-summary-card',node=>node.textContent),/Paused · new mail is rejected/);
+   assert.equal(await page.$('.mail-receiving-card'),null);
+   assert.deepEqual(await page.$$eval('.mail-section>.ip-heading',nodes=>nodes.map(node=>node.textContent)),['Addresses','Agent']);
+   assert.equal(await page.$('[data-mail-id="m2"]')!==null,true,'existing mail remains visible while receiving is paused');
+   assert.match(await page.$eval('.mail-paused-notice',node=>node.textContent),/Existing mail remains available/);
+   await page.waitForSelector('[data-mail-action="undo-receiving"]');
+   if(capture&&width===390&&theme==='light'){
+    await save('inbox-paused');
+    await (await page.$('.mail-summary-card')).screenshot({path:resolve(capture,'header-paused-390-light.png')});
+   }
+   await page.click('[data-mail-action="undo-receiving"]');await page.waitForFunction(()=>document.querySelector('#mail-enabled').checked&&!document.querySelector('#mail-enabled').disabled);
+   assert.equal(await page.$('.mail-paused-notice'),null);
    await page.click('[data-mail-tab="outbox"]');await page.waitForSelector('[data-outbox-id="o1"]');await save('outbox');
    await page.click('[data-outbox-id="o1"]');await page.waitForSelector('#mail-review[open]');await save('review');
    await page.$eval('#mail-review [name="subject"]',node=>node.value='Edited subject');await page.click('[data-review="approve"]');
@@ -240,9 +252,11 @@ test('Mail distinguishes a disabled box from a disabled feature and reloads a ch
   await open(page,'http://127.0.0.1:'+server.address().port);
   assert.equal(await page.$eval('[data-ip-row="mail"]',node=>node.hidden),false);
   await page.click('[data-ip-row="mail"]');
-  assert.equal(await page.$eval('[data-ip-page="mail"]',node=>node.textContent.includes('Inbox is off')),true);
-  await page.click('#mail-enabled');await page.waitForFunction(()=>document.querySelector('#mail-enabled').checked&&!document.querySelector('#mail-enabled').disabled);
+  await page.waitForSelector('[data-mail-id="m1"]');
+  assert.match(await page.$eval('.mail-paused-notice',node=>node.textContent),/Existing mail remains available/);
   await page.click('[data-mail-tab="outbox"]');await page.waitForSelector('[data-outbox-id="o1"]');
+  assert.equal(await page.$('.mail-paused-notice')!==null,true,'outbox remains visible while receiving is paused');
+  await page.click('#mail-enabled');await page.waitForFunction(()=>document.querySelector('#mail-enabled').checked&&!document.querySelector('#mail-enabled').disabled);
   await page.click('[data-outbox-id="o1"]');await page.waitForSelector('#mail-review[open]');
   data.outbox[0].version=2;data.outbox[0].subject='Changed elsewhere';
   await page.click('[data-review="approve"]');

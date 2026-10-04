@@ -190,20 +190,28 @@
 #chat-menu-sheet [data-mail-nav][hidden],#chat-menu-sheet .mail-nav-count[hidden]{display:none!important}
 #chat-menu-sheet .mail-nav-count{display:grid;place-items:center;min-width:18px;height:18px;margin-left:auto;padding:0 4px;border-radius:99px;background:var(--vb-warn-soft);color:var(--vb-warn-text);font-size:10px;font-weight:800}
 
-/* Box Mail: summary, messages, addresses, agent, receiving. */
+/* Box Mail: summary, messages, addresses, agent. */
 #inspect.details-prototype .mail-section{display:grid;gap:7px}
 #inspect.details-prototype .mail-section>.ip-heading{margin:0 2px}
 #inspect.details-prototype .mail-filter-details summary::before{display:none}
 #inspect.details-prototype .mail-filter-details summary::after{content:'›';margin-left:auto;color:var(--vb-ink-soft);font-size:18px;line-height:1}
 #inspect.details-prototype .mail-filter-details[open] summary::after{transform:rotate(90deg)}
-#inspect.details-prototype .mail-summary-card{display:grid;gap:10px;padding:14px 15px}
-#inspect.details-prototype .mail-summary-top,#inspect.details-prototype .mail-summary-bottom{display:flex;align-items:center;gap:8px;min-width:0}
+#inspect.details-prototype .mail-summary-card{display:grid;gap:8px;padding:14px 15px}
+#inspect.details-prototype .mail-summary-top{display:flex;align-items:center;gap:8px;min-width:0}
 #inspect.details-prototype .mail-summary-top code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vb-ink);font-size:13px;font-weight:700}
 #inspect.details-prototype .mail-summary-top button{min-height:32px;padding:0 10px;border:1px solid var(--vb-line-strong);border-radius:8px;background:var(--vb-surface-2);color:var(--vb-ink);font:700 11px var(--vb-font);cursor:pointer}
-#inspect.details-prototype .mail-summary-bottom{flex-wrap:wrap;color:var(--vb-ink-soft);font-size:11px}
-#inspect.details-prototype .mail-summary-bottom a{margin-left:auto;color:var(--vb-accent-text);font-weight:700;text-decoration:none}
-#inspect.details-prototype .mail-summary-state{padding:3px 7px;border-radius:99px;background:var(--vb-surface-2);color:var(--vb-ink-soft);font-weight:700}
-#inspect.details-prototype .mail-summary-state.is-on{background:var(--vb-success-soft,#eaf6ee);color:var(--vb-success-text,#26774b)}
+#inspect.details-prototype .mail-summary-bottom{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:0 8px;min-width:0;color:var(--vb-ink-soft);font-size:11px}
+#inspect.details-prototype .mail-summary-counts{white-space:nowrap}
+#inspect.details-prototype .mail-summary-bottom a{grid-column:1/-1;justify-self:end;color:var(--vb-accent-text);font-weight:700;text-decoration:none}
+#inspect.details-prototype .mail-receive-control{display:flex;align-items:center;justify-content:flex-end;gap:2px;min-width:0}
+#inspect.details-prototype .mail-receive-control>span{max-width:165px;color:var(--vb-ink-soft);font-size:10px;line-height:1.25;text-align:right}
+#inspect.details-prototype .mail-receive-control>span.is-on{color:var(--vb-success-text,#26774b);font-weight:750}
+@media(prefers-color-scheme:dark){#inspect.details-prototype .mail-receive-control>span.is-on{color:#78dca3}}
+#inspect.details-prototype .mail-receive-control .mail-switch{height:40px}
+#inspect.details-prototype .mail-receive-undo{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 9px;border-radius:8px;background:var(--vb-surface-2);color:var(--vb-ink-soft);font-size:11px}
+#inspect.details-prototype .mail-receive-undo button{min-height:30px;border:0;background:transparent;color:var(--vb-accent-text);font-weight:750;cursor:pointer}
+#inspect.details-prototype .mail-summary-card #mail-settings-status{margin:0}
+#inspect.details-prototype .mail-paused-notice{margin:0;padding:8px 10px;border:1px solid var(--vb-line);border-radius:9px;background:var(--vb-surface-2);color:var(--vb-ink-soft);font-size:11px;line-height:1.35}
 #inspect.details-prototype .mail-messages-section{display:grid;gap:9px}
 #inspect.details-prototype .mail-messages-section .mail-section-heading{margin:0 2px 6px}
 #inspect.details-prototype .mail-messages-section .mail-short-note{margin:0 2px 7px}
@@ -241,5 +249,3 @@
 #inspect.details-prototype .mail-access-link small{color:var(--vb-accent-text);font-size:10px;white-space:nowrap}
 #inspect.details-prototype .mail-filter-details{border-bottom:1px solid var(--vb-line)}
 #inspect.details-prototype .mail-filter-details summary{justify-content:space-between;color:var(--vb-ink)}
-#inspect.details-prototype .mail-receive-row{border-bottom:0}
-#inspect.details-prototype .mail-receiving-card .mail-inline-status{padding:0 15px 10px}
