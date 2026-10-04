@@ -84,10 +84,12 @@ func TestBoxActivityBrowserPayloads(t *testing.T) {
 	columns := []string{"box_id", "agent_busy", "agent_busy_updated_at", "mascot_mood", "mascot_activity", "mascot_phrase", "mascot_observed_at", "mascot_phrase_at", "mascot_evidence_changed_at"}
 	old := now.Add(-3 * time.Minute)
 	cases := map[string][]driver.Value{
-		"working": {"builder", true, now.Add(-10 * time.Second), "idle", "working", "Editing chat.js", now.Add(-2 * time.Second), now.Add(-2 * time.Second), now.Add(-2 * time.Second)},
-		"quiet":   {"builder", true, old, "idle", "idle", "Old work", now.Add(-2 * time.Second), old, old},
-		"stale":   {"builder", true, now.Add(-time.Minute), "idle", "working", "Old work", now.Add(-50 * time.Second), now.Add(-50 * time.Second), now.Add(-50 * time.Second)},
-		"idle":    {"builder", false, now.Add(-2 * time.Second), "idle", "idle", "", now.Add(-2 * time.Second), nil, now.Add(-2 * time.Second)},
+		"working":     {"builder", true, now.Add(-10 * time.Second), "idle", "working", "Editing chat.js", now.Add(-2 * time.Second), now.Add(-2 * time.Second), now.Add(-2 * time.Second)},
+		"quiet":       {"builder", true, old, "idle", "idle", "Old work", now.Add(-2 * time.Second), old, old},
+		"stale":       {"builder", true, now.Add(-time.Minute), "idle", "working", "Old work", now.Add(-50 * time.Second), now.Add(-50 * time.Second), now.Add(-50 * time.Second)},
+		"idle":        {"builder", false, now.Add(-2 * time.Second), "idle", "idle", "", now.Add(-2 * time.Second), nil, now.Add(-2 * time.Second)},
+		"longHealthy": {"builder", true, now.Add(-3*time.Hour - 12*time.Minute), "idle", "working", "Running tests", now.Add(-2 * time.Second), now.Add(-time.Minute), now.Add(-2 * time.Second)},
+		"longStalled": {"builder", true, now.Add(-3*time.Hour - 12*time.Minute), "idle", "working", "Old work", now.Add(-14 * time.Minute), now.Add(-14 * time.Minute), now.Add(-14 * time.Minute)},
 	}
 	output := make(map[string]json.RawMessage, len(cases))
 	for name, values := range cases {
