@@ -75,9 +75,14 @@ test('long healthy work stays neutral; stalled work warns and offers the existin
   await page.$eval('#chat-banner button:nth-child(1)',el=>el.click());
   await page.waitForFunction(()=>document.querySelector('#chat-interrupt')&&!document.querySelector('#chat-interrupt').disabled);
   assert.equal(interrupts,1);
+  const terminalSession=page.waitForResponse(response=>response.url().endsWith('/v1/logical-boxes/builder/sessions/interactive')&&response.request().method()==='POST',{timeout:9000});
   await page.$eval('#chat-banner button:nth-child(2)',el=>el.click());
+  const terminalResponse=await terminalSession;
+  assert.equal(terminalResponse.status(),200,'terminal action requests an interactive session');
+  assert.equal((await terminalResponse.json()).session,'s1');
   await page.waitForFunction(()=>!document.querySelector('#takeover').hidden);
-  assert.ok(interactive>=2,'terminal action uses the existing interactive session flow');
+  assert.equal(await page.$eval('#takeover-screen',el=>el.classList.contains('is-terminal')),true,'terminal action opens TMUX');
+  assert.equal(interactive,2,'terminal action uses the existing interactive session flow');
   await page.$eval('#takeover-close',el=>el.click());
   page.once('dialog',dialog=>{assert.match(dialog.message(),/^Restart "Builder"/);void dialog.accept()});
   await page.$eval('#chat-banner button:nth-child(3)',el=>el.click());
