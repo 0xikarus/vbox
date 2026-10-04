@@ -8,7 +8,7 @@ import puppeteer from 'puppeteer-core';
 const web=resolve('internal/controller/web');
 const stamp=new Date(Date.now()-2*60000).toISOString();
 const yesterday=new Date(Date.now()-86400000).toISOString();
-const boxes=[{id:'builder',name:'BossDev',state:'running',defaultAgent:'claude',address:'builder@example.test',unread:1},{id:'reviewer',name:'Reviewer',state:'running',defaultAgent:'codex',address:'reviewer@example.test',unread:1}];
+const boxes=[{id:'builder',name:'BossDev',state:'running',defaultAgent:'claude',address:'builder@example.test',enabled:true,unread:1},{id:'reviewer',name:'Reviewer',state:'running',defaultAgent:'codex',address:'reviewer@example.test',enabled:true,unread:1},{id:'quiet',name:'Quiet box',state:'running',defaultAgent:'codex',address:'quiet@example.test',enabled:false,unread:0},{id:'sleepy',name:'Sleepy box',state:'running',defaultAgent:'codex',address:'',enabled:false,unread:0}];
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
 function fixture(){return {
  messages:[
@@ -87,6 +87,7 @@ async function serve(data,{disabled=false,role='owner'}={}){
 }
 const browser=()=>puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const base=server=>'http://127.0.0.1:'+server.address().port;
+async function phoneChoice(page,kind,selector){await page.$eval(`[data-mobile-menu="${kind}"]`,node=>node.click());await page.$eval(selector,node=>node.click())}
 async function open(page,server){await page.goto(base(server)+'/#mail');await page.waitForFunction(()=>!document.querySelector('#mail').hidden&&document.querySelector('#mail-panel [data-folder="all"]'));await page.waitForSelector('.mail-panel-row');await page.waitForSelector('[data-address="b@example.test"]')}
 
 test('agent draft appears in the live Mail panel Outbox for all boxes and its box filter',async()=>{
@@ -99,7 +100,7 @@ test('agent draft appears in the live Mail panel Outbox for all boxes and its bo
    await page.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
    await page.goto(base(server)+'/?mail=outbox#mail');
    await page.waitForSelector('#mail-panel [data-folder="outbox"]');
-   if(width===390)await page.click('#mail-panel [data-folder="outbox"]');
+   if(width===390)assert.equal(await page.$eval('#mail-panel',node=>node.dataset.mobilePage),'list');
    await page.waitForFunction(()=>document.querySelector('.mail-panel-list-scroll')?.textContent.includes('No drafts'));
    if(capture)await page.screenshot({path:resolve(capture,`pending-before-${width}-${theme}.png`),fullPage:true});
    const status=await page.evaluate(async()=>{const response=await fetch('/v1/agent-desktop/mail/outbox',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:['owner@example.net'],from:'shared@example.test',subject:'Agent approval draft',text:'Please approve this draft.',idempotencyKey:'browser-pending'})});return response.status});
@@ -108,11 +109,11 @@ test('agent draft appears in the live Mail panel Outbox for all boxes and its bo
    await page.waitForSelector('.mail-panel-row[data-item="agent-1"]');
    await page.waitForFunction(()=>document.querySelector('[data-folder="outbox"] b')?.textContent==='1');
    if(capture)await page.screenshot({path:resolve(capture,`pending-after-${width}-${theme}.png`),fullPage:true});
-   if(width===390)await page.click('[data-back="folders"]');
-   await page.click('[data-box="builder"]');await page.waitForSelector('.mail-panel-row[data-item="agent-1"]');
+
+   if(width===390)await phoneChoice(page,'scope','[data-box="builder"]');else await page.click('[data-box="builder"]');await page.waitForSelector('.mail-panel-row[data-item="agent-1"]');
    assert(data.queries.some(path=>path.includes('/v1/mail/outbox?')&&path.includes('box=builder')));
-   if(width===390)await page.click('[data-back="folders"]');
-   await page.click('[data-box="reviewer"]');await page.waitForFunction(()=>document.querySelector('.mail-panel-list-scroll')?.textContent.includes('No drafts'));
+
+   if(width===390)await phoneChoice(page,'scope','[data-box="reviewer"]');else await page.click('[data-box="reviewer"]');await page.waitForFunction(()=>document.querySelector('.mail-panel-list-scroll')?.textContent.includes('No drafts'));
    assert.deepEqual(errors,[]);await page.close();
   }finally{await chrome.close();await new Promise(done=>server.close(done))}
  }
@@ -129,12 +130,20 @@ test('account Mail panel supports folders, search, message detail, quarantine an
    await open(page,server);
    assert.equal(await page.$eval('[data-mail-nav]',node=>node.hidden),false);
    assert.equal(await page.$eval('#mail-panel',node=>document.documentElement.scrollWidth<=innerWidth),true);
-   await save('folders');
-   if(width===390)await page.click('[data-folder="all"]');
+   assert.equal(await page.$eval('.mail-panel-disabled-boxes',node=>!node.open&&node.querySelector('summary').textContent.includes('2 boxes without inbox')),true);
+   assert.equal(await page.$eval('.mail-panel-disabled-boxes summary',node=>node.textContent.trim()),'2 boxes without inbox');
+   assert.deepEqual(await page.$$eval('.mail-panel-scope-rows>.mail-panel-box-rows [data-box]',nodes=>nodes.map(node=>node.dataset.box)),['','builder','reviewer']);
+   if(width===1440){
+    assert.equal(await page.$eval('.mail-panel-row[data-item="m1"] time',node=>node.clientWidth>=82&&node.scrollWidth<=node.clientWidth&&getComputedStyle(node).textOverflow==='clip'),true,'desktop date stays readable');
+    assert.equal(await page.$eval('.mail-panel-address-rows',node=>node.scrollHeight<=node.clientHeight),true,'desktop address rows are not internally clipped');
+    assert.equal(await page.$eval('.mail-panel-folders',node=>getComputedStyle(node).overflowY),'auto','desktop sidebar scrolls as one column');
+   }
+   await save('landing');
+   if(width===390)assert.equal(await page.$eval('#mail-panel',node=>node.dataset.mobilePage),'list');
    await page.waitForSelector('.mail-panel-row[data-item="m1"]');await save('inbox');
    if(width===390){
     assert.equal(await page.$eval('#mail',node=>{const r=node.getBoundingClientRect();return r.left===0&&Math.round(r.width)===innerWidth&&getComputedStyle(node.querySelector('.section-heading')).display==='none'}),true,'phone Mail is full bleed without page heading');
-    assert.equal(await page.$eval('.mail-panel-list-pane .mail-panel-pane-head',node=>node.querySelector('h3').textContent==='Inbox'&&node.querySelector('small').textContent==='All boxes'),true);
+    assert.equal(await page.$eval('.mail-panel-list-pane .mail-panel-pane-head',node=>node.querySelector('[data-mobile-menu=folders]').textContent.includes('Inbox')&&node.querySelector('[data-mobile-menu=scope]').textContent.includes('All boxes')&&getComputedStyle(node.querySelector('.mail-panel-list-title')).display==='none'&&node.querySelector('.mail-panel-mobile-unread').textContent==='2 unread'),true);
    }
    assert.equal(await page.$('.mail-panel-row[data-item="m3"]'),null);
    assert.match(await page.$eval('.mail-panel-row[data-item="m1"]',node=>node.textContent),/builder@tra\.vet/);
@@ -144,18 +153,18 @@ test('account Mail panel supports folders, search, message detail, quarantine an
    await page.click('#mail-panel [data-action="reveal"]');assert.equal(await page.$eval('.mail-panel-body',node=>node.textContent.includes('483921')),true);
    await page.click('#mail-panel [data-action="read"]');await page.waitForFunction(()=>document.querySelector('#mail-panel [data-action="read"]')?.getAttribute('aria-label')==='Mark unread');
    assert.equal(data.writes.some(write=>write.path==='/v1/mail/messages/m1/read'&&write.body.read===true),true);
-   if(width===390){await page.click('[data-back="list"]');await page.click('[data-back="folders"]')}
-   await page.click('[data-folder="quarantine"]');await page.waitForSelector('.mail-panel-row[data-item="m3"]');
+   if(width===390)await page.click('[data-back="list"]')
+   if(width===390)await phoneChoice(page,'folders','[data-folder="quarantine"]');else await page.$eval('[data-folder="quarantine"]',node=>node.click());await page.waitForSelector('.mail-panel-row[data-item="m3"]');
    await page.click('.mail-panel-row[data-item="m3"]');await page.waitForSelector('#mail-panel [data-action="release"]');await save('quarantine');
    await page.click('#mail-panel [data-action="release"]');await page.waitForFunction(()=>document.querySelector('.mail-panel-list-scroll')?.textContent.includes('No messages here'));
    assert.equal(data.writes.some(write=>write.path==='/v1/mail/messages/m3/release'),true);
-   if(width===390)await page.click('[data-back="folders"]');
-   await page.click('[data-folder="outbox"]');await page.waitForSelector('.mail-panel-row[data-item="o1"]');await save('outbox');
+
+   if(width===390)await phoneChoice(page,'folders','[data-folder="outbox"]');else await page.$eval('[data-folder="outbox"]',node=>node.click());await page.waitForSelector('.mail-panel-row[data-item="o1"]');await save('outbox');
    await page.click('.mail-panel-row[data-item="o1"]');await page.waitForSelector('#mail-panel [data-action="review"]');await page.click('#mail-panel [data-action="review"]');await page.waitForSelector('#mail-panel-review[open]');await save('review');
    assert.equal(await page.$eval('#mail-panel-review',node=>node.getBoundingClientRect().width<=innerWidth),true);
    await page.click('#mail-panel-review [data-review="close"]');
-   if(width===390){await page.click('[data-back="list"]');await page.click('[data-back="folders"]')}
-   await page.click('[data-action="addresses"]');await page.waitForSelector('#mail-address-dialog[open]');await save('addresses');
+   if(width===390)await page.click('[data-back="list"]')
+   if(width===390)await phoneChoice(page,'scope','[data-action="addresses"]');else await page.click('[data-action="addresses"]');await page.waitForSelector('#mail-address-dialog[open]');await save('addresses');
    await page.click('[data-address-grants="builder"]');await save('address-grants');
    await page.click('#mail-address-dialog [data-address-action="close"]');
    assert.deepEqual(errors,[]);await page.close();
@@ -182,16 +191,16 @@ test('chat mobile menu links to configured owner Mail with unread count and usab
      await page.click(nav);await page.waitForFunction(()=>location.hash==='#mail'&&!document.querySelector('#mail').hidden&&document.querySelector('#mail-panel [data-folder="all"]'));
      assert.equal(await page.$eval('#mail-panel',()=>document.documentElement.scrollWidth<=innerWidth),true);
      if(capture)await page.screenshot({path:resolve(capture,'from-menu-folders-390-light.png')});
-     await page.click('[data-folder="all"]');await page.waitForSelector('.mail-panel-row[data-item="m1"]');
+     await page.waitForSelector('.mail-panel-row[data-item="m1"]');
      if(capture)await page.screenshot({path:resolve(capture,'from-menu-list-390-light.png')});
      await page.click('.mail-panel-row[data-item="m1"]');await page.waitForSelector('.mail-panel-body');
      if(capture)await page.screenshot({path:resolve(capture,'from-menu-detail-390-light.png')});
-     await page.click('[data-back="list"]');await page.waitForSelector('.mail-panel-row[data-item="m1"]');await page.click('[data-back="folders"]');
-     await page.click('[data-folder="outbox"]');await page.waitForSelector('.mail-panel-row[data-item="o1"]');await page.click('.mail-panel-row[data-item="o1"]');await page.waitForSelector('#mail-panel [data-action="review"]');await page.click('#mail-panel [data-action="review"]');await page.waitForSelector('#mail-panel-review[open]');
+     await page.click('[data-back="list"]');await page.waitForSelector('.mail-panel-row[data-item="m1"]');
+     await phoneChoice(page,'folders','[data-folder="outbox"]');await page.waitForSelector('.mail-panel-row[data-item="o1"]');await page.click('.mail-panel-row[data-item="o1"]');await page.waitForSelector('#mail-panel [data-action="review"]');await page.click('#mail-panel [data-action="review"]');await page.waitForSelector('#mail-panel-review[open]');
      assert.equal(await page.$eval('#mail-panel-review',node=>node.getBoundingClientRect().width<=innerWidth),true);
      if(capture)await page.screenshot({path:resolve(capture,'from-menu-review-390-light.png')});
-     await page.click('#mail-panel-review [data-review="close"]');await page.click('[data-back="list"]');await page.click('[data-back="folders"]');
-     await page.click('[data-action="addresses"]');await page.waitForSelector('#mail-address-dialog[open]');
+     await page.click('#mail-panel-review [data-review="close"]');await page.click('[data-back="list"]');
+     await phoneChoice(page,'scope','[data-action="addresses"]');await page.waitForSelector('#mail-address-dialog[open]');
      assert.equal(await page.$eval('#mail-address-dialog',node=>node.getBoundingClientRect().width<=innerWidth),true);
      if(capture)await page.screenshot({path:resolve(capture,'from-menu-addresses-390-light.png')});
     }else assert.equal(await page.$eval(nav,node=>node.hidden),true,scenario.role+' '+(scenario.disabled?'unconfigured':'non-owner')+' hides Mail');
@@ -215,13 +224,13 @@ test('compact mail rows, bulk actions, Archive folder, and message toolbar keep 
   assert.deepEqual(data.writes.filter(write=>write.path.endsWith('/read')).map(write=>write.body),[{read:true},{read:true}]);
   await page.click('[data-select="m2"]');await page.click('[data-bulk="archive"]');await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="m2"]'));
   assert.deepEqual(data.writes.at(-1),{path:'/v1/mail/messages/m2/archive',method:'POST',body:{archived:true}});
-  await page.click('[data-folder="archive"]');await page.waitForSelector('.mail-panel-row[data-item="m2"]');assert.equal(await page.$('.mail-panel-row[data-item="m1"]'),null);
+  await page.$eval('[data-folder="archive"]',node=>node.click());await page.waitForSelector('.mail-panel-row[data-item="m2"]');assert.equal(await page.$('.mail-panel-row[data-item="m1"]'),null);
   await page.click('.mail-panel-row[data-item="m2"] [data-row-action="unarchive"]');await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="m2"]'));
   assert.deepEqual(data.writes.at(-1),{path:'/v1/mail/messages/m2/archive',method:'POST',body:{archived:false}});
-  await page.click('[data-folder="all"]');await page.waitForSelector('.mail-panel-row[data-item="m2"]');
+  await page.$eval('[data-folder="all"]',node=>node.click());await page.waitForSelector('.mail-panel-row[data-item="m2"]');
   await page.click('.mail-panel-row[data-item="m1"] [data-row-action="delete"]');await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="m1"]'));
   assert.equal(data.writes.at(-1).method,'DELETE');
-  await page.click('[data-folder="quarantine"]');await page.waitForSelector('.mail-panel-row[data-item="m3"]');await page.click('[data-select="m3"]');await page.click('[data-bulk="release"]');await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="m3"]'));
+  await page.$eval('[data-folder="quarantine"]',node=>node.click());await page.waitForSelector('.mail-panel-row[data-item="m3"]');await page.click('[data-select="m3"]');await page.click('[data-bulk="release"]');await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="m3"]'));
   assert.equal(data.writes.at(-1).path,'/v1/mail/messages/m3/release');
  }finally{await chrome.close();await new Promise(done=>server.close(done))}
 });
@@ -230,7 +239,7 @@ test('address filters and address grants support create, edit, revoke, delete an
  const data=fixture(),server=await serve(data),chrome=await browser();
  try{
   const page=await chrome.newPage();await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await open(page,server);
-  await page.click('[data-address="b@example.test"]');await page.waitForSelector('.mail-panel-row[data-item="m2"]');assert.equal(await page.$('.mail-panel-row[data-item="m1"]'),null);
+  await phoneChoice(page,'scope','[data-address="b@example.test"]');await page.waitForSelector('.mail-panel-row[data-item="m2"]');assert.equal(await page.$('.mail-panel-row[data-item="m1"]'),null);
   assert(data.queries.some(path=>path.includes('/v1/mail/messages?')&&path.includes('address=b%40example.test')));
   await page.$eval('[data-action="addresses"]',node=>node.click());await page.waitForSelector('#mail-address-dialog[open]');
   assert.equal(await page.$('[data-address-edit="builder"]'),null);
