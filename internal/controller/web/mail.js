@@ -5,7 +5,7 @@
  const readTools=['list_mail_addresses','list_emails','read_email','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'];
  const composeTools=['send_email','list_outbox','get_outbox_status'];
  const state={boxId:'',settings:null,settingsSaving:false,globalAvailable:null,navUnread:0,approvals:{pending:0,items:[]},tab:'inbox',folder:'all',outboxStatus:'pending_approval',messages:[],messagesCursor:'',messagesLoaded:false,messagesLoading:false,messagesError:'',outbox:[],outboxCursor:'',outboxLoaded:false,outboxLoading:false,outboxError:'',detail:null,detailLoading:false,detailError:'',otpRevealed:false,policy:null,policyLoading:false,policySaving:false,pendingRead:null,policyError:'',policyStatus:'',addresses:[],addressesLoaded:false,addressesLoading:false,addressSaving:false,addressExpanded:false,editAddressId:'',addressError:'',addressStatus:''};
- let api,mailPage,detailPage,mainGroup,mainRow,review,reviewItem,returnFocus,requestEpoch=0,approvalTimer,detailId='';
+ let api,mailPage,detailPage,mainGroup,mainRow,review,reviewItem,returnFocus,requestEpoch=0,approvalTimer,detailId='',outboxRefreshQueued=false;
  const base=()=>'/v1/logical-boxes/'+encodeURIComponent(state.boxId)+'/mail';
  const count=()=>Number(state.settings?.unread)||0;
  const pending=()=>Number(state.settings?.pending)||0;
@@ -164,7 +164,8 @@
   finally{if(epoch===requestEpoch&&boxId===state.boxId){state.messagesLoading=false;renderMail()}}
  }
  async function loadOutbox(append=false){
-  if(!state.boxId||state.outboxLoading)return;
+  if(!state.boxId)return;
+  if(state.outboxLoading){outboxRefreshQueued=true;return}
   const boxId=state.boxId,status=state.outboxStatus,epoch=requestEpoch,cursor=append?state.outboxCursor:'';
   state.outboxLoading=true;state.outboxError='';renderMail();
   try{
@@ -174,7 +175,7 @@
    state.outbox=append?[...state.outbox,...(result?.items||[])]:Array.isArray(result?.items)?result.items:[];
    state.outboxCursor=result?.nextCursor||'';state.outboxLoaded=true;
   }catch(error){if(epoch===requestEpoch&&boxId===state.boxId)state.outboxError=shortError(error)}
-  finally{if(epoch===requestEpoch&&boxId===state.boxId){state.outboxLoading=false;renderMail()}}
+  finally{if(epoch===requestEpoch&&boxId===state.boxId){state.outboxLoading=false;renderMail();if(outboxRefreshQueued){outboxRefreshQueued=false;void loadOutbox()}}}
  }
  function renderAgentAccess(){
   const read=state.policySaving?state.pendingRead:!!state.policy?.mail?.read,available=!!state.policy&&!state.policyLoading&&!state.policySaving&&!state.policyError;
@@ -310,6 +311,11 @@
   const first=state.approvals.items?.[0];
   await openOutbox(first?.boxId||api.getBox()?.id);
  }
+ function refreshDrafts(){
+  if(!api.isOwner())return;
+  void loadApprovals();
+  if(state.boxId){void loadSettings(state.boxId);if(state.tab==='outbox')void loadOutbox()}
+ }
  async function openMessage(boxId,id){
   if(boxId&&api.getBox()?.id!==boxId)await api.openBox(boxId);
   if(!api.getBox())return;
@@ -357,9 +363,10 @@
    if(action==='reveal'){state.otpRevealed=!state.otpRevealed;renderDetail();detailPage.querySelector('[data-mail-action="reveal"]')?.focus();return}
    if(action==='read'&&state.detail){try{await api.request(base()+'/messages/'+encodeURIComponent(state.detail.id)+'/read','POST',{read:true});state.detail.unread=false;state.settings.unread=Math.max(0,count()-1);renderDetail();renderMail();signals()}catch(error){setStatus('mail-detail-status',shortError(error))}}
   });
-  void loadApprovals();approvalTimer=setInterval(()=>{if(!document.hidden)void loadApprovals()},30000);
+  void loadApprovals();approvalTimer=setInterval(()=>{if(!document.hidden)refreshDrafts()},15000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshDrafts()});
   signals();renderMail();
-  return {backTarget:key=>key==='mailDetail'?'mail':'',onShow:key=>{if(key==='mail'){renderMail();if(state.boxId){void loadPolicy(state.boxId);void loadAddresses(state.boxId)}if(state.tab==='inbox'&&state.settings?.enabled)void loadMessages();if(state.tab==='outbox')void loadOutbox()}},onBox:box=>{if(box?.id===state.boxId)return;requestEpoch++;state.boxId=box?.id||'';state.settings=null;state.messages=[];state.messagesLoaded=false;state.outbox=[];state.outboxLoaded=false;state.detail=null;state.policy=null;state.policyLoading=false;state.policySaving=false;state.pendingRead=null;state.policyError='';state.policyStatus='';state.addresses=[];state.addressesLoaded=false;state.addressesLoading=false;state.addressSaving=false;state.editAddressId='';state.addressError='';state.addressStatus='';state.addressExpanded=false;signals();renderMail();if(box&&state.globalAvailable===true)void loadSettings(box.id)},refreshApprovals:loadApprovals,openMessage,openApprovals};
+  return {backTarget:key=>key==='mailDetail'?'mail':'',onShow:key=>{if(key==='mail'){renderMail();if(state.boxId){void loadPolicy(state.boxId);void loadAddresses(state.boxId)}if(state.tab==='inbox'&&state.settings?.enabled)void loadMessages();if(state.tab==='outbox')void loadOutbox()}},onBox:box=>{if(box?.id===state.boxId)return;requestEpoch++;outboxRefreshQueued=false;state.boxId=box?.id||'';state.settings=null;state.messages=[];state.messagesLoaded=false;state.outbox=[];state.outboxLoaded=false;state.outboxLoading=false;state.detail=null;state.policy=null;state.policyLoading=false;state.policySaving=false;state.pendingRead=null;state.policyError='';state.policyStatus='';state.addresses=[];state.addressesLoaded=false;state.addressesLoading=false;state.addressSaving=false;state.editAddressId='';state.addressError='';state.addressStatus='';state.addressExpanded=false;signals();renderMail();if(box&&state.globalAvailable===true)void loadSettings(box.id)},refreshApprovals:loadApprovals,refreshDrafts,openMessage,openApprovals};
  }
  function notice(box,message){
   const mail=message?.mail;if(message?.direction!=='system'||!mail||!['mail_batch','outbox_status'].includes(mail.kind))return null;
