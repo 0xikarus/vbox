@@ -1659,7 +1659,7 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-banner .chat-banner-actions{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:.35rem}
 #chat-banner .chat-banner-actions button{min-height:40px;padding:.45rem .7rem;border:1px solid currentColor;border-radius:var(--r-control);background:transparent;color:inherit;font:inherit;font-weight:650;cursor:pointer}
 #chat-banner .chat-banner-actions button:hover{background:color-mix(in srgb,currentColor 10%,transparent)}
-@media(max-width:600px){#chat-banner[data-kind="stalled"]{align-items:stretch;text-align:left}#chat-banner .chat-banner-text{flex-basis:100%}#chat-banner .chat-banner-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%}#chat-banner .chat-banner-actions button{padding:.4rem .25rem}}
+@media(max-width:600px){#chat-banner[data-kind="stalled"]{align-items:stretch;text-align:left}#chat-banner[data-kind="stalled"]::before{display:none}#chat-banner .chat-banner-text{flex-basis:100%}#chat-banner .chat-banner-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%}#chat-banner .chat-banner-actions button{padding:.4rem .25rem}}
 
 /* 4. rail action row: 4 equal columns, no label collisions */
 .inspect-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.2rem;padding:.9rem .5rem .4rem}
