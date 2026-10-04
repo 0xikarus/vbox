@@ -181,6 +181,7 @@ test('a disabled Send button shows why the box cannot accept a message',async()=
   await p.keyboard.press('Enter');
   assert.equal(await p.$eval('#chat-input',input=>input.value),'Keep this draft');
   assert.equal(posts.length,0);
+  assert.equal(await p.evaluate(()=>[...document.querySelectorAll('body *')].filter(node=>!node.children.length&&node.offsetParent!==null&&/Wait for this box to be running/.test(node.textContent)).length),1,'the blocked-send warning is shown only once');
   await p.close();
  },threadMessages,{boxList:[{...boxes[0],state:'hibernated'}]});
 });
