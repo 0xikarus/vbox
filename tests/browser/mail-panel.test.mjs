@@ -87,7 +87,7 @@ async function serve(data,{disabled=false,role='owner'}={}){
 }
 const browser=()=>puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const base=server=>'http://127.0.0.1:'+server.address().port;
-async function phoneChoice(page,kind,selector){await page.click(`[data-mobile-menu="${kind}"]`);await page.click(selector)}
+async function phoneChoice(page,kind,selector){await page.$eval(`[data-mobile-menu="${kind}"]`,node=>node.click());await page.$eval(selector,node=>node.click())}
 async function open(page,server){await page.goto(base(server)+'/#mail');await page.waitForFunction(()=>!document.querySelector('#mail').hidden&&document.querySelector('#mail-panel [data-folder="all"]'));await page.waitForSelector('.mail-panel-row');await page.waitForSelector('[data-address="b@example.test"]')}
 
 test('agent draft appears in the live Mail panel Outbox for all boxes and its box filter',async()=>{
@@ -131,7 +131,13 @@ test('account Mail panel supports folders, search, message detail, quarantine an
    assert.equal(await page.$eval('[data-mail-nav]',node=>node.hidden),false);
    assert.equal(await page.$eval('#mail-panel',node=>document.documentElement.scrollWidth<=innerWidth),true);
    assert.equal(await page.$eval('.mail-panel-disabled-boxes',node=>!node.open&&node.querySelector('summary').textContent.includes('2 boxes without inbox')),true);
+   assert.equal(await page.$eval('.mail-panel-disabled-boxes summary',node=>node.textContent.trim()),'2 boxes without inbox');
    assert.deepEqual(await page.$$eval('.mail-panel-scope-rows>.mail-panel-box-rows [data-box]',nodes=>nodes.map(node=>node.dataset.box)),['','builder','reviewer']);
+   if(width===1440){
+    assert.equal(await page.$eval('.mail-panel-row[data-item="m1"] time',node=>node.clientWidth>=82&&node.scrollWidth<=node.clientWidth&&getComputedStyle(node).textOverflow==='clip'),true,'desktop date stays readable');
+    assert.equal(await page.$eval('.mail-panel-address-rows',node=>node.scrollHeight<=node.clientHeight),true,'desktop address rows are not internally clipped');
+    assert.equal(await page.$eval('.mail-panel-folders',node=>getComputedStyle(node).overflowY),'auto','desktop sidebar scrolls as one column');
+   }
    await save('landing');
    if(width===390)assert.equal(await page.$eval('#mail-panel',node=>node.dataset.mobilePage),'list');
    await page.waitForSelector('.mail-panel-row[data-item="m1"]');await save('inbox');
@@ -148,12 +154,12 @@ test('account Mail panel supports folders, search, message detail, quarantine an
    await page.click('#mail-panel [data-action="read"]');await page.waitForFunction(()=>document.querySelector('#mail-panel [data-action="read"]')?.getAttribute('aria-label')==='Mark unread');
    assert.equal(data.writes.some(write=>write.path==='/v1/mail/messages/m1/read'&&write.body.read===true),true);
    if(width===390)await page.click('[data-back="list"]')
-   if(width===390)await phoneChoice(page,'folders','[data-folder="quarantine"]');else await page.click('[data-folder="quarantine"]');await page.waitForSelector('.mail-panel-row[data-item="m3"]');
+   if(width===390)await phoneChoice(page,'folders','[data-folder="quarantine"]');else await page.$eval('[data-folder="quarantine"]',node=>node.click());await page.waitForSelector('.mail-panel-row[data-item="m3"]');
    await page.click('.mail-panel-row[data-item="m3"]');await page.waitForSelector('#mail-panel [data-action="release"]');await save('quarantine');
    await page.click('#mail-panel [data-action="release"]');await page.waitForFunction(()=>document.querySelector('.mail-panel-list-scroll')?.textContent.includes('No messages here'));
    assert.equal(data.writes.some(write=>write.path==='/v1/mail/messages/m3/release'),true);
 
-   if(width===390)await phoneChoice(page,'folders','[data-folder="outbox"]');else await page.click('[data-folder="outbox"]');await page.waitForSelector('.mail-panel-row[data-item="o1"]');await save('outbox');
+   if(width===390)await phoneChoice(page,'folders','[data-folder="outbox"]');else await page.$eval('[data-folder="outbox"]',node=>node.click());await page.waitForSelector('.mail-panel-row[data-item="o1"]');await save('outbox');
    await page.click('.mail-panel-row[data-item="o1"]');await page.waitForSelector('#mail-panel [data-action="review"]');await page.click('#mail-panel [data-action="review"]');await page.waitForSelector('#mail-panel-review[open]');await save('review');
    assert.equal(await page.$eval('#mail-panel-review',node=>node.getBoundingClientRect().width<=innerWidth),true);
    await page.click('#mail-panel-review [data-review="close"]');
@@ -218,13 +224,13 @@ test('compact mail rows, bulk actions, Archive folder, and message toolbar keep 
   assert.deepEqual(data.writes.filter(write=>write.path.endsWith('/read')).map(write=>write.body),[{read:true},{read:true}]);
   await page.click('[data-select="m2"]');await page.click('[data-bulk="archive"]');await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="m2"]'));
   assert.deepEqual(data.writes.at(-1),{path:'/v1/mail/messages/m2/archive',method:'POST',body:{archived:true}});
-  await page.click('[data-folder="archive"]');await page.waitForSelector('.mail-panel-row[data-item="m2"]');assert.equal(await page.$('.mail-panel-row[data-item="m1"]'),null);
+  await page.$eval('[data-folder="archive"]',node=>node.click());await page.waitForSelector('.mail-panel-row[data-item="m2"]');assert.equal(await page.$('.mail-panel-row[data-item="m1"]'),null);
   await page.click('.mail-panel-row[data-item="m2"] [data-row-action="unarchive"]');await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="m2"]'));
   assert.deepEqual(data.writes.at(-1),{path:'/v1/mail/messages/m2/archive',method:'POST',body:{archived:false}});
-  await page.click('[data-folder="all"]');await page.waitForSelector('.mail-panel-row[data-item="m2"]');
+  await page.$eval('[data-folder="all"]',node=>node.click());await page.waitForSelector('.mail-panel-row[data-item="m2"]');
   await page.click('.mail-panel-row[data-item="m1"] [data-row-action="delete"]');await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="m1"]'));
   assert.equal(data.writes.at(-1).method,'DELETE');
-  await page.click('[data-folder="quarantine"]');await page.waitForSelector('.mail-panel-row[data-item="m3"]');await page.click('[data-select="m3"]');await page.click('[data-bulk="release"]');await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="m3"]'));
+  await page.$eval('[data-folder="quarantine"]',node=>node.click());await page.waitForSelector('.mail-panel-row[data-item="m3"]');await page.click('[data-select="m3"]');await page.click('[data-bulk="release"]');await page.waitForFunction(()=>!document.querySelector('.mail-panel-row[data-item="m3"]'));
   assert.equal(data.writes.at(-1).path,'/v1/mail/messages/m3/release');
  }finally{await chrome.close();await new Promise(done=>server.close(done))}
 });
