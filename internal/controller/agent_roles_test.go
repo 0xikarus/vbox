@@ -263,6 +263,9 @@ func TestMailToolPolicyRequiresTypedGrantAndExpandsCompanions(t *testing.T) {
 					t.Fatalf("tool %s in %v, want %v", name, tools, tc.want)
 				}
 			}
+			if slices.Contains(tools, "search_emails") != tc.grant.Read {
+				t.Fatalf("legacy search visibility in %v, read grant=%v", tools, tc.grant.Read)
+			}
 			if slices.Contains(tools, "set_busy") {
 				t.Fatalf("retired tool was granted: %v", tools)
 			}
