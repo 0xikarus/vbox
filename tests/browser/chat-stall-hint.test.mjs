@@ -51,8 +51,7 @@ test('long healthy work stays neutral; stalled work warns and offers the existin
   assert.match(await page.$eval('#chat-banner',el=>el.textContent),/^Working for 3 h 12 min · last activity just now$/);
   assert.equal(await page.$('#chat-banner .chat-banner-actions'),null);
   const capture=async phase=>{
-   if(!process.env.VMBOX_CAPTURE_DIR)return;
-   await mkdir(process.env.VMBOX_CAPTURE_DIR,{recursive:true});
+   if(process.env.VMBOX_CAPTURE_DIR)await mkdir(process.env.VMBOX_CAPTURE_DIR,{recursive:true});
    for(const width of [390,1440])for(const theme of ['light','dark']){
     await page.setViewport({width,height:width===390?844:900,deviceScaleFactor:1});
     await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
@@ -61,14 +60,38 @@ test('long healthy work stays neutral; stalled work warns and offers the existin
      await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'));
     }
     assert.equal(await page.$eval('#chat-conversation',el=>getComputedStyle(el).display!=='none'),true,'capture shows the chat');
-    await page.screenshot({path:path.join(process.env.VMBOX_CAPTURE_DIR,`stall-${phase}-${width}-${theme}.png`)});
+    const layout=await page.$eval('#chat-banner',el=>{
+     const banner=el.getBoundingClientRect(),header=document.querySelector('#chat-header').getBoundingClientRect();
+     const text=el.querySelector('.chat-banner-text'),actions=el.querySelector('.chat-banner-actions');
+     const style=getComputedStyle(el);
+     return {banner:{top:banner.top,left:banner.left,right:banner.right,height:banner.height},headerBottom:header.bottom,
+      conversationLeft:document.querySelector('#chat-conversation').getBoundingClientRect().left,
+      conversationRight:document.querySelector('#chat-conversation').getBoundingClientRect().right,
+      radius:style.borderTopLeftRadius,marginTop:style.marginTop,bottomBorder:style.borderBottomWidth,
+      textLine:getComputedStyle(text).whiteSpace,textBottom:text.getBoundingClientRect().bottom,
+      actionsTop:actions?.getBoundingClientRect().top,buttonBorders:actions?[...actions.querySelectorAll('button')].map(button=>getComputedStyle(button).borderTopWidth):[],
+      actionButtons:actions?[...actions.querySelectorAll('button')].map(button=>({left:button.getBoundingClientRect().left,right:button.getBoundingClientRect().right})):[]};
+    });
+    assert.ok(Math.abs(layout.banner.top-layout.headerBottom)<1,'banner attaches to the header');
+    assert.ok(Math.abs(layout.banner.left-layout.conversationLeft)<1&&Math.abs(layout.banner.right-layout.conversationRight)<1,'banner spans the chat');
+    assert.equal(layout.radius,'0px');assert.equal(layout.marginTop,'0px');assert.equal(layout.bottomBorder,'1px');
+    assert.equal(layout.textLine,'nowrap','banner text stays on one line');
+    if(phase==='stalled'){
+     assert.ok(layout.buttonBorders.every(border=>border==='0px'),'recovery actions are text buttons');
+     assert.ok(width===390?layout.actionsTop>=layout.textBottom:layout.actionsTop<layout.textBottom,'actions use a second row only on phone');
+     if(width===390){
+      assert.ok(layout.actionButtons.slice(1).every((button,index)=>button.left-layout.actionButtons[index].right<10),'phone actions stay grouped');
+      assert.ok(layout.actionButtons.at(-1).right<layout.banner.right-30,'phone actions stay left aligned');
+     }
+    }
+    if(process.env.VMBOX_CAPTURE_DIR)await page.screenshot({path:path.join(process.env.VMBOX_CAPTURE_DIR,`stall-${phase}-${width}-${theme}.png`)});
    }
   };
   await capture('healthy');
   mode='longStalled';await page.$eval('#refresh',el=>el.click());
   await page.waitForFunction(()=>document.querySelector('#chat-banner')?.dataset.kind==='stalled',{timeout:9000});
-  assert.match(await page.$eval('#chat-banner',el=>el.textContent),/^No activity for 14 min — the agent may be stuck/);
-  assert.deepEqual(await page.$$eval('#chat-banner button',nodes=>nodes.map(node=>node.textContent)),['Interrupt','Open terminal','Restart']);
+  assert.match(await page.$eval('#chat-banner',el=>el.textContent),/^No activity for 14 min — may be stuck/);
+  assert.deepEqual(await page.$$eval('#chat-banner button',nodes=>nodes.map(node=>node.textContent)),['Interrupt','Terminal','Restart']);
   await capture('stalled');
   await page.setViewport({width:390,height:844,deviceScaleFactor:1});
   assert.ok((await page.$$eval('#chat-banner button',nodes=>nodes.map(node=>node.getBoundingClientRect().height))).every(height=>height>=40));

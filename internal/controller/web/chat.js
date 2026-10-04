@@ -2334,7 +2334,7 @@
   const buttons=mk('span');buttons.className='chat-banner-actions';
   for(const [name,run] of [
    ['Interrupt',()=>$('#chat-interrupt').click()],
-   ['Open terminal',()=>$('#chat-header-terminal').click()],
+   ['Terminal',()=>$('#chat-header-terminal').click()],
    ['Restart',()=>{const box=boxes.get(selected);if(box&&owner)void restartBox(box)}],
   ]){const button=mk('button',name);button.type='button';button.onclick=run;buttons.append(button)}
   chatBanner.append(buttons);
@@ -2344,7 +2344,7 @@
   const box=boxes.get(selected);if(!box)return setBanner('');
   if(canWakeBox(box))return setBanner('This box is '+box.state+'. Wake it to chat again. Files and chat history are saved; the agent starts a fresh live session.');
   const hint=deriveStallHint(box,Date.now(),pendingSends.get(box.id)?.at);
-  if(hint?.kind==='stalled')return setBanner('No activity for '+elapsedLabel(hint.inactiveMs)+' — the agent may be stuck','stalled',owner);
+  if(hint?.kind==='stalled')return setBanner('No activity for '+elapsedLabel(hint.inactiveMs)+' — may be stuck','stalled',owner);
   if(hint?.kind==='working')return setBanner('Working for '+elapsedLabel(hint.workingMs)+' · last activity '+(hint.inactiveMs<60000?'just now':elapsedLabel(hint.inactiveMs)+' ago'),'working');
   setBanner('');
  }
