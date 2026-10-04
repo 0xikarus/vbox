@@ -385,7 +385,13 @@ test('phone list swipe returns to the active chat from group and section headers
   const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
   await page.goto(base+'/chat#box='+a);
   await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'));
-  const back=async()=>{await page.click('#chat-back');await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));await new Promise(resolve=>setTimeout(resolve,280))};
+  const back=async()=>{
+   await page.$eval('#chat-back',button=>button.click());
+   await page.waitForFunction(()=>{
+    const app=document.querySelector('#chat-app'),main=document.querySelector('#chat-main');
+    return !app.classList.contains('in-chat')&&!app.classList.contains('nav-completing')&&main.getBoundingClientRect().left>=innerWidth-1;
+   },{timeout:10000});
+  };
   const center=selector=>page.$eval(selector,node=>{const r=node.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}});
   await back();
   const captures=process.env.VMBOX_CHAT_HEADER_SWIPE_CAPTURES;
@@ -437,19 +443,28 @@ test('a vertical touch from a group header scrolls the list; an armed row drag o
   const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
   await page.goto(base+'/chat#box='+a);await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'));
   await page.click('#chat-back');await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
+  await page.waitForFunction(()=>{const list=document.querySelector('#chat-entries');return list.scrollHeight>list.clientHeight},{timeout:30000});
+  const beforeScroll=await page.$eval('#chat-entries',list=>list.scrollTop);
   const point=await page.$eval('.chat-folder-toggle',node=>{const r=node.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}});
   await page.touchscreen.touchStart(point.x,point.y);
   await page.touchscreen.touchMove(point.x,point.y-50);
   await page.touchscreen.touchMove(point.x,point.y-110);
   await page.touchscreen.touchEnd();
-  await page.waitForFunction(()=>document.querySelector('#chat-entries').scrollTop>0);
+  await page.waitForFunction(previous=>document.querySelector('#chat-entries').scrollTop>previous,{timeout:30000},beforeScroll);
   assert.equal(await page.$eval('#chat-app',app=>app.classList.contains('in-chat')),false,'vertical scroll does not navigate');
-  await page.$eval('[data-box-id="'+a+'"]',node=>node.scrollIntoView({block:'center'}));
-  const row=await page.$eval('[data-box-id="'+a+'"]',node=>{const r=node.getBoundingClientRect();return{x:r.right-20,y:r.top+r.height/2}});
+  await page.$eval('[data-box-id="'+a+'"]',node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+  await page.waitForFunction(async id=>{
+   const row=document.querySelector('[data-box-id="'+id+'"]');if(!row)return false;
+   const before=row.getBoundingClientRect();
+   await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+   const after=row.getBoundingClientRect(),x=after.left+after.width/2,y=after.top+after.height/2;
+   return Math.abs(before.top-after.top)<1&&document.elementFromPoint(x,y)?.closest('[data-box-id]')===row;
+  },{timeout:30000},a);
+  const row=await page.$eval('[data-box-id="'+a+'"]',node=>{const r=node.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}});
   await page.touchscreen.touchStart(row.x,row.y);
-  await new Promise(resolve=>setTimeout(resolve,520));
+  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"]')?.classList.contains('drag-armed'),{timeout:30000},a);
   await page.touchscreen.touchMove(row.x-70,row.y);
-  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"]').classList.contains('touch-chat-dragging'),{},a);
+  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"]')?.classList.contains('touch-chat-dragging'),{timeout:30000},a);
   assert.equal(await page.$eval('#chat-app',app=>app.classList.contains('in-chat')),false,'armed row drag prevents a list swipe');
   await page.touchscreen.touchEnd();
   await page.close();
