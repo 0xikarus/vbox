@@ -91,16 +91,21 @@ test('account Mail panel supports folders, search, message detail, quarantine an
   try{
    const page=await chrome.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
    await page.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
-   const save=async name=>{if(capture)await page.screenshot({path:resolve(capture,`${name}-${width}-${theme}.png`),fullPage:!['review','addresses'].includes(name)})};
+   const save=async name=>{if(capture)await page.screenshot({path:resolve(capture,`${name}-${width}-${theme}.png`),fullPage:width!==390&&!['review','addresses'].includes(name)})};
    await open(page,server);
    assert.equal(await page.$eval('[data-mail-nav]',node=>node.hidden),false);
    assert.equal(await page.$eval('#mail-panel',node=>document.documentElement.scrollWidth<=innerWidth),true);
    await save('folders');
    if(width===390)await page.click('[data-folder="all"]');
    await page.waitForSelector('.mail-panel-row[data-item="m1"]');await save('inbox');
+   if(width===390){
+    assert.equal(await page.$eval('#mail',node=>{const r=node.getBoundingClientRect();return r.left===0&&Math.round(r.width)===innerWidth&&getComputedStyle(node.querySelector('.section-heading')).display==='none'}),true,'phone Mail is full bleed without page heading');
+    assert.equal(await page.$eval('.mail-panel-list-pane .mail-panel-pane-head',node=>node.querySelector('h3').textContent==='Inbox'&&node.querySelector('small').textContent==='All boxes'),true);
+   }
    assert.equal(await page.$('.mail-panel-row[data-item="m3"]'),null);
    assert.match(await page.$eval('.mail-panel-row[data-item="m1"]',node=>node.textContent),/builder@tra\.vet/);
    await page.click('.mail-panel-row[data-item="m1"]');await page.waitForSelector('.mail-panel-body');await save('detail');
+   if(width===390)assert.equal(await page.$$eval('.mail-panel-detail-tools button,.mail-panel-detail-tools a',nodes=>nodes.every(node=>{const r=node.getBoundingClientRect();return r.width>=40&&r.height>=40&&!!node.getAttribute('aria-label')&&!!node.getAttribute('title')})),true,'phone message actions have labels, tooltips, and 40px targets');
    assert.equal(await page.$eval('.mail-panel-body',node=>node.textContent.includes('483921')),false);
    await page.click('#mail-panel [data-action="reveal"]');assert.equal(await page.$eval('.mail-panel-body',node=>node.textContent.includes('483921')),true);
    await page.click('#mail-panel [data-action="read"]');await page.waitForFunction(()=>document.querySelector('#mail-panel [data-action="read"]')?.getAttribute('aria-label')==='Mark unread');
@@ -168,6 +173,7 @@ test('compact mail rows, bulk actions, Archive folder, and message toolbar keep 
   const page=await chrome.newPage();await page.setViewport({width:1440,height:900});await open(page,server);
   assert.equal(await page.$eval('.mail-panel-row',node=>Math.round(node.getBoundingClientRect().height)),40);
   assert.equal(await page.$eval('.mail-panel-row[data-item="m2"] .mail-panel-row-open',node=>['Mara Chen','Launch checklist','Please check the new draft.'].every(text=>node.textContent.includes(text))),true);
+  assert.equal(await page.$('.mail-panel-row[data-item="m2"] .mail-panel-row-attachment svg path[d^="m20 11.5"]')!==null,true,'attachment uses the paperclip icon');
   assert.equal(await page.$eval('.mail-panel-detail-tools',node=>node.querySelector('[data-action="read"]')&&node.querySelector('[data-action="archive"]')&&node.querySelector('[data-action="delete"]')&&node.querySelector('a[href^="/chat"]')?true:false),true);
   await page.click('[data-select="m1"]');await page.click('[data-select="m2"]');
   assert.equal(await page.$eval('.mail-panel-bulk',node=>!node.hidden&&node.querySelector('strong').textContent==='2 selected'),true);
