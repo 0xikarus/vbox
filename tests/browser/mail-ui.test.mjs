@@ -136,7 +136,7 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    await page.waitForFunction(()=>!document.querySelector('#mail-review').open);
    assert.equal(data.writes.some(write=>write.path.endsWith('/o1')&&write.body.subject==='Edited subject'&&write.body.version===1&&Array.isArray(write.body.to)),true);
    assert.equal(data.writes.some(write=>write.path.endsWith('/o1/approve')&&write.body.version===2),true);
-   await page.waitForSelector('[data-outbox-id="o2"]');await page.click('[data-outbox-id="o2"]');await page.click('[data-review="reject"]');await page.type('#mail-review [name="reason"]','Not appropriate.');await page.click('[data-review="reject"]');
+   await page.waitForSelector('[data-outbox-id="o2"]');await page.$eval('[data-outbox-id="o2"]',node=>node.click());await page.waitForSelector('#mail-review[open]');await page.click('[data-review="reject"]');await page.type('#mail-review [name="reason"]','Not appropriate.');await page.click('[data-review="reject"]');
    await page.waitForFunction(()=>!document.querySelector('#mail-review').open);
    assert.equal(data.writes.some(write=>write.path.endsWith('/o2/reject')&&write.body.reason==='Not appropriate.'&&write.body.version===1),true);
    await page.click('#inspect-prototype-back');await page.click('[data-ip-row="access"]');await page.waitForSelector('#role-editor-inline:not([hidden])');

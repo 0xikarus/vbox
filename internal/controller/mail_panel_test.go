@@ -25,6 +25,11 @@ func TestMailPanelRoutesAreRegistered(t *testing.T) {
 			t.Fatalf("route %s returned %d", path, response.Code)
 		}
 	}
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/mail/messages/"+panelTestMail+"/archive", strings.NewReader(`{"archived":true}`)))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("archive route returned %d", response.Code)
+	}
 }
 
 func TestMailPanelListScopesAndSearchesAcrossBoxes(t *testing.T) {
@@ -132,6 +137,49 @@ func TestMailPanelAddressFilterIncludesUnassignedMailbox(t *testing.T) {
 	}
 }
 
+func TestMailPanelArchiveAndUnarchiveScopedToAccount(t *testing.T) {
+	store, mock := testStore(t)
+	s := &Server{Store: store}
+	for _, archived := range []bool{true, false} {
+		mock.ExpectQuery(`UPDATE mail_messages SET archived_at=CASE WHEN \$3::bool THEN now\(\) ELSE NULL END WHERE account_id=\$1 AND id=\$2.*NOT quarantined RETURNING id::text`).
+			WithArgs("account-a", panelTestMail, archived).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(panelTestMail))
+		body := `{"archived":false}`
+		want := `"archived":false`
+		if archived {
+			body = `{"archived":true}`
+			want = `"archived":true`
+		}
+		r := httptest.NewRequest(http.MethodPost, "/v1/mail/messages/"+panelTestMail+"/archive", strings.NewReader(body))
+		r.SetPathValue("mid", panelTestMail)
+		w := httptest.NewRecorder()
+		s.ownerMailPanelArchive(w, r, Principal{AccountID: "account-a", Role: "owner"})
+		if w.Code != 200 || !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("archive=%t status=%d body=%s", archived, w.Code, w.Body.String())
+		}
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMailPanelArchiveFolderFilters(t *testing.T) {
+	store, mock := testStore(t)
+	s := &Server{Store: store}
+	columns := []string{"id", "from", "from_name", "subject", "preview", "received", "unread", "attachments", "quarantined", "spf", "dkim", "box_id", "box_name", "box_address", "address", "address_id"}
+	for _, folder := range []string{"all", "unread", "archive"} {
+		mock.ExpectQuery(`(?s)FROM mail_messages m.*\$3='all'.*m.archived_at IS NULL.*\$3='unread'.*m.archived_at IS NULL.*\$3='archive'.*m.archived_at IS NOT NULL`).
+			WithArgs("account-a", "", folder, "", nil, "", "").WillReturnRows(sqlmock.NewRows(columns))
+		w := httptest.NewRecorder()
+		s.ownerMailPanelMessages(w, httptest.NewRequest(http.MethodGet, "/v1/mail/messages?folder="+folder, nil), Principal{AccountID: "account-a"})
+		if w.Code != 200 {
+			t.Fatalf("folder=%s status=%d body=%s", folder, w.Code, w.Body.String())
+		}
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMailPanelOutboxFiltersAndSummaryTotals(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectQuery(`(?s)FROM mail_outbox o JOIN logical_boxes b.*WHERE o.account_id=\$1.*o.box_id::text=\$2.*o.status=\$3`).
@@ -143,11 +191,11 @@ func TestMailPanelOutboxFiltersAndSummaryTotals(t *testing.T) {
 		t.Fatalf("outbox status=%d body=%s", w.Code, w.Body.String())
 	}
 	mock.ExpectQuery(`(?s)FROM logical_boxes b LEFT JOIN box_mail_settings ms.*WHERE b.account_id=\$1`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"id", "name", "address", "enabled", "unread", "quarantine"}).AddRow(panelTestBox, "Builder", "builder@example.test", true, 3, 2))
-	mock.ExpectQuery(`SELECT count\(\*\) FILTER \(WHERE read_at IS NULL`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"unread", "quarantine", "inbox"}).AddRow(5, 2, 9))
+	mock.ExpectQuery(`SELECT count\(\*\) FILTER \(WHERE read_at IS NULL`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"unread", "quarantine", "inbox", "archive"}).AddRow(5, 2, 9, 4))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM mail_outbox WHERE account_id=\$1`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"pending"}).AddRow(1))
 	w = httptest.NewRecorder()
 	s.ownerMailPanelSummary(w, httptest.NewRequest(http.MethodGet, "/v1/mail/summary", nil), Principal{AccountID: "account-a"})
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"inbox":9`) || !strings.Contains(w.Body.String(), `"unread":5`) || !strings.Contains(w.Body.String(), `"quarantine":2`) || !strings.Contains(w.Body.String(), `"pending":1`) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"inbox":9`) || !strings.Contains(w.Body.String(), `"unread":5`) || !strings.Contains(w.Body.String(), `"quarantine":2`) || !strings.Contains(w.Body.String(), `"archive":4`) || !strings.Contains(w.Body.String(), `"pending":1`) {
 		t.Fatalf("summary status=%d body=%s", w.Code, w.Body.String())
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

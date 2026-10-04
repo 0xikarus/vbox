@@ -44,7 +44,7 @@ func (s *Store) loadMailSettings(ctx context.Context, accountID, boxID string) (
 }
 
 func (s *Store) mailSettingsCounts(ctx context.Context, accountID, boxID string, value *mailSettings) error {
-	if err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM mail_messages WHERE account_id=$1 AND box_id=$2 AND read_at IS NULL AND NOT quarantined AND expires_at>now()`, accountID, boxID).Scan(&value.Unread); err != nil {
+	if err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM mail_messages WHERE account_id=$1 AND box_id=$2 AND read_at IS NULL AND NOT quarantined AND archived_at IS NULL AND expires_at>now()`, accountID, boxID).Scan(&value.Unread); err != nil {
 		return err
 	}
 	return s.DB.QueryRowContext(ctx, `SELECT count(*) FROM mail_outbox WHERE account_id=$1 AND box_id=$2 AND status='pending_approval'`, accountID, boxID).Scan(&value.Pending)
@@ -192,7 +192,7 @@ func (s *Server) ownerMailMessages(w http.ResponseWriter, r *http.Request, p Pri
 	if folder == "" {
 		folder = "all"
 	}
-	if folder != "all" && folder != "unread" && folder != "quarantine" {
+	if folder != "all" && folder != "unread" && folder != "quarantine" && folder != "archive" {
 		writeError(w, 400, fmt.Errorf("invalid mail folder"))
 		return
 	}
@@ -202,7 +202,7 @@ func (s *Server) ownerMailMessages(w http.ResponseWriter, r *http.Request, p Pri
 		return
 	}
 	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT `+mailMessageFields+` FROM mail_messages WHERE account_id=$1 AND box_id=$2 AND expires_at>now()
-  AND (($3='all' AND NOT quarantined) OR ($3='unread' AND read_at IS NULL AND NOT quarantined) OR ($3='quarantine' AND quarantined))
+  AND (($3='all' AND NOT quarantined AND archived_at IS NULL) OR ($3='unread' AND read_at IS NULL AND NOT quarantined AND archived_at IS NULL) OR ($3='quarantine' AND quarantined) OR ($3='archive' AND NOT quarantined AND archived_at IS NOT NULL))
   AND ($4::timestamptz IS NULL OR (received_at,id::text)<($4::timestamptz,$5)) ORDER BY received_at DESC,id DESC LIMIT 51`, p.AccountID, box.ID, folder, nullableMailCursorTime(cursor.At), cursor.ID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("mail list unavailable"))
@@ -311,6 +311,35 @@ func (s *Server) ownerMailRead(w http.ResponseWriter, r *http.Request, p Princip
 		return
 	}
 	writeJSON(w, 200, map[string]any{"id": r.PathValue("mid"), "unread": unread})
+}
+
+func (s *Server) ownerMailArchive(w http.ResponseWriter, r *http.Request, p Principal) {
+	box, ok := s.ownerMailBox(w, r, p)
+	if !ok {
+		return
+	}
+	if !mailUUIDPattern.MatchString(r.PathValue("mid")) {
+		writeError(w, 404, fmt.Errorf("mail message unavailable"))
+		return
+	}
+	var request struct {
+		Archived *bool `json:"archived"`
+	}
+	if err := decodeJSON(r, &request); err != nil || request.Archived == nil {
+		writeError(w, 400, fmt.Errorf("archived must be true or false"))
+		return
+	}
+	var messageID string
+	err := s.Store.DB.QueryRowContext(r.Context(), `UPDATE mail_messages SET archived_at=CASE WHEN $4::bool THEN now() ELSE NULL END WHERE account_id=$1 AND box_id=$2 AND id=$3 AND expires_at>now() AND NOT quarantined RETURNING id::text`, p.AccountID, box.ID, r.PathValue("mid"), *request.Archived).Scan(&messageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, 404, fmt.Errorf("mail message unavailable"))
+		return
+	}
+	if err != nil {
+		writeError(w, 500, fmt.Errorf("mail archive unavailable"))
+		return
+	}
+	writeJSON(w, 200, map[string]any{"id": messageID, "archived": *request.Archived})
 }
 
 func (s *Server) ownerMailAttachment(w http.ResponseWriter, r *http.Request, p Principal) {

@@ -446,6 +446,7 @@ CREATE TABLE IF NOT EXISTS mail_messages (
   preview text NOT NULL DEFAULT '',
   received_at timestamptz NOT NULL DEFAULT now(),
   read_at timestamptz,
+  archived_at timestamptz,
   quarantined boolean NOT NULL DEFAULT false,
   spf text NOT NULL DEFAULT 'unknown',
   dkim text NOT NULL DEFAULT 'unknown',
@@ -456,6 +457,7 @@ CREATE TABLE IF NOT EXISTS mail_messages (
 CREATE INDEX IF NOT EXISTS mail_messages_box_received_idx ON mail_messages(account_id,box_id,received_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS mail_messages_unread_idx ON mail_messages(account_id,box_id,received_at DESC) WHERE read_at IS NULL AND NOT quarantined;
 ALTER TABLE mail_messages ALTER COLUMN box_id DROP NOT NULL;
+ALTER TABLE mail_messages ADD COLUMN IF NOT EXISTS archived_at timestamptz;
 ALTER TABLE mail_messages ADD COLUMN IF NOT EXISTS address_id uuid REFERENCES mail_addresses(id) ON DELETE SET NULL;
 UPDATE mail_messages SET address_id=box_id WHERE address_id IS NULL AND box_id IS NOT NULL;
 UPDATE mail_messages SET ingest_key=lower(envelope_to)||':'||ingest_key WHERE position(':' in ingest_key)=0;

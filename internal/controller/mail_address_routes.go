@@ -81,7 +81,7 @@ func (s *Server) ownerMailAddresses(w http.ResponseWriter, r *http.Request, p Pr
 		s.ownerMailAddressCreate(w, r, p)
 		return
 	}
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT a.id::text,a.local_part,a.address,a.label,COALESCE(a.owning_box_id::text,''),a.enabled,(SELECT count(*) FROM mail_messages m WHERE m.account_id=a.account_id AND m.address_id=a.id AND m.read_at IS NULL AND NOT m.quarantined AND m.expires_at>now()) FROM mail_addresses a WHERE a.account_id=$1 ORDER BY a.address`, p.AccountID)
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT a.id::text,a.local_part,a.address,a.label,COALESCE(a.owning_box_id::text,''),a.enabled,(SELECT count(*) FROM mail_messages m WHERE m.account_id=a.account_id AND m.address_id=a.id AND m.read_at IS NULL AND NOT m.quarantined AND m.archived_at IS NULL AND m.expires_at>now()) FROM mail_addresses a WHERE a.account_id=$1 ORDER BY a.address`, p.AccountID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("mail addresses unavailable"))
 		return
