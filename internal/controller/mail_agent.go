@@ -41,12 +41,8 @@ func (s *Server) agentMailAllowed(w http.ResponseWriter, r *http.Request, p Prin
 }
 
 func (s *Server) agentMailMessages(w http.ResponseWriter, r *http.Request, p Principal) {
-	tool := "list_emails"
 	query := strings.TrimSpace(r.URL.Query().Get("query"))
-	if query != "" {
-		tool = "search_emails"
-	}
-	if !s.agentMailAllowed(w, r, p, tool) {
+	if !s.agentMailAllowed(w, r, p, "list_emails") {
 		return
 	}
 	if len(query) > 200 {

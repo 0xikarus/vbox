@@ -61,6 +61,27 @@ func TestMailPanelListScopesAndSearchesAcrossBoxes(t *testing.T) {
 	}
 }
 
+func TestMailDetailSupportsAccountWideAndBoxScopedViews(t *testing.T) {
+	for _, boxID := range []string{"", panelTestBox} {
+		t.Run(map[bool]string{true: "account-wide", false: "box-scoped"}[boxID == ""], func(t *testing.T) {
+			store, mock := testStore(t)
+			rows := sqlmock.NewRows([]string{"id", "from", "from_name", "subject", "preview", "received", "unread", "attachments", "quarantined", "spf", "dkim", "text"}).
+				AddRow(panelTestMail, "sender@example.test", "Sender", "Subject", "Preview", time.Now().UTC(), true, false, false, "pass", "pass", "Body")
+			mock.ExpectQuery(`SELECT id::text,header_from,from_name,subject,preview,received_at,read_at IS NULL,has_attachments,quarantined,spf,dkim,text_body FROM mail_messages WHERE account_id=\$1 AND \(\$2='' OR box_id=NULLIF\(\$2,''\)::uuid\) AND id=\$3`).
+				WithArgs("account-a", boxID, panelTestMail).WillReturnRows(rows)
+			mock.ExpectQuery(`SELECT id::text,name,content_type,size_bytes FROM mail_attachments`).
+				WithArgs("account-a", panelTestMail).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "content_type", "size_bytes"}))
+			message, err := store.loadMailMessageDetail(t.Context(), "account-a", boxID, panelTestMail)
+			if err != nil || message.ID != panelTestMail || message.Text != "Body" {
+				t.Fatalf("detail=%+v err=%v", message, err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestMailPanelOtherAccountDetailIsHidden(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectQuery(`SELECT COALESCE\(m.box_id::text,''\).*WHERE m.account_id=\$1 AND m.id=\$2`).

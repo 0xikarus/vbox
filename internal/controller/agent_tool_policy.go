@@ -18,7 +18,7 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 	selected := map[string]bool{}
 	if capabilities.MCPTools.Enabled {
 		for _, name := range capabilities.MCPTools.AllowedTools {
-			selected[name] = true
+			selected[v1.CanonicalAgentMCPToolName(name)] = true
 		}
 	}
 	// Discovering valid creation settings is part of the create grant. Existing
@@ -34,7 +34,7 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 		selected["clear_agent_box_context"] = true
 		selected["compact_agent_box_context"] = true
 	}
-	readMail := []string{"list_mail_addresses", "list_emails", "read_email", "search_emails", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox"}
+	readMail := []string{"list_mail_addresses", "list_emails", "read_email", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox"}
 	for _, name := range readMail {
 		if selected[name] {
 			for _, companion := range readMail {
@@ -52,6 +52,12 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 		if selected[name] && toolCapabilityAllows(name, capabilities) {
 			allowed = append(allowed, name)
 		}
+	}
+	// Running boxes may still have a runtime whose list_emails schema cannot
+	// accept a query. Keep its separate search tool usable until that runtime
+	// is replaced; current runtimes ignore names they do not advertise.
+	if selected["list_emails"] && capabilities.Mail.Read {
+		allowed = append(allowed, "search_emails")
 	}
 	return allowed, nil
 }
@@ -74,7 +80,7 @@ func toolCapabilityAllows(name string, capabilities v1.AgentRoleCapabilities) bo
 		return capabilities.ManageAgentBoxes.Restart
 	case "delete_agent_box":
 		return capabilities.ManageAgentBoxes.Delete
-	case "list_mail_addresses", "list_emails", "read_email", "search_emails", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox":
+	case "list_mail_addresses", "list_emails", "read_email", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox":
 		return capabilities.Mail.Read
 	case "send_email", "list_outbox", "get_outbox_status":
 		return capabilities.Mail.Compose

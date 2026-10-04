@@ -236,7 +236,7 @@ func TestEffectiveAgentToolNamesRespectsExplicitComputerToolDeny(t *testing.T) {
 }
 
 func TestMailToolPolicyRequiresTypedGrantAndExpandsCompanions(t *testing.T) {
-	readSet := []string{"list_emails", "read_email", "search_emails", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox"}
+	readSet := []string{"list_mail_addresses", "list_emails", "read_email", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox"}
 	composeSet := []string{"send_email", "list_outbox", "get_outbox_status"}
 	for _, tc := range []struct {
 		name     string
@@ -247,7 +247,7 @@ func TestMailToolPolicyRequiresTypedGrantAndExpandsCompanions(t *testing.T) {
 		{"off by default", v1.MailGrant{}, []string{"read_email", "send_email"}, nil},
 		{"read grants read companions", v1.MailGrant{Read: true}, []string{"read_email", "send_email"}, readSet},
 		{"compose grants compose companions", v1.MailGrant{Compose: true}, []string{"send_email", "read_email"}, composeSet},
-		{"independent grants", v1.MailGrant{Read: true, Compose: true}, []string{"search_emails", "send_email"}, append(append([]string{}, readSet...), composeSet...)},
+		{"legacy search grant", v1.MailGrant{Read: true, Compose: true}, []string{"search_emails", "send_email"}, append(append([]string{}, readSet...), composeSet...)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store, mock := testStore(t)
@@ -262,6 +262,9 @@ func TestMailToolPolicyRequiresTypedGrantAndExpandsCompanions(t *testing.T) {
 				if slices.Contains(tools, name) != slices.Contains(tc.want, name) {
 					t.Fatalf("tool %s in %v, want %v", name, tools, tc.want)
 				}
+			}
+			if slices.Contains(tools, "search_emails") != tc.grant.Read {
+				t.Fatalf("legacy search visibility in %v, read grant=%v", tools, tc.grant.Read)
 			}
 			if slices.Contains(tools, "set_busy") {
 				t.Fatalf("retired tool was granted: %v", tools)

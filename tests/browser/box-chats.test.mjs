@@ -379,6 +379,83 @@ test('phone hold then move drags a chat into a group without opening its menu; a
  },{initialLayout});
 });
 
+test('phone list swipe returns to the active chat from group and section headers, menu buttons, and empty space',async()=>{
+ const initialLayout={exists:true,groups:[{id:'projects',name:'Projects',collapsed:false}],members:{['box:'+a]:'projects'},pins:[],mutes:{},sections:{}};
+ await withChat(async(browser,base)=>{
+  const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  await page.goto(base+'/chat#box='+a);
+  await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'));
+  const back=async()=>{await page.click('#chat-back');await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));await new Promise(resolve=>setTimeout(resolve,280))};
+  const center=selector=>page.$eval(selector,node=>{const r=node.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}});
+  await back();
+  const captures=process.env.VMBOX_CHAT_HEADER_SWIPE_CAPTURES;
+  if(captures){await mkdir(captures,{recursive:true});await page.screenshot({path:captures+'/01-list.png'})}
+  for(const [label,selector] of [['custom group toggle','.chat-folder-toggle'],['custom group menu','.chat-folder-menu'],['Chats toggle','[data-section="boxes"] .section-toggle'],['Chats menu','[data-section="boxes"] .header-menu-button'],['Box conversations toggle','[data-section="pairs"] .section-toggle'],['Box conversations menu','[data-section="pairs"] .header-menu-button']]){
+   const point=await center(selector);
+   await page.touchscreen.touchStart(point.x,point.y);
+   await page.touchscreen.touchMove(point.x-50,point.y);
+   if(captures&&label==='custom group menu')await page.screenshot({path:captures+'/02-menu-swipe.png'});
+   await page.touchscreen.touchMove(30,point.y);
+   await page.touchscreen.touchEnd();
+   await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'),{timeout:2500});
+   assert.equal(new URL(page.url()).hash,'#box='+a,label+' returns to the active chat');
+   assert.equal(await page.$eval('#row-menu',menu=>menu.hidden),true,label+' swipe does not open the menu');
+   if(captures&&label==='custom group menu')await page.screenshot({path:captures+'/03-chat.png'});
+   await back();
+  }
+  const empty=await page.$eval('#chat-entries',node=>{const r=node.getBoundingClientRect();return{x:r.right-30,y:r.bottom-40}});
+  assert.equal(await page.evaluate(({x,y})=>document.elementFromPoint(x,y)?.id,empty),'chat-entries','swipe starts on empty list space');
+  await page.touchscreen.touchStart(empty.x,empty.y);
+  await page.touchscreen.touchMove(empty.x-70,empty.y);
+  await page.touchscreen.touchMove(30,empty.y);
+  await page.touchscreen.touchEnd();
+  await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'),{timeout:2500});
+  await back();
+  const expanded=await page.$eval('.chat-folder-toggle',button=>button.getAttribute('aria-expanded'));
+  const group=await center('.chat-folder-toggle');await page.touchscreen.tap(group.x,group.y);
+  await page.waitForFunction(before=>document.querySelector('.chat-folder-toggle').getAttribute('aria-expanded')!==before,{},expanded);
+  assert.equal(await page.$eval('.chat-folder-toggle',button=>button.getAttribute('aria-expanded')),expanded==='true'?'false':'true','tap still toggles the group');
+  const menu=await center('.chat-folder-menu');await page.touchscreen.tap(menu.x,menu.y);
+  await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  assert.equal(await page.$eval('#chat-app',app=>app.classList.contains('in-chat')),false,'menu tap does not navigate');
+  await page.keyboard.press('Escape');await page.waitForFunction(()=>document.querySelector('#row-menu').hidden);
+  await page.setViewport({width:360,height:780,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  const narrow=await center('.chat-folder-menu');
+  await page.touchscreen.touchStart(narrow.x,narrow.y);
+  await page.touchscreen.touchMove(30,narrow.y);
+  await page.touchscreen.touchEnd();
+  await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'),{timeout:2500});
+  assert.equal(new URL(page.url()).hash,'#box='+a,'the header swipe also works at 360 px');
+  await page.close();
+ },{initialLayout});
+});
+
+test('a vertical touch from a group header scrolls the list; an armed row drag owns its touch',async()=>{
+ const initialLayout={exists:true,groups:[{id:'projects',name:'Projects',collapsed:false}],members:{['box:'+a]:'projects'},pins:[],mutes:{},sections:{}};
+ const extraBoxes=Array.from({length:14},(_,i)=>({id:'extra-'+i,name:'Extra '+i,state:'running',defaultAgent:'claude',provider:'railway'}));
+ await withChat(async(browser,base)=>{
+  const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  await page.goto(base+'/chat#box='+a);await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'));
+  await page.click('#chat-back');await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
+  const point=await page.$eval('.chat-folder-toggle',node=>{const r=node.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}});
+  await page.touchscreen.touchStart(point.x,point.y);
+  await page.touchscreen.touchMove(point.x,point.y-50);
+  await page.touchscreen.touchMove(point.x,point.y-110);
+  await page.touchscreen.touchEnd();
+  await page.waitForFunction(()=>document.querySelector('#chat-entries').scrollTop>0);
+  assert.equal(await page.$eval('#chat-app',app=>app.classList.contains('in-chat')),false,'vertical scroll does not navigate');
+  await page.$eval('[data-box-id="'+a+'"]',node=>node.scrollIntoView({block:'center'}));
+  const row=await page.$eval('[data-box-id="'+a+'"]',node=>{const r=node.getBoundingClientRect();return{x:r.right-20,y:r.top+r.height/2}});
+  await page.touchscreen.touchStart(row.x,row.y);
+  await new Promise(resolve=>setTimeout(resolve,520));
+  await page.touchscreen.touchMove(row.x-70,row.y);
+  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"]').classList.contains('touch-chat-dragging'),{},a);
+  assert.equal(await page.$eval('#chat-app',app=>app.classList.contains('in-chat')),false,'armed row drag prevents a list swipe');
+  await page.touchscreen.touchEnd();
+  await page.close();
+ },{initialLayout,extraBoxes});
+});
+
 test('chat groups combine unread indicators, accept dragged chats, and persist collapse state',async()=>{
  await withChat(async(browser,base)=>{
   const page=await browser.newPage();await page.setViewport({width:1200,height:800});
