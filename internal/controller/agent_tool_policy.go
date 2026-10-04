@@ -53,6 +53,12 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 			allowed = append(allowed, name)
 		}
 	}
+	// Running boxes may still have a runtime whose list_emails schema cannot
+	// accept a query. Keep its separate search tool usable until that runtime
+	// is replaced; current runtimes ignore names they do not advertise.
+	if selected["list_emails"] && capabilities.Mail.Read {
+		allowed = append(allowed, "search_emails")
+	}
 	return allowed, nil
 }
 
