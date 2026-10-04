@@ -2303,20 +2303,50 @@
   updateBanner();
  }
  matchMedia('(max-width:600px)').addEventListener('change',()=>{if(selected)renderHeader()});
- // One banner for the two things that silently confuse people: a dropped
- // connection, and an agent that looks stuck on the last request.
+ // A busy flag says the agent has a task, not whether it is making progress.
+ // Use only evidence from this turn; a quiet heartbeat is explicitly not work.
+ function deriveStallHint(box,now,pendingAt=''){
+  if(box.activityState!=='working')return null;
+  const stamp=value=>{const time=Date.parse(value||'');return Number.isFinite(time)&&time<=now?time:0};
+  const messages=box.messages||[];
+  const latestUser=messages.filter(message=>message.direction==='user').reduce((latest,message)=>Math.max(latest,stamp(message.updatedAt||message.createdAt)),0);
+  const started=Math.max(stamp(box.agentBusySince),latestUser,stamp(pendingAt));
+  if(!started)return null;
+  let lastActivity=started;
+  for(const message of messages)lastActivity=Math.max(lastActivity,stamp(message.updatedAt||message.createdAt));
+  lastActivity=Math.max(lastActivity,stamp(box.lastActivityPhraseAt));
+  if(box.activityStatusSource!=='quiet')lastActivity=Math.max(lastActivity,stamp(box.lastMascotObservedAt),stamp(box.mascotObservedAt));
+  if(box.streaming)lastActivity=now;
+  const workingMs=Math.max(0,now-started),inactiveMs=Math.max(0,now-lastActivity);
+  if(inactiveMs>=10*60*1000)return {kind:'stalled',workingMs,inactiveMs};
+  if(workingMs>=15*60*1000)return {kind:'working',workingMs,inactiveMs};
+  return null;
+ }
+ const elapsedLabel=ms=>{const minutes=Math.floor(ms/60000);return minutes>=60?Math.floor(minutes/60)+' h '+String(minutes%60).padStart(2,'0')+' min':minutes+' min'};
+ // One banner for dropped connections, wake guidance, and agent liveness.
  const chatBanner=$('#chat-banner');
  let reconnecting=false,bannerShown='';
- function setBanner(text){if(text===bannerShown)return;bannerShown=text;chatBanner.textContent=text;chatBanner.hidden=!text}
+ function setBanner(text,kind='',actions=false){
+  const key=[text,kind,actions].join('|');if(key===bannerShown)return;
+  bannerShown=key;chatBanner.hidden=!text;chatBanner.dataset.kind=kind;
+  const label=mk('span',text);label.className='chat-banner-text';chatBanner.replaceChildren(label);
+  if(!actions)return;
+  const buttons=mk('span');buttons.className='chat-banner-actions';
+  for(const [name,run] of [
+   ['Interrupt',()=>$('#chat-interrupt').click()],
+   ['Open terminal',()=>$('#chat-header-terminal').click()],
+   ['Restart',()=>{const box=boxes.get(selected);if(box&&owner)void restartBox(box)}],
+  ]){const button=mk('button',name);button.type='button';button.onclick=run;buttons.append(button)}
+  chatBanner.append(buttons);
+ }
  function updateBanner(){
   if(reconnecting)return setBanner('Reconnecting to the controller…');
   const box=boxes.get(selected);if(!box)return setBanner('');
   if(canWakeBox(box))return setBanner('This box is '+box.state+'. Wake it to chat again. Files and chat history are saved; the agent starts a fresh live session.');
-  const last=[...(box.messages||[])].reverse().find(m=>m.direction==='user');
-  const started=box.agentBusySince||(last&&(last.updatedAt||last.createdAt));
-  const elapsed=started?Date.now()-new Date(started).getTime():0;
-  const stalled=box.processing&&elapsed>5*60*1000;
-  setBanner(stalled?'Agent has been processing for '+Math.round(elapsed/60000)+' min — it may be stalled.':'');
+  const hint=deriveStallHint(box,Date.now(),pendingSends.get(box.id)?.at);
+  if(hint?.kind==='stalled')return setBanner('No activity for '+elapsedLabel(hint.inactiveMs)+' — the agent may be stuck','stalled',owner);
+  if(hint?.kind==='working')return setBanner('Working for '+elapsedLabel(hint.workingMs)+' · last activity '+(hint.inactiveMs<60000?'just now':elapsedLabel(hint.inactiveMs)+' ago'),'working');
+  setBanner('');
  }
  async function refreshMessages(force){
   if(!selected)return;

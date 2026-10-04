@@ -1654,6 +1654,12 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 /* 3. stalled pill: real clock icon, solid background, in flow */
 #chat-banner:not([hidden]){position:static;background:var(--vb-bg);border:0;margin:6px 12px;padding:.3rem .7rem;justify-content:center}
 #chat-banner:not([hidden])::before{content:'';width:.85rem;height:.85rem;flex:none;background:currentColor;opacity:.6;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E") center/contain no-repeat}
+#chat-banner[data-kind="working"]{color:var(--vb-ink-soft)}
+#chat-banner[data-kind="stalled"]{background:var(--vb-warn-soft);color:var(--vb-warn-text);flex-wrap:wrap}
+#chat-banner .chat-banner-actions{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:.35rem}
+#chat-banner .chat-banner-actions button{min-height:40px;padding:.45rem .7rem;border:1px solid currentColor;border-radius:var(--r-control);background:transparent;color:inherit;font:inherit;font-weight:650;cursor:pointer}
+#chat-banner .chat-banner-actions button:hover{background:color-mix(in srgb,currentColor 10%,transparent)}
+@media(max-width:600px){#chat-banner[data-kind="stalled"]{align-items:stretch;text-align:left}#chat-banner[data-kind="stalled"]::before{display:none}#chat-banner .chat-banner-text{flex-basis:100%}#chat-banner .chat-banner-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%}#chat-banner .chat-banner-actions button{padding:.4rem .25rem}}
 
 /* 4. rail action row: 4 equal columns, no label collisions */
 .inspect-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.2rem;padding:.9rem .5rem .4rem}
