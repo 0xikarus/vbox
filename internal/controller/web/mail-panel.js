@@ -252,7 +252,7 @@ window.VBoxMailPanel=(()=>{
   async function refreshPending(){
    if(!state.owner||!state.available||document.hidden)return;
    await summary(false,false);
-   if(location.hash==='#mail'&&state.folder==='outbox'&&state.summary&&!review.open)void loadList(false,true);
+   if(location.hash==='#mail'&&state.folder==='outbox'&&state.summary&&!state.loading&&!review.open)void loadList(false,true);
   }
   navigator.serviceWorker?.addEventListener('message',event=>{if(event.data?.type==='vmbox-push')refreshPending()});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshPending()});
