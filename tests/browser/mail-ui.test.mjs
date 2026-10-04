@@ -29,7 +29,7 @@ function fixture(){return {
   {id:'other-box',address:'reviewer@example.test',localPart:'reviewer',owningBoxId:'reviewer',primary:true,boxIds:['reviewer','builder']},
   {id:'available-1',address:'shared@example.test',localPart:'shared',label:'Shared',boxIds:['reviewer']},
  ],
- writes:[],
+ writes:[],notices:[],
  } }
 async function serve(data,{disabled=false,role='owner'}={}){
  const server=http.createServer(async(request,response)=>{
@@ -38,6 +38,11 @@ async function serve(data,{disabled=false,role='owner'}={}){
    response.setHeader('Content-Type','application/json');
    const send=(value,status=200)=>{response.statusCode=status;response.end(JSON.stringify(value))};
    const body=async()=>{let text='';for await(const chunk of request)text+=chunk;return text?JSON.parse(text):{}};
+   if(path==='/v1/agent-desktop/mail/outbox'&&request.method==='POST'){
+    const value=await body(),item={outboxId:'agent-'+(data.outbox.length+1),to:value.to,from:value.from||data.settings.address,subject:value.subject,text:value.text,status:'pending_approval',version:1,submittedAt:new Date().toISOString()};
+    data.outbox.unshift(item);data.settings.pending++;data.notices.push({id:'draft-'+item.outboxId,direction:'system',text:'Draft pending',createdAt:item.submittedAt,mail:{kind:'outbox_status',outboxId:item.outboxId,to:item.to.join(', '),subject:item.subject,status:item.status}});
+    return send({outboxId:item.outboxId,status:item.status},202);
+   }
    if(path==='/v1/whoami')return send({role,accountId:'acct'});
    if(path==='/v1/logical-boxes'||path==='/v1/grid-boxes')return send([box]);
    if(path==='/v1/mail/approvals')return disabled?send({error:'Mail disabled'},404):send({pending:data.outbox.filter(item=>item.status==='pending_approval').length,items:data.outbox.filter(item=>item.status==='pending_approval').map(item=>({boxId:'builder',boxName:'BossDev',outboxId:item.outboxId,to:item.to,subject:item.subject,createdAt:item.submittedAt}))});
@@ -77,11 +82,12 @@ async function serve(data,{disabled=false,role='owner'}={}){
     if(request.method==='PUT'){data.policy=await body();data.writes.push({path,method:'PUT',body:data.policy})}
     return send(data.policy);
    }
-   if(path==='/v1/logical-boxes/builder/messages')return send([{id:'n1',direction:'system',text:'3 new mails',createdAt:stamp,mail:{kind:'mail_batch',items:data.messages.slice(0,2).map(({id,from,fromName,subject,preview,quarantined})=>({id,from,fromName,subject,preview,quarantined})),more:1}},{id:'n2',direction:'system',text:'Draft pending',createdAt:stamp,mail:{kind:'outbox_status',outboxId:'o1',to:'mara@example.com',subject:'Launch checklist',status:'pending_approval'}}]);
+   if(path==='/v1/logical-boxes/builder/messages')return send([{id:'n1',direction:'system',text:'3 new mails',createdAt:stamp,mail:{kind:'mail_batch',items:data.messages.slice(0,2).map(({id,from,fromName,subject,preview,quarantined})=>({id,from,fromName,subject,preview,quarantined})),more:1}},{id:'n2',direction:'system',text:'Draft pending',createdAt:stamp,mail:{kind:'outbox_status',outboxId:'o1',to:'mara@example.com',subject:'Launch checklist',status:'pending_approval'}},...data.notices]);
    const other={'/v1/box-activity':[],'/v1/box-conversations':[],'/v1/tool-presets':[],'/v1/chat-commands':[],'/v1/logical-boxes/builder/imported-credentials':{profiles:[]},'/v1/logical-boxes/builder/contacts':[],'/v1/login-profiles':[],'/v1/logical-boxes/builder/idle-policy':{seconds:10800},'/v1/logical-boxes/builder/run-budget-policy':{seconds:0,state:'running'},'/v1/logical-boxes/builder/attachment-storage':{boxBytes:0,boxCount:0,clearableCount:0,accountBytes:0,limitBytes:1024**3},'/v1/logical-boxes/builder/resources':{slotId:'slot-1',assignmentGeneration:3,resources:{cpu:2,memoryMiB:4096,swapMiB:1024,diskGiB:20}},'/v1/fleet/host-resources':{},'/v1/fleet/status':{slots:[{id:'slot-1',serviceName:'Worker 1',serviceId:'worker-1'}]}};
    if(path==='/v1/push/vapid-key')return send({},404);
    return send(other[path]??{});
   }
+  if(process.env.VMBOX_REAL_UI_ORIGIN){const upstream=await fetch(new URL(request.url,process.env.VMBOX_REAL_UI_ORIGIN));response.statusCode=upstream.status;response.setHeader('Content-Type',upstream.headers.get('content-type')||'application/octet-stream');response.end(Buffer.from(await upstream.arrayBuffer()));return}
   const file=path==='/chat'?'chat.html':path==='/'?'index.html':path.slice(1);
   if(file.includes('..')){response.statusCode=404;response.end();return}
   try{response.setHeader('Content-Type',types[extname(file)]||'application/octet-stream');response.end(await readFile(resolve(web,file)))}catch{response.statusCode=404;response.end()}
@@ -90,6 +96,30 @@ async function serve(data,{disabled=false,role='owner'}={}){
 }
 const browser=()=>puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 async function open(page,base,beforeDetails){await page.goto(base+'/chat#box=builder');await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden&&document.querySelector('#chat-loading').hidden);await page.waitForFunction(()=>document.querySelector('#mail-approval')&&!document.querySelector('#mail-approval').hidden);if(beforeDetails)await beforeDetails();await page.click('#chat-info');await page.waitForFunction(()=>document.querySelector('[data-ip-row="mail"]')&&!document.querySelector('[data-ip-row="mail"]').hidden)}
+
+test('new agent draft refreshes the open box Outbox and approvals badge',async()=>{
+ const capture=process.env.MAIL_CAPTURE_DIR;if(capture)await mkdir(capture,{recursive:true});
+ for(const width of [390,1440])for(const theme of ['light','dark']){
+  const data=fixture();data.outbox=[];data.settings.pending=0;
+  const server=await serve(data),chrome=await browser();
+  try{
+   const page=await chrome.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+   await page.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
+   await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
+   await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden&&document.querySelector('#chat-loading').hidden);
+   await page.click('#chat-info');await page.waitForSelector('[data-ip-row="mail"]:not([hidden])');await page.click('[data-ip-row="mail"]');
+   await page.click('[data-mail-tab="outbox"]');await page.waitForFunction(()=>document.querySelector('.mail-empty.compact')?.textContent.includes('No mail'));
+   if(capture)await page.screenshot({path:resolve(capture,`pending-before-${width}-${theme}.png`),fullPage:true});
+   const submitted=await page.evaluate(async()=>{const response=await fetch('/v1/agent-desktop/mail/outbox',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:['owner@example.net'],from:'shared@example.test',subject:'Agent approval draft',text:'Please approve this draft.',idempotencyKey:'browser-pending'})});return response.status});
+   assert.equal(submitted,202);
+   await page.waitForSelector('[data-outbox-id="agent-1"]',{timeout:10000});
+   await page.waitForFunction(()=>document.querySelector('#mail-approval b')?.textContent==='1',{timeout:10000});
+   assert.equal(await page.$eval('[data-outbox-tab="pending_approval"]',node=>node.getAttribute('aria-selected')),'true');
+   if(capture)await page.screenshot({path:resolve(capture,`pending-after-${width}-${theme}.png`),fullPage:true});
+   assert.deepEqual(errors,[]);await page.close();
+  }finally{await chrome.close();await new Promise(done=>server.close(done))}
+ }
+});
 
 test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permissions',async()=>{
  const capture=process.env.MAIL_CAPTURE_DIR;if(capture)await mkdir(capture,{recursive:true});

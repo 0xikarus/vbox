@@ -2320,6 +2320,7 @@
   const known=box.historyLoaded?new Set((box.messages||[]).map(message=>message.id)):null;
   const hasNewReply=known&&latest.some(message=>countsAsUnread(message)&&!known.has(message.id));
   const hasNewTurn=known&&latest.some(message=>(message.direction==='user'||message.direction==='agent')&&!known.has(message.id));
+  if(known&&latest.some(message=>!known.has(message.id)&&message.mail?.kind==='outbox_status'))inspectMail?.refreshDrafts();
   applyBusyState(box,history,hasNewTurn);
   if(box.historyLoaded){
    const merged=new Map((box.messages||[]).map(message=>[message.id,message]));
@@ -4209,7 +4210,7 @@ function pairTileStatus(tile,mode,label){
  pushCheck.onclick=()=>void checkPushState({repair:true});
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!appEl.hidden)void checkPushState({repair:true})});
  navigator.serviceWorker?.addEventListener('message',event=>{
-  if(event.data?.type==='vmbox-push'){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(document.hidden)return;void refreshMessages();void refreshPairMessages();void loadBoxes(true)},250)}
+  if(event.data?.type==='vmbox-push'){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(document.hidden)return;void refreshMessages();void refreshPairMessages();void loadBoxes(true);inspectMail?.refreshDrafts()},250)}
   if(event.data?.type==='vmbox-open'&&event.data.url){const url=new URL(event.data.url,location.origin);if(url.hash!==location.hash)location.hash=url.hash}
  });
 

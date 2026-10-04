@@ -136,11 +136,11 @@ window.VBoxMailPanel=(()=>{
    try{const result=await request('/v1/mail/summary');if(!state.owner)return;state.available=true;state.summary={...result,boxes:Array.isArray(result.boxes)?result.boxes:[]};state.summaryError='';showNav();renderFolders();if(refreshAddresses)void loadAddresses();if(reload&&location.hash==='#mail')void loadList()}
    catch(error){if(!state.owner)return;state.available=error.status!==404;state.summary=error.status===404?{}:null;state.summaryError=errorText(error);showNav();if(state.available){folders.innerHTML=`<div class="mail-panel-state" role="alert">${esc(state.summaryError)}<button type="button" data-action="retry-summary">Retry</button></div>`}}
   }
-  async function loadList(append=false){
+  async function loadList(append=false,preserve=false){
    if(!state.available||!state.owner)return;
    const seq=++state.sequence,folder=state.folder,box=state.box,address=state.address,q=state.q,status=state.status;
    const searchFocused=document.activeElement?.matches('.mail-panel-search input');
-   state.loading=true;state.error='';if(!append){state.items=[];state.checked.clear();state.cursor='';state.selected=null;state.detail=null}render();
+   state.loading=true;state.error='';if(!append&&!preserve){state.items=[];state.checked.clear();state.cursor='';state.selected=null;state.detail=null}render();
    if(searchFocused){const input=list.querySelector('.mail-panel-search input');input?.focus({preventScroll:true});input?.setSelectionRange(input.value.length,input.value.length)}
    const params=new URLSearchParams();if(box)params.set('box',box);if(address&&folder!=='outbox')params.set('address',address);
    if(folder==='outbox'){params.set('status',status)}else{params.set('folder',folder);if(q)params.set('q',q)}
@@ -150,7 +150,12 @@ window.VBoxMailPanel=(()=>{
     if(seq!==state.sequence||box!==state.box||address!==state.address||folder!==state.folder||q!==state.q||status!==state.status)return;
     const items=Array.isArray(result.items)?result.items:Array.isArray(result.messages)?result.messages:[];
     state.items=append?[...state.items,...items]:items;state.cursor=result.nextCursor||'';
-    if(!append&&innerWidth>600&&items.length)void openItem(folder==='outbox'?items[0].outboxId:items[0].id,false);
+    if(preserve&&state.selected){
+     const selected=items.find(item=>(folder==='outbox'?item.outboxId:item.id)===state.selected.key);
+     if(selected&&folder==='outbox')state.detail=selected;
+     else if(!selected){state.selected=null;state.detail=null;if(state.mobilePage==='detail')state.mobilePage='list'}
+     renderDetail();root.dataset.mobilePage=state.mobilePage;
+    }else if(!append&&innerWidth>600&&items.length)void openItem(folder==='outbox'?items[0].outboxId:items[0].id,false);
    }catch(error){if(seq===state.sequence)state.error=errorText(error)}
    finally{if(seq===state.sequence){state.loading=false;renderList()}}
   }
@@ -243,7 +248,16 @@ window.VBoxMailPanel=(()=>{
   root.addEventListener('change',event=>{const input=event.target.closest('.mail-panel-row-check');if(!input)return;if(input.checked)state.checked.add(input.dataset.select);else state.checked.delete(input.dataset.select);renderList()});
   root.addEventListener('input',event=>{if(!event.target.matches('.mail-panel-search input'))return;state.q=event.target.value;clearTimeout(searchTimer);searchTimer=setTimeout(()=>void loadList(),250)});
   function setOwner(value){state.owner=!!value;if(!state.owner){state.available=false;state.summary=null;showNav();closeReview();return}void summary()}
-  function onRoute(){if(location.hash==='#mail'&&state.owner&&state.available){render();void loadList()}}
+  function onRoute(){if(location.hash==='#mail'&&state.owner&&state.available){render();void summary(true,false)}}
+  async function refreshPending(){
+   if(!state.owner||!state.available||document.hidden)return;
+   await summary(false,false);
+   if(location.hash==='#mail'&&state.folder==='outbox'&&state.summary&&!state.loading&&!review.open)void loadList(false,true);
+  }
+  navigator.serviceWorker?.addEventListener('message',event=>{if(event.data?.type==='vmbox-push')refreshPending()});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshPending()});
+  window.addEventListener('focus',refreshPending);
+  setInterval(refreshPending,15000);
   renderFolders();renderList();renderDetail();
   return {setOwner,onRoute};
  }

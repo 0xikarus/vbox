@@ -25,6 +25,10 @@ async function serve(data,{disabled=false,role='owner'}={}){
   if(path.startsWith('/v1/')){
    response.setHeader('Content-Type','application/json');const send=(value,status=200)=>{response.statusCode=status;response.end(JSON.stringify(value))};
    const body=async()=>{let raw='';for await(const chunk of request)raw+=chunk;return raw?JSON.parse(raw):{}};
+   if(path==='/v1/agent-desktop/mail/outbox'&&request.method==='POST'){
+    const value=await body(),item={outboxId:'agent-'+(data.outbox.length+1),boxId:'builder',boxName:'BossDev',to:value.to,from:value.from||'builder@example.test',subject:value.subject,text:value.text,status:'pending_approval',version:1,submittedAt:new Date().toISOString()};
+    data.outbox.unshift(item);return send({outboxId:item.outboxId,status:item.status},202);
+   }
    if(path==='/v1/whoami')return send({role,accountId:'acct'});
    if(path==='/v1/capabilities')return send({providerEdits:role==='owner'});
    if(path==='/v1/logical-boxes'||path==='/v1/grid-boxes')return send(boxes);
@@ -75,6 +79,7 @@ async function serve(data,{disabled=false,role='owner'}={}){
    if(draft){const item=data.outbox.find(item=>item.outboxId===draft[2]&&item.boxId===draft[1]);if(!item)return send({error:'missing'},404);if(request.method==='GET')return send(item);const value=await body();data.writes.push({path,method:request.method,body:value});if(value.version!==item.version)return send({error:'changed'},409);if(draft[3]==='approve')item.status='sent';else if(draft[3]==='reject'){item.status='rejected';item.reason=value.reason}else{Object.assign(item,value);item.version++}return send(item)}
    return send({});
   }
+  if(process.env.VMBOX_REAL_UI_ORIGIN){const upstream=await fetch(new URL(request.url,process.env.VMBOX_REAL_UI_ORIGIN));response.statusCode=upstream.status;response.setHeader('Content-Type',upstream.headers.get('content-type')||'application/octet-stream');response.end(Buffer.from(await upstream.arrayBuffer()));return}
   const file=path==='/'?'index.html':path==='/chat'?'chat.html':path.slice(1);if(file.includes('..')){response.statusCode=404;response.end();return}
   try{response.setHeader('Content-Type',types[extname(file)]||'application/octet-stream');response.end(await readFile(resolve(web,file)))}catch{response.statusCode=404;response.end()}
  });
@@ -83,6 +88,35 @@ async function serve(data,{disabled=false,role='owner'}={}){
 const browser=()=>puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const base=server=>'http://127.0.0.1:'+server.address().port;
 async function open(page,server){await page.goto(base(server)+'/#mail');await page.waitForFunction(()=>!document.querySelector('#mail').hidden&&document.querySelector('#mail-panel [data-folder="all"]'));await page.waitForSelector('.mail-panel-row');await page.waitForSelector('[data-address="b@example.test"]')}
+
+test('agent draft appears in the live Mail panel Outbox for all boxes and its box filter',async()=>{
+ const capture=process.env.MAIL_PANEL_CAPTURE_DIR;if(capture)await mkdir(capture,{recursive:true});
+ for(const width of [390,1440])for(const theme of ['light','dark']){
+  const data=fixture();data.outbox=[];
+  const server=await serve(data),chrome=await browser();
+  try{
+   const page=await chrome.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+   await page.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
+   await page.goto(base(server)+'/?mail=outbox#mail');
+   await page.waitForSelector('#mail-panel [data-folder="outbox"]');
+   if(width===390)await page.click('#mail-panel [data-folder="outbox"]');
+   await page.waitForFunction(()=>document.querySelector('.mail-panel-list-scroll')?.textContent.includes('No drafts'));
+   if(capture)await page.screenshot({path:resolve(capture,`pending-before-${width}-${theme}.png`),fullPage:true});
+   const status=await page.evaluate(async()=>{const response=await fetch('/v1/agent-desktop/mail/outbox',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:['owner@example.net'],from:'shared@example.test',subject:'Agent approval draft',text:'Please approve this draft.',idempotencyKey:'browser-pending'})});return response.status});
+   assert.equal(status,202);
+   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+   await page.waitForSelector('.mail-panel-row[data-item="agent-1"]');
+   await page.waitForFunction(()=>document.querySelector('[data-folder="outbox"] b')?.textContent==='1');
+   if(capture)await page.screenshot({path:resolve(capture,`pending-after-${width}-${theme}.png`),fullPage:true});
+   if(width===390)await page.click('[data-back="folders"]');
+   await page.click('[data-box="builder"]');await page.waitForSelector('.mail-panel-row[data-item="agent-1"]');
+   assert(data.queries.some(path=>path.includes('/v1/mail/outbox?')&&path.includes('box=builder')));
+   if(width===390)await page.click('[data-back="folders"]');
+   await page.click('[data-box="reviewer"]');await page.waitForFunction(()=>document.querySelector('.mail-panel-list-scroll')?.textContent.includes('No drafts'));
+   assert.deepEqual(errors,[]);await page.close();
+  }finally{await chrome.close();await new Promise(done=>server.close(done))}
+ }
+});
 
 test('account Mail panel supports folders, search, message detail, quarantine and drafts at 390/1440 in both themes',async()=>{
  const capture=process.env.MAIL_PANEL_CAPTURE_DIR;if(capture)await mkdir(capture,{recursive:true});
