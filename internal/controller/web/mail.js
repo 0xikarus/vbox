@@ -238,7 +238,13 @@
   mailPage.setAttribute('aria-busy',String(state.messagesLoading||state.outboxLoading||state.settingsSaving));
   if(!state.settings){mailPage.innerHTML='<div class="mail-empty"><strong>Loading Mail…</strong></div>';return}
   if(!mailPage.querySelector('.mail-messages-section'))mailPage.innerHTML='<div class="mail-summary-slot"></div><div class="mail-messages-section"><div class="mail-main-tabs" role="tablist" aria-label="Mail folders"><button type="button" role="tab" data-mail-tab="inbox">Inbox <span></span></button><button type="button" role="tab" data-mail-tab="outbox">Outbox <span></span></button></div><div class="mail-content"></div><a class="mail-show-all">Show all in Mail ›</a></div><div class="mail-address-slot"></div><div class="mail-agent-slot"></div><div class="mail-receiving-slot"></div>';
-  const update=(selector,html)=>{const node=mailPage.querySelector(selector);if(node.innerHTML!==html)node.innerHTML=html};
+  const update=(selector,html)=>{
+   const node=mailPage.querySelector(selector);if(node._mailTemplate===html)return;
+   const input=selector==='.mail-address-slot'&&document.activeElement?.id==='mail-address-combobox'?document.activeElement:null;
+   const selection=input?[input.selectionStart,input.selectionEnd]:null;
+   node.innerHTML=html;node._mailTemplate=html;
+   if(input){const next=node.querySelector('#mail-address-combobox');next?.focus();if(next&&selection[0]!==null)next.setSelectionRange(...selection)}
+  };
   update('.mail-summary-slot',renderHeader());
   for(const tab of mailPage.querySelectorAll('[data-mail-tab]')){tab.setAttribute('aria-selected',String(tab.dataset.mailTab===state.tab));tab.querySelector('span').textContent=String(tab.dataset.mailTab==='inbox'?count():pending())}
   update('.mail-content',state.tab==='inbox'?renderInbox():renderOutbox());
