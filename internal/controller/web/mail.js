@@ -199,11 +199,17 @@
  function renderAddresses(){
   const own=state.addresses.find(item=>item.owningBoxId===state.boxId),ownAddress=own?.address||state.settings?.address||'Assigned when enabled';
   const granted=state.addresses.filter(item=>item.owningBoxId!==state.boxId&&(item.boxIds||[]).includes(state.boxId));
-  const suggested=state.addresses.filter(item=>item.owningBoxId!==state.boxId&&!(item.boxIds||[]).includes(state.boxId)).slice(0,4);
+  const domain=state.settings?.address?.split('@')[1]||'example.test';
+  const suggested=state.addresses.filter(item=>item.owningBoxId!==state.boxId&&!(item.boxIds||[]).includes(state.boxId)).slice(0,4).map(item=>({address:item.address,id:item.id}));
+  for(const local of ['team','support','contact','billing']){
+   if(suggested.length>=4)break;
+   const address=local+'@'+domain;
+   if(!state.addresses.some(item=>item.address.toLowerCase()===address))suggested.push({address,local});
+  }
   const ownRow=`<div class="mail-address-granted mail-address-own"><span><strong>${esc(ownAddress)}</strong><small>This box’s address · always available</small></span><span class="mail-address-fixed">Own</span></div>`;
   const rows=granted.map(item=>`<div class="mail-address-granted"><span><strong>${esc(item.address)}</strong><small>${esc(item.label|| (item.owningBoxId?'Shared from another box':'Shared address'))}</small></span><button type="button" data-mail-action="remove-address" data-address-id="${esc(item.id)}" aria-label="Remove ${esc(item.address)}" title="Remove access" ${state.addressSaving?'disabled':''}>×</button></div>${state.labelAddressId===item.id?`<form class="mail-address-label-form"><label>Label (optional)<input name="label" maxlength="100" placeholder="Team inbox" value="${esc(item.label||'')}"></label><button type="submit">Save label</button><button type="button" data-mail-action="skip-label">Skip</button></form>`:''}`).join('');
   const input=`<div class="mail-address-combobox-wrap"><label for="mail-address-combobox">Add an address</label><input id="mail-address-combobox" role="combobox" aria-autocomplete="list" aria-controls="mail-address-options" aria-expanded="false" autocomplete="off" placeholder="Search or create an address" value="${esc(state.addressQuery)}" ${state.addressSaving?'disabled':''}><div id="mail-address-options" role="listbox" hidden></div></div>`;
-  const chips=suggested.length?`<div class="mail-address-suggestions"><small>Suggested</small><div>${suggested.map(item=>`<button type="button" data-mail-action="suggest-address" data-address-id="${esc(item.id)}" ${state.addressSaving?'disabled':''}>+ ${esc(item.address)}</button>`).join('')}</div></div>`:'';
+  const chips=suggested.length?`<div class="mail-address-suggestions"><small>Suggested</small><div>${suggested.map(item=>`<button type="button" data-mail-action="suggest-address" ${item.id?`data-address-id="${esc(item.id)}"`:`data-local-part="${esc(item.local)}"`} ${state.addressSaving?'disabled':''}>+ ${esc(item.address)}</button>`).join('')}</div></div>`:'';
   const loading=state.addressesLoading&&!state.addressesLoaded?'<p class="mail-address-state">Loading addresses…</p>':state.addressError&&!state.addressesLoaded?'<p class="mail-address-state">Could not load addresses. <button type="button" data-mail-action="retry-addresses">Retry</button></p>':'';
   const toast=state.undoAddressId?`<div class="mail-address-undo" role="status">Address removed <button type="button" data-mail-action="undo-address">Undo</button></div>`:'';
   return section('Addresses',`<div class="mail-address-combined">${input}${loading}${ownRow}${rows}${chips}<a class="mail-all-addresses" href="/#mail">Manage all addresses ›</a><p id="mail-address-status" class="mail-inline-status" role="status">${esc(state.addressError||state.addressStatus)}</p>${toast}</div>`,'mail-address-card');
@@ -356,7 +362,7 @@
    const action=event.target.closest('[data-mail-action]')?.dataset.mailAction;
    if(action==='copy'){try{await navigator.clipboard.writeText(state.settings?.address||'');event.target.textContent='Copied'}catch{setStatus('mail-settings-status','Could not copy address')}return}
    if(action==='choose-address'){const choice=addressChoices()[Number(event.target.closest('[data-choice-index]')?.dataset.choiceIndex)];if(choice){if(choice.kind==='grant')void saveAddressGrant(choice.item.id,true);else void createAddress(choice.local)}return}
-   if(action==='suggest-address'){void saveAddressGrant(event.target.closest('[data-address-id]').dataset.addressId,true);return}
+   if(action==='suggest-address'){const chip=event.target.closest('[data-mail-action]');if(chip.dataset.addressId)void saveAddressGrant(chip.dataset.addressId,true);else if(chip.dataset.localPart)void createAddress(chip.dataset.localPart);return}
    if(action==='remove-address'){void saveAddressGrant(event.target.closest('[data-address-id]').dataset.addressId,false);return}
    if(action==='undo-address'){const id=state.undoAddressId;state.undoAddressId='';clearTimeout(undoTimer);if(id)void saveAddressGrant(id,true);return}
    if(action==='skip-label'){state.labelAddressId='';renderMail();return}

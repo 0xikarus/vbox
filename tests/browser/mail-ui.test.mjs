@@ -185,6 +185,7 @@ test('box Mail addresses use a keyboard combobox, quick grant, revoke, undo, and
   assert.match(await page.$eval('.mail-access-link',node=>node.textContent),/Agent cannot read mail.*Change in Access/);
   assert.equal(await page.$eval('.mail-address-own',node=>node.textContent.includes('builder-ab12@example.test')),true);
   assert.equal(await page.$eval('.mail-address-own',node=>node.querySelector('button')===null),true);
+  assert.equal(await page.$$eval('.mail-address-suggestions button',nodes=>nodes.length),4);
   if(capture){await page.$eval('#inspect-prototype-page',node=>node.scrollTop=node.scrollHeight);await page.screenshot({path:resolve(capture,'box-mail-redesign-390-light.png'),fullPage:true})}
   await page.click('#mail-address-combobox');await page.type('#mail-address-combobox','sha');
   await page.waitForSelector('#mail-address-options:not([hidden]) [role="option"]');
