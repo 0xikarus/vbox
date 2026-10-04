@@ -2798,7 +2798,8 @@ function pairTileStatus(tile,mode,label){
   const boxID=selected,box=boxes.get(boxID);
   if(box?.resumeCheckPending){statusEl.textContent='Checking for a saved conversation…';updateSendState();return}
   if(box?.resumeCandidate){statusEl.textContent='Choose whether to restore the saved '+agentLabel(box)+' session first.';updateSendState();return}
-  if(box?.state!=='running'){statusEl.textContent='Wait for this box to be running before sending.';updateSendState();return}
+  // #send-blocked-reason already explains why; a second status line duplicated it.
+  if(box?.state!=='running'){if(statusEl.textContent==='Wait for this box to be running before sending.')statusEl.textContent='';updateSendState();return}
   const drafts=attachmentDrafts.get(boxID)||[];
   const draftText=inputEl.value,text=expandChatCommands(draftText),images=drafts.map(({id,number})=>({id,number})),replyTarget=replyingTo,mentionedBoxIds=mentionedBoxIDs(text);
   if(!text.trim()&&!images.length)return;
