@@ -1663,7 +1663,7 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-banner .chat-banner-actions button:hover,#chat-banner .chat-banner-actions button:focus-visible{color:var(--vb-ink);text-decoration:underline}
 @media(max-width:600px){
  #chat-banner:not([hidden]){flex-wrap:wrap;column-gap:.4rem;padding:0 .55rem .1rem}
- #chat-banner .chat-banner-actions{flex-basis:100%;justify-content:space-between;width:100%;margin:0}
+ #chat-banner .chat-banner-actions{flex-basis:100%;justify-content:flex-start;gap:.2rem;width:100%;margin:0}
  #chat-banner .chat-banner-actions button{padding:.25rem .35rem}
 }
 

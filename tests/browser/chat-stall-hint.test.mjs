@@ -69,7 +69,8 @@ test('long healthy work stays neutral; stalled work warns and offers the existin
       conversationRight:document.querySelector('#chat-conversation').getBoundingClientRect().right,
       radius:style.borderTopLeftRadius,marginTop:style.marginTop,bottomBorder:style.borderBottomWidth,
       textLine:getComputedStyle(text).whiteSpace,textBottom:text.getBoundingClientRect().bottom,
-      actionsTop:actions?.getBoundingClientRect().top,buttonBorders:actions?[...actions.querySelectorAll('button')].map(button=>getComputedStyle(button).borderTopWidth):[]};
+      actionsTop:actions?.getBoundingClientRect().top,buttonBorders:actions?[...actions.querySelectorAll('button')].map(button=>getComputedStyle(button).borderTopWidth):[],
+      actionButtons:actions?[...actions.querySelectorAll('button')].map(button=>({left:button.getBoundingClientRect().left,right:button.getBoundingClientRect().right})):[]};
     });
     assert.ok(Math.abs(layout.banner.top-layout.headerBottom)<1,'banner attaches to the header');
     assert.ok(Math.abs(layout.banner.left-layout.conversationLeft)<1&&Math.abs(layout.banner.right-layout.conversationRight)<1,'banner spans the chat');
@@ -78,6 +79,10 @@ test('long healthy work stays neutral; stalled work warns and offers the existin
     if(phase==='stalled'){
      assert.ok(layout.buttonBorders.every(border=>border==='0px'),'recovery actions are text buttons');
      assert.ok(width===390?layout.actionsTop>=layout.textBottom:layout.actionsTop<layout.textBottom,'actions use a second row only on phone');
+     if(width===390){
+      assert.ok(layout.actionButtons.slice(1).every((button,index)=>button.left-layout.actionButtons[index].right<10),'phone actions stay grouped');
+      assert.ok(layout.actionButtons.at(-1).right<layout.banner.right-30,'phone actions stay left aligned');
+     }
     }
     if(process.env.VMBOX_CAPTURE_DIR)await page.screenshot({path:path.join(process.env.VMBOX_CAPTURE_DIR,`stall-${phase}-${width}-${theme}.png`)});
    }
