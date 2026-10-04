@@ -63,7 +63,7 @@
  const boxes=new Map(),rows=new Map(),pairs=new Map(),pairRows=new Map(),imageURLs=new Map(),imagePreviewURLs=new Map(),imagePending=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
  let imageGeneration=0;
  const resumeChecks=new Map();
- let selected='',selectedPair='',owner=false,boxTimer,msgTimer,activityTimer,activityPending=null,activityGeneration=0,resourceTimer,resourceRequest=0,resourceSnapshot=null,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,viewEpoch=0;
+ let selected='',selectedPair='',owner=false,boxTimer,msgTimer,activityTimer,activityPending=null,activityGeneration=0,resourceTimer,resourceRequest=0,resourceSnapshot=null,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,scrollIntentVersion=0,viewEpoch=0;
  let usageProfiles=[],usageLoaded=false,selectedUsageProfile=null,chatUsageRequest=0,usageScope=null;
  const providersNav=window.VMBoxWorkspaceNav?.initProviders('chat-providers');
  const scrollMemory=new Map(),followMemory=new Map();
@@ -1986,8 +1986,12 @@
  addEventListener('resize',repositionMsgActions);
  window.visualViewport?.addEventListener('resize',repositionMsgActions);
  function scrollMessagesToBottom(){
+  const intent=scrollIntentVersion,view=messagesEl.dataset.box?'box:'+messagesEl.dataset.box:'pair:'+messagesEl.dataset.pair;
   messagesEl.scrollTop=messagesEl.scrollHeight;
-  requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight});
+  requestAnimationFrame(()=>{
+   const currentView=messagesEl.dataset.box?'box:'+messagesEl.dataset.box:'pair:'+messagesEl.dataset.pair;
+   if(stickToBottom&&scrollIntentVersion===intent&&currentView===view)messagesEl.scrollTop=messagesEl.scrollHeight;
+  });
  }
  newMessagesBtn.onclick=()=>{
   stickToBottom=true;newMessagesBtn.hidden=true;
@@ -1999,12 +2003,16 @@
  };
  // A chat opens at its newest message and keeps following output until the
  // reader scrolls away; scrolling back to the bottom resumes following.
+ messagesEl.addEventListener('wheel',()=>{scrollIntentVersion++},{passive:true});
+ messagesEl.addEventListener('touchmove',()=>{scrollIntentVersion++},{passive:true});
+ messagesEl.addEventListener('keydown',event=>{if(['ArrowUp','PageUp','Home',' '].includes(event.key))scrollIntentVersion++});
  messagesEl.addEventListener('scroll',()=>{
   if(restoringTranscript)return;
   const key=selected&&messagesEl.dataset.box===selected?selected:selectedPair&&messagesEl.dataset.pair===selectedPair?'pair:'+selectedPair:'';
   if(!key)return;
   const wasFollowing=stickToBottom;
   stickToBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120;
+  if(!stickToBottom)scrollIntentVersion++;
   scrollMemory.set(key,messagesEl.scrollTop);followMemory.set(key,stickToBottom);
   if(stickToBottom){
    newMessagesBtn.hidden=true;
@@ -2088,10 +2096,11 @@
    msgNodes.forEach((m,i)=>{const next=msgNodes[i+1];const same=!!next&&next.classList.contains('user')===m.classList.contains('user');const tail=!same;m.classList.toggle('tail',tail);if(tail&&m.classList.contains('agent')&&!m.classList.contains('processing')&&!m.querySelector('.msg-avatar'))m.prepend(reuseMessageMascot(liveAvatars.get(m.dataset.key),box,'msg-avatar',false))});}
   paintedMessages.set(box.id,nextPainted);
   if(follow){
+   const intent=scrollIntentVersion;
    scrollMessagesToBottom();
    // Late layout and image decoding grow the transcript after the first pass.
-   for(const image of messagesEl.querySelectorAll('img'))if(!image.complete)image.addEventListener('load',()=>{if(stickToBottom)scrollMessagesToBottom()},{once:true});
-   setTimeout(()=>{if(stickToBottom)scrollMessagesToBottom()},150);
+   for(const image of messagesEl.querySelectorAll('img'))if(!image.complete)image.addEventListener('load',()=>{if(stickToBottom&&scrollIntentVersion===intent&&messagesEl.dataset.box===box.id)scrollMessagesToBottom()},{once:true});
+   setTimeout(()=>{if(stickToBottom&&scrollIntentVersion===intent&&messagesEl.dataset.box===box.id)scrollMessagesToBottom()},150);
   }else messagesEl.scrollTop=previousScroll;
  }
 

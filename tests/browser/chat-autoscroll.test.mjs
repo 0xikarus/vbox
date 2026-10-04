@@ -73,12 +73,27 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
 
   await page.$eval('#chat-messages',element=>{element.scrollTo({top:0,behavior:'instant'});element.dispatchEvent(new Event('scroll'))});
   await page.type('#chat-input','MY NEW MESSAGE');
+  // Hold the late layout correction so the reader can scroll up immediately
+  // after Send, before its 150 ms callback and animation frame run.
+  await page.evaluate(()=>{
+   const original=window.setTimeout.bind(window),held=[];
+   window.setTimeout=(callback,delay,...args)=>delay===150&&typeof callback==='function'
+    ? (held.push(()=>callback(...args)),-held.length)
+    : original(callback,delay,...args);
+   window.releaseFollowAdjustments=()=>{window.setTimeout=original;for(const callback of held)callback();return held.length};
+  });
   await page.click('#send');
   await page.waitForFunction(()=>{const el=document.querySelector('#chat-messages');return document.querySelector('#chat-messages .msg.user[data-key^="sent-"]')?.textContent.includes('MY NEW MESSAGE')&&!document.querySelector('#chat-messages .msg[data-key="pending"]')&&el.scrollHeight-el.scrollTop-el.clientHeight<3});
   assert.ok(await page.$eval('#chat-messages',atBottom)<3,'sending a new message moves the conversation to the bottom');
 
-  await page.$eval('#chat-messages',element=>{element.scrollTo({top:0,behavior:'instant'});element.dispatchEvent(new Event('scroll'))});
-  await page.waitForFunction(()=>document.querySelector('#chat-messages').scrollTop<3);
+  const heldAdjustments=await page.$eval('#chat-messages',element=>{
+   element.dispatchEvent(new WheelEvent('wheel',{deltaY:-500,bubbles:true}));
+   element.scrollTo({top:0,behavior:'instant'});
+   return window.releaseFollowAdjustments();
+  });
+  assert.ok(heldAdjustments>0,'Send scheduled a delayed bottom adjustment');
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.ok(await page.$eval('#chat-messages',element=>element.scrollTop)<3,'scrolling up immediately after Send cancels the delayed bottom adjustment');
   messages=[...messages,{id:'while-reading',direction:'agent',state:'delivered',text:'MESSAGE WHILE READING',createdAt:timestamp(32),updatedAt:timestamp(32)}];
   await page.$eval('#refresh',button=>button.click());
   await page.waitForFunction(()=>{const el=document.querySelector('#chat-messages');return el?.textContent.includes('MESSAGE WHILE READING')&&el.scrollTop<20&&!document.querySelector('#chat-new-messages').hidden&&document.querySelector('[data-box-id="builder"] .unread')?.textContent==='1'});
