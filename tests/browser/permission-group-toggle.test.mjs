@@ -15,7 +15,7 @@ const baseline={
 };
 const clone=value=>structuredClone(value);
 const groups=['manage-boxes','mail','computer-use','passwords','all-contacts'];
-const readTools=['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'];
+const readTools=['list_mail_addresses','list_emails','read_email','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'];
 const composeTools=['send_email','list_outbox','get_outbox_status'];
 const companions=['wake_agent_box','clear_agent_box_context','compact_agent_box_context'];
 function expected(selected,contacts=false){

@@ -33,6 +33,29 @@ type lineCapture struct {
 	lines chan []byte
 }
 
+func TestListEmailsToolSupportsOptionalSearchWithoutDuplicateTool(t *testing.T) {
+	var list map[string]any
+	for _, tool := range desktopMCPTools() {
+		switch tool["name"] {
+		case "list_emails":
+			list = tool
+		case "search_emails":
+			t.Fatal("search_emails is still advertised")
+		}
+	}
+	if list == nil {
+		t.Fatal("list_emails is missing")
+	}
+	schema := list["inputSchema"].(map[string]any)
+	properties := schema["properties"].(map[string]any)
+	if _, ok := properties["query"]; !ok {
+		t.Fatal("list_emails has no query parameter")
+	}
+	if slices.Contains(schema["required"].([]string), "query") {
+		t.Fatal("list_emails requires a query for ordinary listing")
+	}
+}
+
 func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 	for _, tool := range desktopMCPTools() {
 		if tool["name"] != "create_agent_box" {

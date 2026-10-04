@@ -259,7 +259,7 @@ func (s *Server) ownerMailMessage(w http.ResponseWriter, r *http.Request, p Prin
 }
 
 func (s *Store) loadMailMessageDetail(ctx context.Context, accountID, boxID, messageID string) (mailMessageDetail, error) {
-	row := s.DB.QueryRowContext(ctx, `SELECT `+mailMessageFields+`,text_body FROM mail_messages WHERE account_id=$1 AND ($2='' OR box_id=$2) AND id=$3 AND expires_at>now()`, accountID, boxID, messageID)
+	row := s.DB.QueryRowContext(ctx, `SELECT `+mailMessageFields+`,text_body FROM mail_messages WHERE account_id=$1 AND ($2='' OR box_id=NULLIF($2,'')::uuid) AND id=$3 AND expires_at>now()`, accountID, boxID, messageID)
 	var value mailMessageDetail
 	err := row.Scan(&value.ID, &value.From, &value.FromName, &value.Subject, &value.Preview, &value.ReceivedAt, &value.Unread, &value.HasAttachments, &value.Quarantined, &value.SPF, &value.DKIM, &value.Text)
 	if err != nil {

@@ -2,7 +2,7 @@
 (function(){
  const descriptions={
   list_agent_boxes:'List boxes you can access',get_agent_box:'Inspect one box',get_agent_box_screenshot:"View another box's screen",remote_control_box:"Use another box's desktop",create_agent_box:'Create boxes within the limit below',set_agent_box_tags:'Edit box labels',set_agent_box_run_budget:'Set a box run budget',restart_agent_box:'Restart an unprotected box',wake_agent_box:'Wake a hibernated box',clear_agent_box_context:'Reset an agent conversation',compact_agent_box_context:'Compact an agent conversation',delete_agent_box:'Delete an unprotected box',heartbeat:"Manage this box's heartbeat",
-  list_emails:'List messages in the inbox',read_email:'Read one message',search_emails:'Search inbox messages',mark_email_read:'Mark a message as read',download_email_attachment:'Download a mail attachment',subscribe_inbox:'Get new-mail notices',unsubscribe_inbox:'Stop new-mail notices',send_email:'Draft mail for owner approval',list_outbox:'List outgoing drafts',get_outbox_status:'Check an outgoing draft',
+  list_mail_addresses:'List permitted mail addresses',list_emails:'List or search inbox messages',read_email:'Read one message',mark_email_read:'Mark a message as read',download_email_attachment:'Download a mail attachment',subscribe_inbox:'Get new-mail notices',unsubscribe_inbox:'Stop new-mail notices',send_email:'Draft mail for owner approval',list_outbox:'List outgoing drafts',get_outbox_status:'Check an outgoing draft',
   take_screenshot:"Capture this box's screen",capture_window:'Capture one window',move_mouse:'Move the pointer',click_mouse:'Click on the desktop',drag_mouse:'Drag on the desktop',scroll_mouse:'Scroll the desktop',type_text:'Type ordinary text',press_keys:'Press keys or shortcuts',
   secret_request:'Ask the owner for a password',generate_password:'Create a saved password',type_secret:'Fill a saved password'
  };
@@ -4561,7 +4561,7 @@ let usagePending=null,usageGeneration=0;
 
  /* ---------- direct per-box agent permissions ---------- */
  function syncMCPToolGroups(form=$('#role-editor-form')){const restart=form.querySelector('input[name=mcpTools][value=restart_agent_box]');if(restart)for(const value of ['wake_agent_box','clear_agent_box_context','compact_agent_box_context']){const companion=form.querySelector('input[name=mcpTools][value='+value+']');if(companion){companion.disabled=restart.checked;if(restart.checked)companion.checked=true}}for(const group of form.querySelectorAll('.mcp-tool-group')){const tools=[...group.querySelectorAll('input[name=mcpTools]')],toggle=group.querySelector('.mcp-tool-group-toggle'),selected=tools.filter(input=>input.checked).length;toggle.checked=selected===tools.length;toggle.indeterminate=selected>0&&selected<tools.length}}
- const mailReadTools=['list_emails','read_email','search_emails','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'],mailComposeTools=['send_email','list_outbox','get_outbox_status'];
+ const mailReadTools=['list_mail_addresses','list_emails','read_email','mark_email_read','download_email_attachment','subscribe_inbox','unsubscribe_inbox'],mailComposeTools=['send_email','list_outbox','get_outbox_status'];
  function syncToolGrants(form){syncMCPToolGroups(form)}
  function populatePolicyEditor(box,cap={}){
   const form=$('#role-editor-form'),limit=$('#inspect-create-limit'),limitParent=limit.parentNode,limitNext=limit.nextSibling;limit.remove();form.reset();limitParent.insertBefore(limit,limitNext);form.elements.id.value=box.id;form.elements.name.value=box.name;
