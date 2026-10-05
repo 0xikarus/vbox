@@ -47,6 +47,17 @@ func run() error {
 		return err
 	}
 	switch args[0] {
+	case "cleanup-temp":
+		if len(args) != 1 {
+			return fmt.Errorf("cleanup-temp accepts no arguments")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		result, err := boxruntime.CleanupStaleTemp(ctx)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
 	case "desktop-register":
 		if len(args) != 2 {
 			return fmt.Errorf("desktop-register requires AGENT")
