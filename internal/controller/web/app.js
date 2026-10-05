@@ -263,14 +263,27 @@ $('#location-form').addEventListener('submit',action(async e=>{
  catch(err){if(version===epoch)$('#location-status').textContent=err.message}
  finally{locationSaving=false;e.target.querySelector('button').disabled=false}
 }));
+function lowDiskPools(){return fleetSnapshots.filter(fleet=>fleet.provider==='shared-worker'&&Number.isFinite(fleet.hostResources?.diskFreeBytes)&&fleet.hostResources?.diskTotalBytes>0&&fleet.hostResources.diskFreeBytes/fleet.hostResources.diskTotalBytes<.1)}
+function renderOwnerDiskWarning(){
+ const banner=$('#disk-warning'),low=lowDiskPools();banner.hidden=!ownerTools||!low.length;
+ if(low.length)banner.textContent='Low worker disk: '+low.map(fleet=>poolLabel(fleet.provider,fleet.providerCredential)+' has '+gibText(fleet.hostResources.diskFreeBytes)+' free of '+gibText(fleet.hostResources.diskTotalBytes)).join('; ')+'. New boxes and managed tool installs are refused below 5% free.';
+ else banner.textContent='';
+}
 function renderWorkerCapacity(){
  const root=$('#capacity');root.replaceChildren();
+ renderOwnerDiskWarning();
  const workers=fleetSnapshots.reduce((total,fleet)=>total+(fleet.error?0:fleet.provider==='shared-worker'?(fleet.slots?.length?1:0):(fleet.slots?.length||0)),0);
  const slots=fleetSnapshots.reduce((total,fleet)=>total+(fleet.actualSlots||0),0);
  root.append(kpi([['Loaded capacity:',workers+' workers · '+slots+' compute slots']]),node('p','Shared slots compete for their host’s CPU and memory.'));
  for(const fleet of fleetSnapshots){
   root.append(node('h3',poolLabel(fleet.provider,fleet.providerCredential)));
   if(fleet.error){root.append(node('p','Capacity unavailable: '+fleet.error));continue}
+  const host=fleet.hostResources;
+  if(fleet.provider==='shared-worker'&&Number.isFinite(host?.diskFreeBytes)&&host?.diskTotalBytes>0){
+   const percent=Math.round(host.diskFreeBytes/host.diskTotalBytes*100),space=node('p','Host disk: '+gibText(host.diskFreeBytes)+' free of '+gibText(host.diskTotalBytes)+' ('+percent+'% free).');
+   if(percent<10||host.diskFreeBytes/host.diskTotalBytes<.1){space.className='disk-warning';space.setAttribute('role','alert')}
+   root.append(space);
+  }
   root.append(kpi([['Desired:',fleet.desiredSlots],['Free:',fleet.freeSlots],['Occupied:',fleet.occupiedSlots],['Unhealthy:',fleet.unhealthySlots]]));
   const slotGrid=node('div');slotGrid.className='slot-grid';
   for(const slot of fleet.slots||[]){
@@ -407,7 +420,7 @@ function providerPanel(provider,fleet,isDefault,editor){
  actions.append(button('Validate',async()=>{status.textContent='Validating…';const result=await api(pp(provider.provider,provider.name)+'/validate','POST',{});status.textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}));
  if(isDefault){const badge=node('span','Default pool for new boxes');badge.className='provider-default-note';actions.append(badge)}
  else actions.append(button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:provider.provider,providerCredential:provider.name});await refresh()}));
- actions.append(button('Refresh usage',async()=>{const fresh=await workspaceNav.providerSnapshot(provider);const target=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));if(target){Object.assign(target,fresh.fleet||{},{providerSnapshot:fresh,hostResources:fresh.host,hostError:fresh.hostError});renderProviders(listedProviders)}}));
+ actions.append(button('Refresh usage',async()=>{const fresh=await workspaceNav.providerSnapshot(provider);const target=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));if(target){Object.assign(target,fresh.fleet||{},{providerSnapshot:fresh,hostResources:fresh.host,hostError:fresh.hostError});renderProviders(listedProviders);renderWorkerCapacity()}}));
  const remove=button('Delete…',()=>workspaceNav.openProviderDelete(provider,refresh));remove.classList.add('provider-menu-delete');actions.append(remove);
  pool.append(actions,status);
  panel.append(capacity,connection,pool);
@@ -833,7 +846,7 @@ async function refresh(){
  mailPanel?.setOwner(identity.role==='owner');
  renderPermissionBoxes(boxes);
  renderPoolChoices(providers);
- const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};const snapshot=await workspaceNav.providerSnapshot(provider);return {...(snapshot.fleet||{}),...target,providerSnapshot:snapshot,hostResources:snapshot.host,hostError:snapshot.hostError,error:snapshot.fleet?undefined:snapshot.errors[0]}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
+ const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};const snapshot=await workspaceNav.providerSnapshot(provider);return {...(snapshot.fleet||{}),...target,providerSnapshot:snapshot,hostResources:snapshot.host,hostError:snapshot.hostError,error:snapshot.fleet?undefined:snapshot.errors[0]}}));if(version!==epoch)return;fleetSnapshots=fleets;renderOwnerDiskWarning();updateBoxPlacements(boxes);
  const chosenTools=new Set([...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value));$('#create-tools').replaceChildren(node('legend','Optional tools'));
  for(const preset of toolPresets){if(preset.id==='desktop')continue;const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=chosenTools.has(preset.id);label.title=preset.version+' — '+preset.description;label.append(input,document.createTextNode(preset.name));$('#create-tools').append(label)}
  renderProfiles(identity,profiles);
@@ -844,7 +857,7 @@ async function refresh(){
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent=d.inferred?'Choose a default provider. Currently using '+d.provider+' / '+d.providerCredential+'.':'Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent=providers.length?'Choose a default provider. Open a pool and select Use as default.':'Choose a default provider. Add one to get started.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#login-error').textContent='';$('#app').hidden=false;openProfileFromLink()}));
-$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;$('#role-editor-inline').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());closeProviderPanel();$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
+$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;renderOwnerDiskWarning();roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;$('#role-editor-inline').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());closeProviderPanel();$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
 $('#refresh').addEventListener('click',action(refresh));
 $('#logout').addEventListener('click',()=>mailPanel?.setOwner(false));
 function resetCreationForm(form){

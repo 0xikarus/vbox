@@ -40,6 +40,12 @@ func (s *Server) boxResources(w http.ResponseWriter, r *http.Request, p Principa
 			if usage.DiskUsedBytes != nil {
 				response["diskUsedBytes"] = *usage.DiskUsedBytes
 			}
+			if usage.DiskWorkspaceBytes != nil {
+				response["diskWorkspaceBytes"] = *usage.DiskWorkspaceBytes
+			}
+			if usage.DiskWritableBytes != nil {
+				response["diskWritableBytes"] = *usage.DiskWritableBytes
+			}
 			if usage.DiskTotalBytes != nil {
 				response["diskTotalBytes"] = *usage.DiskTotalBytes
 			}
@@ -56,6 +62,9 @@ func (s *Server) boxResources(w http.ResponseWriter, r *http.Request, p Principa
 			if usage.HostDiskUsedBytes != nil && usage.HostDiskTotalBytes != nil {
 				response["hostDiskUsedBytes"] = *usage.HostDiskUsedBytes
 				response["hostDiskTotalBytes"] = *usage.HostDiskTotalBytes
+				if usage.HostDiskFreeBytes != nil {
+					response["hostDiskFreeBytes"] = *usage.HostDiskFreeBytes
+				}
 			}
 			response["observedAt"] = usage.ObservedAt
 		}

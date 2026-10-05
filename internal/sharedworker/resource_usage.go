@@ -40,6 +40,7 @@ func (s *Store) ResourceUsage(ctx context.Context, id string) (provider.Resource
 }
 
 func (s *Store) resourceUsageWithInspect(ctx context.Context, id string, inspect func(context.Context, Workspace) (*containerInspect, error)) (provider.ResourceUsage, error) {
+	linux := s.Runtime.(*LinuxRuntime)
 	s.mu.Lock()
 	slot, exists := s.state.Slots[id]
 	if !exists || slot.WorkspaceID == "" || slot.State != provider.StateRunning {
@@ -51,7 +52,7 @@ func (s *Store) resourceUsageWithInspect(ctx context.Context, id string, inspect
 		s.mu.Unlock()
 		return provider.ResourceUsage{}, provider.ErrNotFound
 	}
-	workspaceRoot := s.Runtime.(*LinuxRuntime).workspaceRoot(workspace)
+	workspaceRoot := linux.workspaceRoot(workspace)
 	s.mu.Unlock()
 	current, err := inspect(ctx, workspace)
 	if err != nil {
@@ -65,21 +66,30 @@ func (s *Store) resourceUsageWithInspect(ctx context.Context, id string, inspect
 	if err != nil {
 		return provider.ResourceUsage{}, err
 	}
-	used, observed, diskReason := s.cachedDiskUsage(workspace, workspaceRoot)
-	usage := provider.ResourceUsage{MemoryUsedBytes: memory, SwapUsedBytes: swap, DiskUsedBytes: used, DiskObservedAt: observed, DiskUnavailableReason: diskReason, ObservedAt: time.Now().UTC()}
+	workspaceUsed, writableUsed, observed, diskReason := s.cachedDiskUsage(workspace, workspaceRoot, linux.Container.writableSize)
+	usage := provider.ResourceUsage{MemoryUsedBytes: memory, SwapUsedBytes: swap, DiskWorkspaceBytes: workspaceUsed, DiskWritableBytes: writableUsed, DiskObservedAt: observed, DiskUnavailableReason: diskReason, ObservedAt: time.Now().UTC()}
+	if workspaceUsed != nil {
+		used := *workspaceUsed
+		if writableUsed != nil {
+			used += *writableUsed
+		} else {
+			usage.DiskPartial = true
+		}
+		usage.DiskUsedBytes = &used
+	}
 	if workspace.SizeGiB > 0 {
 		total := workspace.SizeGiB << 30
 		usage.DiskTotalBytes = &total
 	}
-	if total, used, err := filesystemUsage(workspaceRoot); err == nil {
-		usage.HostDiskTotalBytes, usage.HostDiskUsedBytes = &total, &used
+	if total, used, free, err := filesystemUsage(workspaceRoot); err == nil {
+		usage.HostDiskTotalBytes, usage.HostDiskUsedBytes, usage.HostDiskFreeBytes = &total, &used, &free
 	}
 	return usage, nil
 }
 
 // Disk scanning is deliberately asynchronous. Chat polling always gets fresh
 // cgroup counters while the expensive workspace walk is reused for five minutes.
-func (s *Store) cachedDiskUsage(workspace Workspace, path string) (*int64, *time.Time, string) {
+func (s *Store) cachedDiskUsage(workspace Workspace, path string, writableSize func(context.Context, Workspace) (int64, error)) (*int64, *int64, *time.Time, string) {
 	s.diskMu.Lock()
 	defer s.diskMu.Unlock()
 	if s.diskCache == nil {
@@ -90,33 +100,53 @@ func (s *Store) cachedDiskUsage(workspace Workspace, path string) (*int64, *time
 		entry.running = true
 		entry.startedAt = time.Now()
 		s.diskCache[workspace.ID] = entry
-		go s.scanDisk(workspace.ID, path)
+		go s.scanDisk(workspace, path, writableSize)
 	}
-	if entry.used == nil {
-		return nil, nil, entry.unavailableReason
+	if entry.workspaceUsed == nil {
+		return nil, nil, nil, entry.unavailableReason
 	}
-	used := *entry.used
+	workspaceUsed := *entry.workspaceUsed
+	var writableUsed *int64
+	if entry.writableUsed != nil {
+		value := *entry.writableUsed
+		writableUsed = &value
+	}
 	observed := entry.observedAt
-	return &used, &observed, ""
+	return &workspaceUsed, writableUsed, &observed, entry.unavailableReason
 }
 
-func (s *Store) scanDisk(id, path string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+func (s *Store) scanDisk(workspace Workspace, path string, writableSize func(context.Context, Workspace) (int64, error)) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	used, err := scanDiskBytes(ctx, path)
+	var writable int64
+	var writableErr error
+	if err == nil && writableSize != nil {
+		writable, writableErr = writableSize(ctx, workspace)
+	}
 	s.diskMu.Lock()
 	defer s.diskMu.Unlock()
-	entry := s.diskCache[id]
+	entry := s.diskCache[workspace.ID]
 	entry.running = false
 	if err == nil {
-		entry.used = &used
+		entry.workspaceUsed = &used
 		entry.observedAt = time.Now().UTC()
-		entry.unavailableReason = ""
+		entry.writableUsed = nil
+		entry.unavailableReason = "container writable layer size unavailable"
+		if writableErr == nil && writableSize != nil {
+			entry.writableUsed = &writable
+			entry.unavailableReason = ""
+		}
 	} else if errors.Is(err, errDiskTooManyFiles) {
-		entry.used = nil
+		entry.workspaceUsed = nil
+		entry.writableUsed = nil
 		entry.unavailableReason = errDiskTooManyFiles.Error()
+	} else {
+		entry.workspaceUsed = nil
+		entry.writableUsed = nil
+		entry.unavailableReason = "workspace disk scan unavailable"
 	}
-	s.diskCache[id] = entry
+	s.diskCache[workspace.ID] = entry
 }
 
 func scanDiskBytes(ctx context.Context, path string) (int64, error) {

@@ -30,6 +30,9 @@ func ConfigureToolSetup(ctx context.Context, home, script string, progress io.Wr
 	if strings.TrimSpace(script) == "" {
 		return nil
 	}
+	if err := requireInstallDiskSpace(home); err != nil {
+		return err
+	}
 	path, err := toolSetupPath(home)
 	if err != nil {
 		return err
@@ -93,6 +96,9 @@ func RestoreToolSetup(ctx context.Context, home string, progress io.Writer) erro
 	}
 	if strings.TrimSpace(string(data)) == "" {
 		return nil
+	}
+	if err := requireInstallDiskSpace(home); err != nil {
+		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()

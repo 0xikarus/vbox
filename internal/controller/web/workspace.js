@@ -167,8 +167,12 @@ function renderWorkspaceResources(){
   if(kind==='disk'&&data?.diskEnforced===false){const note=document.createElement('small');note.className='inspect-resource-note';note.textContent='Limit not enforced on this shared worker';row.append(note)}
   rows.append(row);
  }
- const context=$('#workspace-resources-context'),host=Number.isFinite(data?.hostDiskUsedBytes)&&Number.isFinite(data?.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0?'Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'%':'';
- context.textContent=[host,data?.diskPartial?'Disk scan partial':null,data?.diskUnavailableReason||null].filter(Boolean).join(' · ');context.hidden=!context.textContent;
+ const context=$('#workspace-resources-context'),hostFreeKnown=Number.isFinite(data?.hostDiskFreeBytes)&&data?.hostDiskTotalBytes>0;
+ const host=hostFreeKnown?'Host disk '+resourceGiB(data.hostDiskFreeBytes)+' GB free of '+resourceGiB(data.hostDiskTotalBytes)+' GB':Number.isFinite(data?.hostDiskUsedBytes)&&data?.hostDiskTotalBytes>0?'Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'%':'';
+ const workspace=Number.isFinite(data?.diskWorkspaceBytes)?'Workspace '+resourceGiB(data.diskWorkspaceBytes)+' GB':null,layer=Number.isFinite(data?.diskWritableBytes)?'Writable layer '+resourceGiB(data.diskWritableBytes)+' GB':null;
+ const diskAge=data?.diskObservedAt&&Number.isFinite(Date.parse(data.diskObservedAt))?'Disk measured '+new Date(data.diskObservedAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):null;
+ context.textContent=[host,workspace,layer,diskAge,data?.diskPartial?'Disk scan partial':null,data?.diskUnavailableReason||null].filter(Boolean).join(' · ');context.hidden=!context.textContent;
+ context.classList.toggle('resource-danger',hostFreeKnown&&data.hostDiskFreeBytes/data.hostDiskTotalBytes<.1);
  const observed=[data?.observedAt,data?.diskObservedAt].filter(value=>value&&Number.isFinite(Date.parse(value))).sort().at(-1);
  $('#workspace-resources-updated').textContent=observed?'Updated '+new Date(observed).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):resourceUsageLoaded?'No live data (worker update needed)':'Live metrics load when this card is visible';
  $('#workspace-resources-adjust').hidden=workspaceRole!=='owner'||boxSummary?.provider!=='shared-worker'||boxSummary?.state!=='running';

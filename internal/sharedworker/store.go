@@ -71,7 +71,8 @@ type Store struct {
 }
 
 type diskObservation struct {
-	used              *int64
+	workspaceUsed     *int64
+	writableUsed      *int64
 	observedAt        time.Time
 	startedAt         time.Time
 	running           bool
@@ -444,6 +445,13 @@ func (s *Store) CreateStorage(ctx context.Context, id string, owner provider.Own
 		if existing.Owner.BoxID == owner.BoxID {
 			return provider.Storage{}, errors.New("workspace already exists; attach its retained storage")
 		}
+	}
+	specs, err := s.Specs()
+	if err != nil {
+		return provider.Storage{}, fmt.Errorf("check worker disk space before creating box: %w", err)
+	}
+	if err := requireWorkerDiskSpace(specs.DiskTotalBytes, specs.DiskFreeBytes, "create a box"); err != nil {
+		return provider.Storage{}, err
 	}
 	if s.state.NextUID >= 59000 {
 		return provider.Storage{}, errors.New("shared workspace identity capacity reached")

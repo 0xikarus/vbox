@@ -28,6 +28,7 @@ func HostResources(workspaceRoot string) (provider.HostResources, error) {
 		return result, err
 	}
 	result.DiskTotalBytes, result.DiskUsedBytes = metrics.diskTotal, metrics.diskUsed
+	result.DiskFreeBytes = &metrics.diskFree
 	result.CPUCores, result.CPULoad1, result.CPUPercent, result.CPUScope = metrics.cores, metrics.load1, metrics.percent, metrics.scope
 	return result, nil
 }

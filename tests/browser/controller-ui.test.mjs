@@ -844,7 +844,7 @@ test('a shared worker pool is managed inline on the providers page up to its mac
    if(path==='/v1/provider-credentials')return json([{provider:'shared-worker',name:'my-vps',config:{endpoint:'https://203.0.113.10'},updatedAt:revision}]);
    if(path==='/v1/controller-defaults')return json({provider:'shared-worker',providerCredential:'my-vps'});
    if(path.startsWith('/v1/fleet/status?'))return json({desiredSlots:2,actualSlots:2,freeSlots:1,occupiedSlots:1,slots:[{ordinal:1,state:'occupied',health:'healthy'},{ordinal:2,state:'free',health:'healthy'}]});
-   if(path.startsWith('/v1/fleet/host-resources?'))return json({memoryTotalBytes:8*1024**3,memoryAvailableBytes:4*1024**3,swapTotalBytes:0,swapFreeBytes:0});
+   if(path.startsWith('/v1/fleet/host-resources?'))return json({memoryTotalBytes:8*1024**3,memoryAvailableBytes:4*1024**3,swapTotalBytes:0,swapFreeBytes:0,diskTotalBytes:100*1024**3,diskUsedBytes:92*1024**3,diskFreeBytes:8*1024**3});
    if(path.startsWith('/v1/fleet/worker?'))return json(view);
    if(path==='/v1/fleet/worker'&&options.method==='PUT'){const body=JSON.parse(options.body);workerWrites.push(body);view={...view,desiredSlots:body.slots,worker:{...view.worker,settings:{revision:4,slots:body.slots,boxDefaults:body.boxDefaults}}};return json(view)}
    return original(path,options);
@@ -853,6 +853,9 @@ test('a shared worker pool is managed inline on the providers page up to its mac
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');
  await page.click('.workspace-links a[href="#providers"]');
  await page.waitForFunction(()=>document.querySelector('#provider-default')?.textContent==='Default: shared-worker / my-vps'&&document.querySelector('#provider-list .provider-actions button')?.textContent==='Manage');
+ await page.waitForFunction(()=>!document.querySelector('#disk-warning').hidden);
+ assert.match(await page.$eval('#disk-warning',n=>n.textContent),/Low worker disk:[\s\S]*8\.0 GiB free of 100 GiB/);
+ assert.match(await page.$eval('#capacity .disk-warning',n=>n.textContent),/Host disk: 8\.0 GiB free of 100 GiB \(8% free\)/);
  assert.equal(await page.$eval('#provider-list .provider-actions button',n=>n.textContent),'Manage');
  await page.click('#provider-list .provider-actions button');
  await page.waitForSelector('#provider-list .provider-detail-row .provider-panel .worker-settings-form');

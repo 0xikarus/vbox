@@ -3,6 +3,7 @@ package sharedworker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,6 +51,20 @@ func TestResourceUsageDoesNotHoldStoreLockDuringInspect(t *testing.T) {
 	}
 }
 
+func TestWritableLayerSizeRequiresVerifiedContainer(t *testing.T) {
+	workspace := Workspace{ID: NewID()}
+	data := []byte(fmt.Sprintf(`[{"SizeRw":4096,"Config":{"Labels":{"io.vmbox.workspace":%q,"io.vmbox.root":"/data","io.vmbox.policy":"image:v2-sudo"}}}]`, workspace.ID))
+	if size, err := parseWritableSize(data, workspace, "/data", "image"); err != nil || size != 4096 {
+		t.Fatalf("writable size=%d err=%v", size, err)
+	}
+	if _, err := parseWritableSize(data, Workspace{ID: NewID()}, "/data", "image"); err == nil {
+		t.Fatal("another workspace's writable layer was accepted")
+	}
+	if _, err := parseWritableSize([]byte(`[{"SizeRw":null}]`), workspace, "/data", "image"); err == nil {
+		t.Fatal("unknown writable layer size was accepted")
+	}
+}
+
 func TestSlotMemoryUsageReadsCgroupCounters(t *testing.T) {
 	root := t.TempDir()
 	writeResourceFixture(t, root, "memory.current", "1288490188\n")
@@ -67,14 +82,18 @@ func TestDiskScanIsCachedAcrossResourcePolls(t *testing.T) {
 	}
 	store := &Store{}
 	workspace := Workspace{ID: NewID(), SizeGiB: 2}
-	if used, observed, _ := store.cachedDiskUsage(workspace, root); used != nil || observed != nil {
+	writableSize := func(context.Context, Workspace) (int64, error) { return 4096, nil }
+	if used, layer, observed, _ := store.cachedDiskUsage(workspace, root, writableSize); used != nil || layer != nil || observed != nil {
 		t.Fatal("initial scan should run in the background")
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	var first int64
 	for time.Now().Before(deadline) {
-		used, observed, _ := store.cachedDiskUsage(workspace, root)
-		if used != nil && observed != nil {
+		used, layer, observed, _ := store.cachedDiskUsage(workspace, root, writableSize)
+		if used != nil && layer != nil && observed != nil {
+			if *layer != 4096 {
+				t.Fatalf("writable layer=%d", *layer)
+			}
 			first = *used
 			break
 		}
@@ -86,7 +105,7 @@ func TestDiskScanIsCachedAcrossResourcePolls(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "new-payload"), make([]byte, 1<<20), 0600); err != nil {
 		t.Fatal(err)
 	}
-	used, _, _ := store.cachedDiskUsage(workspace, root)
+	used, _, _, _ := store.cachedDiskUsage(workspace, root, writableSize)
 	if used == nil || *used != first {
 		t.Fatalf("five-minute cache changed during a poll: %v", used)
 	}
@@ -96,4 +115,24 @@ func TestDiskScanIsCachedAcrossResourcePolls(t *testing.T) {
 	if err := diskFileCount(context.Background(), root, 1); !errors.Is(err, errDiskTooManyFiles) {
 		t.Fatalf("file count limit error = %v", err)
 	}
+}
+
+func TestDiskScanMarksMissingWritableLayerPartial(t *testing.T) {
+	root := t.TempDir()
+	store := &Store{}
+	workspace := Workspace{ID: NewID()}
+	fail := func(context.Context, Workspace) (int64, error) { return 0, errors.New("Docker size unavailable") }
+	store.cachedDiskUsage(workspace, root, fail)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		used, layer, observed, reason := store.cachedDiskUsage(workspace, root, fail)
+		if observed != nil {
+			if used == nil || layer != nil || reason == "" {
+				t.Fatalf("partial observation used=%v layer=%v reason=%q", used, layer, reason)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("workspace scan did not finish")
 }

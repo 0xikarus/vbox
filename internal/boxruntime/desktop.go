@@ -71,6 +71,9 @@ func installDesktopPackages(ctx context.Context, progress io.Writer, blender boo
 	if installed {
 		return nil
 	}
+	if err := requireInstallDiskSpace("/"); err != nil {
+		return err
+	}
 	if _, err := exec.LookPath("apt-get"); err != nil {
 		return fmt.Errorf("desktop enablement requires a Debian-compatible worker image")
 	}

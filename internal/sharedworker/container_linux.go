@@ -79,6 +79,31 @@ type containerInspect struct {
 	}
 	Config     struct{ Labels map[string]string }
 	HostConfig struct{ Memory, MemorySwap, NanoCpus int64 }
+	SizeRw     *int64
+}
+
+// Docker computes the writable layer size independently of the persistent
+// /data bind mount. Keep this expensive walk off the resource polling path.
+func (r *ContainerRuntime) writableSize(ctx context.Context, w Workspace) (int64, error) {
+	out, err := r.run(ctx, "container", "inspect", "--size", r.name(w))
+	if err != nil {
+		return 0, err
+	}
+	return parseWritableSize(out, w, r.Root, r.Image)
+}
+
+func parseWritableSize(out []byte, w Workspace, root, image string) (int64, error) {
+	var items []containerInspect
+	if err := json.Unmarshal(out, &items); err != nil {
+		return 0, fmt.Errorf("decode container writable layer size: %w", err)
+	}
+	if len(items) != 1 || items[0].SizeRw == nil || *items[0].SizeRw < 0 {
+		return 0, errors.New("container writable layer size unavailable")
+	}
+	if items[0].Config.Labels["io.vmbox.workspace"] != w.ID || items[0].Config.Labels["io.vmbox.root"] != root || items[0].Config.Labels["io.vmbox.policy"] != image+":v2-sudo" {
+		return 0, errors.New("container identity or policy mismatch")
+	}
+	return *items[0].SizeRw, nil
 }
 
 func (r *ContainerRuntime) inspect(ctx context.Context, w Workspace) (*containerInspect, error) {

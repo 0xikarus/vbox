@@ -15,9 +15,9 @@ import (
 )
 
 type hostMetrics struct {
-	diskTotal, diskUsed   int64
-	cores, load1, percent float64
-	scope                 string
+	diskTotal, diskUsed, diskFree int64
+	cores, load1, percent         float64
+	scope                         string
 }
 
 type cpuObservation struct {
@@ -30,26 +30,27 @@ var cpuObservations = struct {
 	values map[string]cpuObservation
 }{values: make(map[string]cpuObservation)}
 
-type statfsReader func(string) (int64, int64, error)
+type statfsReader func(string) (int64, int64, int64, error)
 
-func filesystemUsage(path string) (int64, int64, error) {
+func filesystemUsage(path string) (int64, int64, int64, error) {
 	var stats syscall.Statfs_t
 	if err := syscall.Statfs(path, &stats); err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	total := int64(stats.Blocks) * stats.Bsize
 	used := int64(stats.Blocks-stats.Bfree) * stats.Bsize
-	if total <= 0 || used < 0 || used > total {
-		return 0, 0, errors.New("invalid filesystem capacity")
+	free := int64(stats.Bavail) * stats.Bsize
+	if total <= 0 || used < 0 || used > total || free < 0 || free > total-used {
+		return 0, 0, 0, errors.New("invalid filesystem capacity")
 	}
-	return total, used, nil
+	return total, used, free, nil
 }
 
 func readHostMetrics(loadavgPath, cgroupRoot, diskPath string, statfs statfsReader, hostCores float64) (hostMetrics, error) {
 	if statfs == nil {
 		statfs = filesystemUsage
 	}
-	total, used, err := statfs(diskPath)
+	total, used, free, err := statfs(diskPath)
 	if err != nil {
 		return hostMetrics{}, fmt.Errorf("read workspace filesystem: %w", err)
 	}
@@ -95,7 +96,7 @@ func readHostMetrics(loadavgPath, cgroupRoot, diskPath string, statfs statfsRead
 			}
 		}
 	}
-	return hostMetrics{diskTotal: total, diskUsed: used, cores: cores, load1: load, percent: percent, scope: scope}, nil
+	return hostMetrics{diskTotal: total, diskUsed: used, diskFree: free, cores: cores, load1: load, percent: percent, scope: scope}, nil
 }
 
 func cpuUsageMicros(path string) (int64, error) {

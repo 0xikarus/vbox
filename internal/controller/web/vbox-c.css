@@ -983,6 +983,8 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 
 /* capacity slot cards + notification rows + harness icons */
 .slot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.6rem;margin:.7rem 0 1.2rem}
+.disk-warning{padding:.8rem 1rem;border:1px solid var(--vb-danger-text);border-radius:var(--r-control);background:var(--vb-danger-soft);color:var(--vb-danger-text);font-weight:700}
+#workspace-resources-context.resource-danger,#inspect-resources-context.resource-danger{color:var(--vb-danger-text);font-weight:700}
 .slot-card{position:relative;display:grid;gap:.1rem;padding:.75rem .8rem;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-bg-soft)}
 .slot-card strong{font-size:var(--vb-type-rem-0-9);color:var(--vb-ink)}
 .slot-card small{color:var(--vb-ink-faint);font-size:var(--vb-type-rem-0-7)}
