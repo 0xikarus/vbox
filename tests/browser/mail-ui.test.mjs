@@ -265,7 +265,8 @@ test('box Mail read permission is changed only in Access and preserves other too
   assert.equal(await page.$('#mail-read-permission'),null);
   assert.equal(data.writes.some(write=>write.path.endsWith('/agent-policy')),false);
   await page.click('[data-mail-action="open-access"]');await page.waitForSelector('#role-editor-inline:not([hidden])');
-  await page.$eval('#role-editor-form [value="list_emails"]',node=>node.click());
+  await page.waitForFunction(()=>{const node=document.querySelector('#role-editor-form [value="list_emails"]');return node?.isConnected&&!node.disabled&&document.querySelector('#role-editor-status')?.textContent!=='Loading permissions…'});
+  await page.evaluate(()=>document.querySelector('#role-editor-form [value="list_emails"]')?.click());
   await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='Saved');
   const saved=data.writes.findLast(write=>write.path.endsWith('/agent-policy')).body.capabilities;
   assert.equal(saved.mail.read,true);assert.equal(saved.mcpTools.allowedTools.includes('list_emails'),true);
