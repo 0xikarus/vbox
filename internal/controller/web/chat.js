@@ -4371,11 +4371,12 @@ function pairTileStatus(tile,mode,label){
    if(kind==='disk'&&data?.diskEnforced===false)row.append(Object.assign(mk('small','Limit not enforced on this shared worker'),{className:'inspect-resource-note'}));
    rows.append(row);
   }
-  const context=$('#inspect-resources-context');const host=Number.isFinite(data?.hostDiskFreeBytes)&&data?.hostDiskTotalBytes>0?'Host disk '+resourceGiB(data.hostDiskFreeBytes)+' GB free of '+resourceGiB(data.hostDiskTotalBytes)+' GB':'';
+  const context=$('#inspect-resources-context'),hostFreeKnown=Number.isFinite(data?.hostDiskFreeBytes)&&data?.hostDiskTotalBytes>0;
+  const host=hostFreeKnown?'Host disk '+resourceGiB(data.hostDiskFreeBytes)+' GB free of '+resourceGiB(data.hostDiskTotalBytes)+' GB':Number.isFinite(data?.hostDiskUsedBytes)&&data?.hostDiskTotalBytes>0?'Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'%':'';
   const workspace=Number.isFinite(data?.diskWorkspaceBytes)?'Workspace '+resourceGiB(data.diskWorkspaceBytes)+' GB':null,layer=Number.isFinite(data?.diskWritableBytes)?'Writable layer '+resourceGiB(data.diskWritableBytes)+' GB':null;
   const diskAge=data?.diskObservedAt&&Number.isFinite(Date.parse(data.diskObservedAt))?'Disk measured '+fmtAgo(data.diskObservedAt):null;
   context.textContent=[host,workspace,layer,diskAge,data?.diskPartial?'Disk scan partial':null,data?.diskUnavailableReason||null].filter(Boolean).join(' · ');context.hidden=!context.textContent;
-  context.classList.toggle('resource-danger',!!host&&data.hostDiskFreeBytes/data.hostDiskTotalBytes<.1);
+  context.classList.toggle('resource-danger',hostFreeKnown&&data.hostDiskFreeBytes/data.hostDiskTotalBytes<.1);
   const observed=[data?.observedAt,data?.diskObservedAt].filter(value=>value&&Number.isFinite(Date.parse(value))).sort().at(-1);
   $('#inspect-resources-updated').textContent=observed?'Updated '+fmtAgo(observed):'No live data (worker update needed)';
   adjust.hidden=box.provider!=='shared-worker'||box.state!=='running';
