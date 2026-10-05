@@ -22,7 +22,31 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
 )
+
+func TestWorkerAssignmentLookupErrorClassification(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := &Store{DB: db}
+	worker := DirectWorker{AccountID: "account", SlotID: "slot"}
+	mock.ExpectQuery(`SELECT b.id::text FROM logical_boxes`).WithArgs(worker.AccountID, worker.SlotID).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	if _, err := store.WorkerAssignment(context.Background(), worker); !errors.Is(err, errWorkerAssignmentChanged) {
+		t.Fatalf("missing or fenced assignment: %v", err)
+	}
+	lookupFailure := errors.New("temporary lookup failure")
+	mock.ExpectQuery(`SELECT b.id::text FROM logical_boxes`).WithArgs(worker.AccountID, worker.SlotID).WillReturnError(lookupFailure)
+	if _, err := store.WorkerAssignment(context.Background(), worker); !errors.Is(err, lookupFailure) || definitiveWorkerError(err) {
+		t.Fatalf("transient lookup error was classified as revocation: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestDirectWorkerEnrollmentAndConnectionPostgres(t *testing.T) {
 	dsn := os.Getenv("VMBOX_TEST_DATABASE_URL")
@@ -435,6 +459,9 @@ printf 'vmbox-bootstrap-ready:%s\n' "$fingerprint"
 	}
 	if _, err = s.DB.ExecContext(ctx, `UPDATE compute_slots SET fencing_token='replacement-fence' WHERE id=$1`, slot); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := s.WorkerAssignment(ctx, active.Worker); !errors.Is(err, errWorkerAssignmentChanged) {
+		t.Fatalf("changed slot fence did not revoke assignment: %v", err)
 	}
 	select {
 	case err := <-interrupted:
