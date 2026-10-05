@@ -52,6 +52,9 @@ func restoreBlender(ctx context.Context, home string, progress io.Writer) error 
 	} else if err != nil {
 		return err
 	}
+	if err := requireInstallDiskSpace(home); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
 	defer cancel()
 	blender := "blender"

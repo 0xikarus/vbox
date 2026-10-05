@@ -28,6 +28,11 @@ func InstallTools(ctx context.Context, home string, tools []string, progress io.
 	if err := v1.ValidateTools(tools); err != nil {
 		return err
 	}
+	if len(tools) > 0 {
+		if err := requireInstallDiskSpace(home); err != nil {
+			return err
+		}
+	}
 	for _, tool := range tools {
 		var err error
 		switch tool {

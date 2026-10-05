@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -58,6 +59,38 @@ func TestReopenRestoresWorkspacesBeforeReady(t *testing.T) {
 	}
 	if err := reopened.Health(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateStorageRefusesLowDiskButAllowsExistingWorkspace(t *testing.T) {
+	store, err := Open(t.TempDir(), "account", 1, &fakeRuntime{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err := store.Create(provider.CreateRequest{Name: "slot", Owner: provider.Owner{AccountID: "account", BoxID: "slot"}}); err != nil {
+		t.Fatal(err)
+	}
+	free := int64(4)
+	store.Specs = func() (provider.WorkerSpecs, error) {
+		return provider.WorkerSpecs{DiskTotalBytes: 100, DiskFreeBytes: free}, nil
+	}
+	owner := provider.Owner{AccountID: "account", BoxID: "box"}
+	if _, err := store.CreateStorage(context.Background(), "slot", owner, provider.Resources{}); err == nil || !strings.Contains(err.Error(), "insufficient worker disk space") {
+		t.Fatalf("low-disk creation error = %v", err)
+	}
+	if len(store.state.Workspaces) != 0 {
+		t.Fatal("low-disk refusal allocated a workspace")
+	}
+	free = 5
+	created, err := store.CreateStorage(context.Background(), "slot", owner, provider.Resources{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	free = 4
+	retried, err := store.CreateStorage(context.Background(), "slot", owner, provider.Resources{})
+	if err != nil || retried.ID != created.ID {
+		t.Fatalf("idempotent existing workspace retry: %+v %v", retried, err)
 	}
 }
 func (r *fakeRuntime) Stop(_ context.Context, workspace Workspace) error {

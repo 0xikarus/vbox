@@ -44,6 +44,9 @@ func InstallAgentCLI(ctx context.Context, home, agent, version string, output io
 	if err != nil {
 		return err
 	}
+	if err := requireInstallDiskSpace(home); err != nil {
+		return err
+	}
 	prefix := filepath.Join(home, ".local")
 	if err := os.MkdirAll(prefix, 0o700); err != nil {
 		return err
