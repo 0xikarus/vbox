@@ -77,7 +77,7 @@ func TestComposeInstructionMarkdownPreservesPresetAndBounds(t *testing.T) {
 	}
 }
 
-func TestManagedChatConventionsStayFocusedOnVmboxCalls(t *testing.T) {
+func TestManagedConventionsIncludeVmboxChatAndSharedDiskRule(t *testing.T) {
 	got, err := composeChatConventions("# Owner preset\n")
 	if err != nil || !strings.HasPrefix(got, "# Owner preset\n\n## vbox chat\n") {
 		t.Fatalf("compose: %v %q", err, got)
@@ -90,6 +90,7 @@ func TestManagedChatConventionsStayFocusedOnVmboxCalls(t *testing.T) {
 		`"files":["/absolute/image.png"]`,
 		`chat_ask {"replyTo":"KEY","question":"...","choices":["A","B"]}`,
 		`get_contacts {}`,
+		`Disk is shared with other boxes. Delete temporary files you created once you no longer need them (build caches, browser/test temp dirs, core dumps, large downloads, old worktrees). Never delete user files or anything you're unsure about.`,
 	} {
 		if !strings.Contains(got, example) {
 			t.Fatalf("missing exact MCP example %q", example)

@@ -26,17 +26,11 @@ the workspace component with a reason. Docker image layers, logs, and other
 shared host overhead remain unattributed, so host free space is the admission
 signal. See [Docker's inspect size documentation](https://docs.docker.com/reference/cli/docker/container/inspect/).
 
-The shared-worker supervisor asks each **running** box once at startup and
-hourly to run `vmbox-runtime cleanup-temp` as its own unprivileged UID. The
-command removes Chromium/Puppeteer temporary directories in the private
-`TMPDIR` and `/tmp`, plus core dumps in those directories and the box's home
-and workspace, only when every file in a temp tree is at least **24 hours old**.
-It checks ownership, rejects symlinks as roots, does not follow symlinks while
-walking, and skips trees containing open files or a live working directory.
-Each pass checks at most 128 temp candidates, 10,000 entries per tree, and
-reclaims at most 2 GiB; oversized or changing trees are skipped for review.
-The worker logs counts and reclaimed bytes without logging file contents.
-Stopped boxes are not started solely for cleanup.
+Managed agent instructions ask every box to delete temporary files it created
+when they are no longer needed, including build caches, browser/test temp
+directories, core dumps, large downloads, and old worktrees. They also tell
+agents never to delete user files or anything uncertain. Cleanup is left to
+the agent that created the files; the worker does not delete them automatically.
 
 Deploy the worker and box runtime together. Older workers omit the new free
 space and layer fields, so the UI will not infer a low-disk warning from stale

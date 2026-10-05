@@ -74,26 +74,6 @@ func run() error {
 	server := &http.Server{Addr: os.Getenv("VMBOX_SHARED_BIND") + ":" + port, Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	go func() {
-		ticker := time.NewTicker(time.Hour)
-		defer ticker.Stop()
-		for {
-			cleanupCtx, finish := context.WithTimeout(ctx, 10*time.Minute)
-			result, err := store.CleanupStaleTemp(cleanupCtx)
-			finish()
-			if err != nil {
-				log.Printf("shared worker stale temp cleanup: %v", err)
-			}
-			if result.Removed > 0 || result.Skipped > 0 {
-				log.Printf("shared worker stale temp cleanup: removed=%d reclaimed_bytes=%d skipped=%d", result.Removed, result.ReclaimedBytes, result.Skipped)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()
 	select {
