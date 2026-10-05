@@ -5,6 +5,7 @@
 .mail-panel{display:grid;grid-template-columns:200px minmax(260px,340px) minmax(280px,1fr);min-height:590px;height:calc(100dvh - 195px);max-height:850px;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-surface);color:var(--vb-ink);overflow:hidden}
 .mail-panel>aside,.mail-panel>div{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
 .mail-panel-folders,.mail-panel-list-pane{border-right:1px solid var(--vb-line)}
+.mail-panel-folders>.mail-panel-pane-head{display:none}
 .mail-panel-pane-head{display:flex;align-items:center;gap:8px;flex:none;min-height:62px;padding:10px 14px;box-sizing:border-box;border-bottom:1px solid var(--vb-line)}
 .mail-panel-pane-head h3{margin:0;font-size:15px;line-height:1.2}.mail-panel-pane-head small{display:block;margin-top:3px;color:var(--vb-ink-soft);font-size:11px}
 .mail-panel-back{display:none;width:40px;height:40px;flex:none;border:0;border-radius:50%;background:var(--vb-surface-2);color:var(--vb-ink);font-size:26px;cursor:pointer}
@@ -37,6 +38,7 @@
 .mail-address-unknown{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:12px 0;border-top:1px solid var(--vb-line)}.mail-address-unknown>span{display:grid;gap:4px}.mail-address-unknown strong{font-size:12px}.mail-address-unknown small{color:var(--vb-ink-soft);font-size:11px;line-height:1.4}.mail-address-unknown input{width:22px;height:22px;flex:none;cursor:pointer}.mail-address-status{min-height:16px;margin:0;color:var(--vb-danger-text);font-size:11px}.mail-address-status:empty{display:none}
 @media(max-width:900px){.mail-panel{grid-template-columns:175px minmax(230px,300px) minmax(260px,1fr)}}
 @media(max-width:600px){
+ #mail .mail-panel-folders>.mail-panel-pane-head{display:flex}
  #mail.mail-panel-section{padding:9px!important}.mail-panel-section .section-heading{padding:4px 5px 0}
  .mail-panel{display:block;height:calc(100dvh - 175px);min-height:520px;max-height:none}
  .mail-panel>aside,.mail-panel>div{height:100%;border:0}

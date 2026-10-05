@@ -58,6 +58,7 @@ async function serve(data,{disabled=false,role='owner'}={}){
     const addr=path.match(/^\/v1\/mail\/addresses\/([^/]+)$/);
     if(addr){const index=data.addresses.findIndex(item=>item.id===addr[1]);if(index<0)return send({error:'missing'},404);const value=request.method==='DELETE'?{}:await body();data.writes.push({path,method:request.method,body:value});if(data.addresses[index].owningBoxId&&(request.method==='DELETE'||'localPart'in value||'label'in value))return send({error:'box address cannot be renamed or deleted'},400);if(request.method==='DELETE'){data.addresses.splice(index,1);response.statusCode=204;response.end();return}Object.assign(data.addresses[index],value,{address:value.localPart?value.localPart+'@example.test':data.addresses[index].address});return send(data.addresses[index])}
     if(path==='/v1/mail/messages'){
+     if(data.listError)return send({error:'Mail list failed'},503);
      const folder=url.searchParams.get('folder')||'all',q=url.searchParams.get('q')?.toLowerCase()||'',box=url.searchParams.get('box'),address=url.searchParams.get('address');
      const messages=data.messages.filter(item=>(folder==='quarantine'?item.quarantined:folder==='archive'?item.archived&&!item.quarantined:folder==='unread'?item.unread&&!item.quarantined&&!item.archived:!item.quarantined&&!item.archived)&&(!box||item.boxId===box)&&(!address||item.address===address)&&(!q||[item.from,item.fromName,item.subject,item.preview].join(' ').toLowerCase().includes(q))).map(({text,attachments,...item})=>item);
      return send({messages,nextCursor:''});
@@ -297,4 +298,30 @@ test('Mail nav and panel are absent when the account mail feature is unconfigure
  const server=await serve(fixture(),{disabled:true}),chrome=await browser();
  try{const page=await chrome.newPage();await page.goto(base(server)+'/#mail');await page.waitForFunction(()=>location.hash==='#boxes');assert.equal(await page.$eval('[data-mail-nav]',node=>node.hidden),true);assert.equal(await page.$eval('#mail',node=>node.hidden),true);await page.close()}
  finally{await chrome.close();await new Promise(resolve=>server.close(resolve))}
+});
+
+test('stale box scope resolves to the counted Inbox and list failures remain visible',async()=>{
+ const data=fixture();
+ data.messages.push(
+  {id:'m4',boxId:'builder',boxName:'BossDev',address:'builder@example.test',from:'friend@example.net',subject:'Second box message',preview:'Hello',receivedAt:stamp,unread:true,quarantined:false},
+  {id:'m5',boxId:'',boxName:'Unassigned',address:'shared@example.test',from:'team@example.net',subject:'Shared address message',preview:'Shared',receivedAt:stamp,unread:true,quarantined:false},
+ );
+ data.addresses.push({id:'a2',address:'shared@example.test',localPart:'shared',label:'Shared',boxIds:[],enabled:true,unread:1});
+ const server=await serve(data),chrome=await browser();
+ try{
+  const page=await chrome.newPage();await page.setViewport({width:1440,height:900});
+  await page.goto(base(server)+'/?box=00000000-0000-4000-8000-000000000001#mail');
+  await page.waitForFunction(()=>document.querySelectorAll('.mail-panel-row').length===4);
+  assert.equal(await page.$eval('[data-folder="all"] b',node=>node.textContent),'4');
+  assert.equal(await page.$eval('[data-box=""]',node=>node.getAttribute('aria-current')),'page');
+  assert.equal(await page.evaluate(()=>location.search),'');
+  assert.equal(await page.$eval('.mail-panel-list-title small',node=>node.textContent),'All boxes');
+  assert.equal(await page.$('.mail-panel-folders h3:not(.mail-panel-subhead)'),null);
+  assert(data.queries.filter(path=>path.startsWith('/v1/mail/messages?')).every(path=>!path.includes('box=')));
+  data.listError=true;
+  await page.click('[data-folder="all"]');
+  await page.waitForFunction(()=>document.querySelector('.mail-panel-list-scroll [role="alert"]')?.textContent.includes('Mail list failed'));
+  assert.equal(await page.$eval('.mail-panel-list-scroll',node=>node.textContent.includes('No messages here')),false);
+  await page.close();
+ }finally{await chrome.close();await new Promise(resolve=>server.close(resolve))}
 });
