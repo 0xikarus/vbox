@@ -191,7 +191,7 @@ func TestMailPanelOutboxFiltersAndSummaryTotals(t *testing.T) {
 		t.Fatalf("outbox status=%d body=%s", w.Code, w.Body.String())
 	}
 	mock.ExpectQuery(`(?s)FROM logical_boxes b LEFT JOIN box_mail_settings ms.*WHERE b.account_id=\$1`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"id", "name", "address", "enabled", "unread", "quarantine"}).AddRow(panelTestBox, "Builder", "builder@example.test", true, 3, 2))
-	mock.ExpectQuery(`SELECT count\(\*\) FILTER \(WHERE read_at IS NULL`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"unread", "quarantine", "inbox", "archive"}).AddRow(5, 2, 9, 4))
+	mock.ExpectQuery(`SELECT count\(\*\) FILTER \(WHERE m.read_at IS NULL`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"unread", "quarantine", "inbox", "archive"}).AddRow(5, 2, 9, 4))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM mail_outbox WHERE account_id=\$1`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"pending"}).AddRow(1))
 	w = httptest.NewRecorder()
 	s.ownerMailPanelSummary(w, httptest.NewRequest(http.MethodGet, "/v1/mail/summary", nil), Principal{AccountID: "account-a"})

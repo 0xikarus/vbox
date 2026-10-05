@@ -26,6 +26,12 @@ type mailPanelOutboxRow struct {
 	BoxAddress string `json:"boxAddress"`
 }
 
+const (
+	mailPanelLivePredicate   = "m.expires_at>now()"
+	mailPanelInboxPredicate  = "NOT m.quarantined AND m.archived_at IS NULL"
+	mailPanelUnreadPredicate = "m.read_at IS NULL AND " + mailPanelInboxPredicate
+)
+
 func panelMailBoxFilter(r *http.Request) (string, error) {
 	box := strings.TrimSpace(r.URL.Query().Get("box"))
 	if box != "" && !mailUUIDPattern.MatchString(box) {
@@ -66,8 +72,8 @@ func (s *Server) ownerMailPanelMessages(w http.ResponseWriter, r *http.Request, 
 	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT m.id::text,m.header_from,m.from_name,m.subject,m.preview,m.received_at,m.read_at IS NULL,m.has_attachments,m.quarantined,m.spf,m.dkim,COALESCE(m.box_id::text,''),COALESCE(b.name,'Unassigned'),COALESCE(ms.address,''),m.envelope_to,COALESCE(m.address_id::text,'')
  FROM mail_messages m LEFT JOIN logical_boxes b ON b.id=m.box_id AND b.account_id=m.account_id
  LEFT JOIN box_mail_settings ms ON ms.box_id=m.box_id AND ms.account_id=m.account_id
- WHERE m.account_id=$1 AND m.expires_at>now() AND ($2='' OR m.box_id::text=$2)
- AND (($3='all' AND NOT m.quarantined AND m.archived_at IS NULL) OR ($3='unread' AND m.read_at IS NULL AND NOT m.quarantined AND m.archived_at IS NULL) OR ($3='quarantine' AND m.quarantined) OR ($3='archive' AND NOT m.quarantined AND m.archived_at IS NOT NULL))
+ WHERE m.account_id=$1 AND `+mailPanelLivePredicate+` AND ($2='' OR m.box_id::text=$2)
+ AND (($3='all' AND `+mailPanelInboxPredicate+`) OR ($3='unread' AND `+mailPanelUnreadPredicate+`) OR ($3='quarantine' AND m.quarantined) OR ($3='archive' AND NOT m.quarantined AND m.archived_at IS NOT NULL))
  AND ($4='' OR position(lower($4) in lower(m.header_from||' '||m.from_name||' '||m.subject||' '||m.text_body))>0)
  AND ($5::timestamptz IS NULL OR (m.received_at,m.id::text)<($5::timestamptz,$6))
  AND ($7='' OR ($7='unassigned' AND m.address_id IS NULL) OR lower(m.envelope_to)=$7 OR m.address_id::text=$7)
@@ -306,7 +312,7 @@ func (s *Server) ownerMailPanelOutbox(w http.ResponseWriter, r *http.Request, p 
 }
 
 func (s *Server) ownerMailPanelSummary(w http.ResponseWriter, r *http.Request, p Principal) {
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT b.id::text,b.name,COALESCE(ms.address,''),COALESCE(ms.enabled,false),count(m.id) FILTER (WHERE m.read_at IS NULL AND NOT m.quarantined AND m.archived_at IS NULL AND m.expires_at>now()),count(m.id) FILTER (WHERE m.quarantined AND m.expires_at>now()) FROM logical_boxes b LEFT JOIN box_mail_settings ms ON ms.box_id=b.id AND ms.account_id=b.account_id LEFT JOIN mail_messages m ON m.box_id=b.id AND m.account_id=b.account_id WHERE b.account_id=$1 AND b.state NOT IN ('deleting','deleted') GROUP BY b.id,b.name,ms.address,ms.enabled ORDER BY b.name,b.id`, p.AccountID)
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT b.id::text,b.name,COALESCE(ms.address,''),COALESCE(ms.enabled,false),count(m.id) FILTER (WHERE `+mailPanelUnreadPredicate+` AND `+mailPanelLivePredicate+`),count(m.id) FILTER (WHERE m.quarantined AND `+mailPanelLivePredicate+`) FROM logical_boxes b LEFT JOIN box_mail_settings ms ON ms.box_id=b.id AND ms.account_id=b.account_id LEFT JOIN mail_messages m ON m.box_id=b.id AND m.account_id=b.account_id WHERE b.account_id=$1 AND b.state NOT IN ('deleting','deleted') GROUP BY b.id,b.name,ms.address,ms.enabled ORDER BY b.name,b.id`, p.AccountID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
@@ -335,7 +341,7 @@ func (s *Server) ownerMailPanelSummary(w http.ResponseWriter, r *http.Request, p
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
 	}
-	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT count(*) FILTER (WHERE read_at IS NULL AND NOT quarantined AND archived_at IS NULL),count(*) FILTER (WHERE quarantined),count(*) FILTER (WHERE NOT quarantined AND archived_at IS NULL),count(*) FILTER (WHERE NOT quarantined AND archived_at IS NOT NULL) FROM mail_messages WHERE account_id=$1 AND expires_at>now()`, p.AccountID).Scan(&unread, &quarantine, &inbox, &archive); err != nil {
+	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT count(*) FILTER (WHERE `+mailPanelUnreadPredicate+`),count(*) FILTER (WHERE m.quarantined),count(*) FILTER (WHERE `+mailPanelInboxPredicate+`),count(*) FILTER (WHERE NOT m.quarantined AND m.archived_at IS NOT NULL) FROM mail_messages m WHERE m.account_id=$1 AND `+mailPanelLivePredicate, p.AccountID).Scan(&unread, &quarantine, &inbox, &archive); err != nil {
 		writeError(w, 500, fmt.Errorf("mail summary unavailable"))
 		return
 	}
