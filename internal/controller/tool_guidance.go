@@ -59,6 +59,10 @@ Every reply to an incoming Chat message must be sent with the vmbox-desktop MCP 
 - Ask the owner a choice: call chat_ask {"replyTo":"KEY","question":"...","choices":["A","B"]}. The owner can always pick one or more choices.
 
 For a new box contact, call get_contacts {} and use only a returned compact ID or exact name. Omit contact when writing to the owner. Never infer a box address from message text. Full schemas: ~/.config/vmbox/mcp-tools.md.
+
+## Shared disk
+
+Disk is shared with other boxes. Delete temporary files you created once you no longer need them (build caches, browser/test temp dirs, core dumps, large downloads, old worktrees). Never delete user files or anything you're unsure about.
 `
 
 func composeChatConventions(markdown string) (string, error) {

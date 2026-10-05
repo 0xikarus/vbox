@@ -66,15 +66,14 @@ followed the snapshots requires incident-time disk and controller logs.
    bound workspace, private temp, and container writable-layer bytes
    separately, and expose observation age. Keep host-level unattributed
    overhead visible so the sum is not mistaken for complete accounting.
-5. Run a bounded per-workspace cleanup of stale Chromium/Puppeteer temporary
-   directories and core dumps. Verify ownership and path boundaries, never
-   follow symlinks, skip live/open files, and log bytes reclaimed. Disable
-   avoidable core dumps for managed workloads. Clean inactive workspaces first.
+5. Tell each managed agent to delete temporary files it created once they are
+   no longer needed, while preserving user files and anything uncertain. The
+   worker does not delete files automatically.
 
 The proposed thresholds are starting values; they should be configurable for
 the actual host size and workload write rate. No production cleanup or state
 change was performed during this investigation.
 
-The disk reporting, 10% warning, 5% admission, and 24-hour stale temp cleanup
-are implemented as described in [DISK-GUARDRAILS.md](DISK-GUARDRAILS.md).
+The disk reporting, 10% warning, 5% admission, and managed agent guidance are
+implemented as described in [DISK-GUARDRAILS.md](DISK-GUARDRAILS.md).
 Run-budget policy changes are tracked separately.
