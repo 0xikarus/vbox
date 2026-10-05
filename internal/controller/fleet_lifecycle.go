@@ -264,12 +264,22 @@ func (s *Server) ReconcileLogicalBoxHibernatesNow(ctx context.Context) error {
 
 func (s *Server) resumeLogicalBoxHibernate(ctx context.Context, p Principal, id string) error {
 	if p.Subject == "controller:run-budget" {
+		var checkedReason string
+		ctx = context.WithValue(ctx, runBudgetStopReasonKey{}, &checkedReason)
 		ctx = context.WithValue(ctx, idleReleaseCheckKey{}, idleReleaseCheck(func(ctx context.Context, tx *sql.Tx, a fleetAssignment) error {
-			var eligible bool
-			err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM agent_run_budgets WHERE account_id=$1 AND box_id=$2 AND assignment_generation=$3 AND deadline_at<=now())`, p.AccountID, a.Box.ID, a.Box.AssignmentGeneration).Scan(&eligible)
-			if err != nil || !eligible {
+			var deadline sql.NullTime
+			err := tx.QueryRowContext(ctx, `SELECT deadline_at FROM agent_run_budgets WHERE account_id=$1 AND box_id=$2 AND assignment_generation=$3 FOR UPDATE`, p.AccountID, a.Box.ID, a.Box.AssignmentGeneration).Scan(&deadline)
+			if err != nil || !deadline.Valid {
 				return fmt.Errorf("run-time limit changed or has not expired")
 			}
+			reason, err := runBudgetStopForBox(ctx, tx, p.AccountID, a.Box.ID, time.Now().UTC(), deadline.Time)
+			if err != nil {
+				return err
+			}
+			if reason == "" {
+				return fmt.Errorf("run-time limit deferred while box is working")
+			}
+			checkedReason = reason
 			return nil
 		}))
 	}
@@ -279,6 +289,9 @@ func (s *Server) resumeLogicalBoxHibernate(ctx context.Context, p Principal, id 
 	}
 	if assignment.Released {
 		return nil
+	}
+	if assignment.Box.LastStopReason != "" && s.Logger != nil {
+		s.Logger.Info("logical box hibernation requested", "box", assignment.Box.ID, "cause", assignment.Box.LastStopReason)
 	}
 	claim, claimed, err := s.Store.ClaimLogicalBoxHibernate(ctx, p.AccountID, assignment.Box.ID)
 	if err != nil || !claimed {

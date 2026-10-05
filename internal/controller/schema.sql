@@ -1008,9 +1008,11 @@ CREATE TABLE IF NOT EXISTS agent_run_budgets (
   remaining_seconds bigint NOT NULL CHECK (remaining_seconds >= 0),
   deadline_at timestamptz,
   extension_seconds bigint NOT NULL DEFAULT 0 CHECK (extension_seconds >= 0),
+  notice_sent_at timestamptz,
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(account_id,box_id)
 );
+ALTER TABLE agent_run_budgets ADD COLUMN IF NOT EXISTS notice_sent_at timestamptz;
 CREATE INDEX IF NOT EXISTS agent_run_budgets_deadline_idx ON agent_run_budgets(deadline_at) WHERE deadline_at IS NOT NULL;
 CREATE TABLE IF NOT EXISTS agent_run_budget_extensions (
   id uuid PRIMARY KEY,

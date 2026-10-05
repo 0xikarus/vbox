@@ -67,7 +67,9 @@ type Server struct {
 	// StartHibernate lets tests observe the durable hand-off without running a
 	// provider operation. Production leaves it nil and uses the reconciler.
 	StartHibernate func(context.Context, Principal, string) error
-	StartDelete    func(context.Context, Principal, string) error
+	// Tests can observe the once-per-run owner notice without web-push IO.
+	SendRunBudgetPush func(string, string)
+	StartDelete       func(context.Context, Principal, string) error
 }
 
 // startBoxTask runs a new task without making the caller wait for the agent.

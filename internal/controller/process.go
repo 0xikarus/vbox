@@ -319,7 +319,7 @@ func (s *Server) hibernateAfterProcess(ctx context.Context, p Principal, a fleet
 		return nil
 	}
 	// Process tasks on a persistent box retain the workspace after hibernation.
-	_, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET state='hibernating',lease_owner=NULL,lease_expires_at=NULL,restoration_state='auto-hibernate-queued',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, a.Box.ID)
+	_, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET state='hibernating',lease_owner=NULL,lease_expires_at=NULL,restoration_state='auto-hibernate-queued',metadata=jsonb_set(metadata,'{lastStop}','"idle"'::jsonb,true),failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, a.Box.ID)
 	if err != nil {
 		return err
 	}

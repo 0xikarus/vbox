@@ -102,6 +102,7 @@ type LogicalBox struct {
 	LeaseOwner           string             `json:"leaseOwner,omitempty"`
 	LeaseExpiresAt       *time.Time         `json:"leaseExpiresAt,omitempty"`
 	RestorationState     string             `json:"restorationState,omitempty"`
+	LastStopReason       string             `json:"lastStopReason,omitempty"`
 	FailureReason        string             `json:"failureReason,omitempty"`
 	CreatedAt            time.Time          `json:"createdAt,omitempty"`
 	UpdatedAt            time.Time          `json:"updatedAt,omitempty"`
