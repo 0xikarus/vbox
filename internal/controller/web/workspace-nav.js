@@ -82,6 +82,11 @@ window.VMBoxWorkspaceNav=(()=>{
   const ram=resource('RAM',number(host?.memoryTotalBytes)-number(host?.memoryAvailableBytes),host?.memoryTotalBytes);
   const swap=resource('Swap',number(host?.swapTotalBytes)-number(host?.swapFreeBytes),host?.swapTotalBytes);
   const disk=resource('Disk',host?.diskUsedBytes,host?.diskTotalBytes);
+  if(provider.provider==='shared-worker'&&Number.isFinite(host?.diskFreeBytes)&&host?.diskTotalBytes>0){
+   const free=number(host.diskFreeBytes),ratio=free/number(host.diskTotalBytes);
+   const detail=el('small',gib(free)+' free'+(ratio<.1?' · Low disk':''));disk.append(detail);
+   if(ratio<.1){disk.classList.remove('is-warning');disk.classList.add('is-danger')}
+  }
   const cpuMissing=provider.provider==='shared-worker'&&host&&(!Number.isFinite(host.cpuCores)||host.cpuCores<=0||!Number.isFinite(host.cpuPercent));
   const cpu=providerCell('CPU',snapshot.hostError?'Unavailable':cpuMissing?'–':Number.isFinite(host?.cpuPercent)&&Number.isFinite(host?.cpuCores)?number(host.cpuPercent).toFixed(0)+'% · load '+number(host.cpuLoad1).toFixed(1)+' / '+number(host.cpuCores).toFixed(1).replace(/\.0$/,'')+' cores':'—');
   if(cpuMissing)cpu.title='Worker update needed';

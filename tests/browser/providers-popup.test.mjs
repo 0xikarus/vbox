@@ -24,7 +24,7 @@ test('owner provider popup works on every topbar and isolates pool errors',async
    if(path==='/v1/fleet/host-resources'){
     hostRequests++;
     if(credential==='beta'){res.statusCode=503;return res.end('{"error":"Worker offline"}')}
-    return res.end(JSON.stringify({memoryTotalBytes:8*1024**3,memoryAvailableBytes:1*1024**3,swapTotalBytes:4*1024**3,swapFreeBytes:Math.floor(.1*1024**3),diskTotalBytes:100*1024**3,diskUsedBytes:87*1024**3,cpuCores:4,cpuLoad1:1.5,cpuPercent:97,observedAt}));
+    return res.end(JSON.stringify({memoryTotalBytes:8*1024**3,memoryAvailableBytes:1*1024**3,swapTotalBytes:4*1024**3,swapFreeBytes:Math.floor(.1*1024**3),diskTotalBytes:100*1024**3,diskUsedBytes:92*1024**3,diskFreeBytes:8*1024**3,cpuCores:4,cpuLoad1:1.5,cpuPercent:97,observedAt}));
    }
    res.statusCode=404;return res.end('{}');
   }
@@ -57,14 +57,14 @@ test('owner provider popup works on every topbar and isolates pool errors',async
    await page.waitForFunction(()=>document.querySelectorAll('.providers-dialog tbody tr').length===2&&document.querySelector('.providers-dialog .providers-row-error'));
    const state=await page.evaluate(()=>{
     const dialog=document.querySelector('.providers-dialog'),rows=[...dialog.querySelectorAll('tbody tr')];
-    return {open:dialog.open,link:dialog.querySelector('.providers-open-link').getAttribute('href'),deleteButtons:[...dialog.querySelectorAll('button')].filter(button=>/delete/i.test(button.textContent)).length,rows:rows.map(row=>({text:row.innerText,warning:!!row.querySelector('.is-warning'),danger:!!row.querySelector('.is-danger'),diskWarning:row.querySelector('[data-label="Disk"]')?.classList.contains('is-warning'),cpuDanger:row.querySelector('[data-label="CPU"]')?.classList.contains('is-danger'),error:!!row.querySelector('.providers-row-error')}))};
+    return {open:dialog.open,link:dialog.querySelector('.providers-open-link').getAttribute('href'),deleteButtons:[...dialog.querySelectorAll('button')].filter(button=>/delete/i.test(button.textContent)).length,rows:rows.map(row=>({text:row.innerText,warning:!!row.querySelector('.is-warning'),danger:!!row.querySelector('.is-danger'),diskDanger:row.querySelector('[data-label="Disk"]')?.classList.contains('is-danger'),cpuDanger:row.querySelector('[data-label="CPU"]')?.classList.contains('is-danger'),error:!!row.querySelector('.providers-row-error')}))};
    });
    assert.equal(state.open,true);assert.equal(state.link,'/#providers');
    assert.equal(state.deleteButtons,0,'popup has no delete action');
-   assert.match(state.rows[0].text,/alpha[\s\S]*Default[\s\S]*1 used · 1 free[\s\S]*of 4 configured[\s\S]*7\.0 GiB \/ 8\.0 GiB[\s\S]*87\.0 GiB \/ 100\.0 GiB[\s\S]*97% · load 1\.5 \/ 4 cores[\s\S]*2 min ago/);
+   assert.match(state.rows[0].text,/alpha[\s\S]*Default[\s\S]*1 used · 1 free[\s\S]*of 4 configured[\s\S]*7\.0 GiB \/ 8\.0 GiB[\s\S]*92\.0 GiB \/ 100\.0 GiB[\s\S]*8\.0 GiB free · Low disk[\s\S]*97% · load 1\.5 \/ 4 cores[\s\S]*2 min ago/);
    assert.equal(state.rows[0].warning,true,'RAM pressure at 87.5% is highlighted');
    assert.equal(state.rows[0].danger,true,'swap pressure at 97.5% uses danger colour');
-   assert.equal(state.rows[0].diskWarning,true,'shared filesystem pressure at 87% uses warning colour');
+   assert.equal(state.rows[0].diskDanger,true,'less than 10% free disk uses danger colour');
    assert.equal(state.rows[0].cpuDanger,true,'CPU pressure at 97% uses danger colour');
    assert.match(state.rows[1].text,/beta[\s\S]*Resource usage unavailable: Worker offline/);
    assert.equal(state.rows[1].error,true,'failed host observation stays in its row');

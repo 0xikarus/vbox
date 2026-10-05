@@ -74,3 +74,7 @@ followed the snapshots requires incident-time disk and controller logs.
 The proposed thresholds are starting values; they should be configurable for
 the actual host size and workload write rate. No production cleanup or state
 change was performed during this investigation.
+
+The disk reporting, 10% warning, 5% admission, and 24-hour stale temp cleanup
+are implemented as described in [DISK-GUARDRAILS.md](DISK-GUARDRAILS.md).
+Run-budget policy changes are tracked separately.
