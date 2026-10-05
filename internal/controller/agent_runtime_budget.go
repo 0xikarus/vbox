@@ -19,6 +19,48 @@ func normalizedRunBudget(value time.Duration) time.Duration {
 }
 
 const maxAgentRunBudgetSeconds = 30 * 24 * 60 * 60
+const runBudgetHardCap = 2 * time.Hour
+const runBudgetNoticeLead = 10 * time.Minute
+
+// The same activity interpretation used by /box-activity decides whether a
+// live task may finish before the run limit stops its box.
+func runBudgetStopReason(now, deadline time.Time, busy sql.NullBool, busySince, observed, evidenceAt, phraseAt sql.NullTime, phrase, activity string) string {
+	if now.Before(deadline) {
+		return ""
+	}
+	if !now.Before(deadline.Add(runBudgetHardCap)) {
+		return "run-limit-hard-cap"
+	}
+	_, source, _ := observedActivityStatus(now, busy, busySince, observed, evidenceAt, phraseAt, phrase, activity)
+	if busy.Valid && busy.Bool && observed.Valid && (source == "fallback" || source == "specific") {
+		return ""
+	}
+	return "run-limit"
+}
+
+func runBudgetNoticeDue(now, deadline time.Time, sent bool) bool {
+	return !sent && now.Before(deadline) && !now.Before(deadline.Add(-runBudgetNoticeLead))
+}
+
+type budgetTaskQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func runBudgetStopForBox(ctx context.Context, db budgetTaskQuerier, accountID, boxID string, now, deadline time.Time) (string, error) {
+	var busy sql.NullBool
+	var busySince, observed, evidenceAt, phraseAt sql.NullTime
+	var phrase, activity sql.NullString
+	err := db.QueryRowContext(ctx, `SELECT agent_busy,agent_busy_updated_at,mascot_observed_at,mascot_evidence_changed_at,mascot_phrase_at,mascot_phrase,mascot_activity
+		FROM box_tasks WHERE account_id=$1 AND logical_box_id=$2 AND state='active' AND agent<>'shell'
+		ORDER BY created_at DESC,id DESC LIMIT 1`, accountID, boxID).Scan(&busy, &busySince, &observed, &evidenceAt, &phraseAt, &phrase, &activity)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return runBudgetStopReason(now, deadline, busy, busySince, observed, evidenceAt, phraseAt, phrase.String, activity.String), nil
+}
 
 func (s *Store) syncAgentRunBudget(ctx context.Context, accountID, boxID string, defaultBudget time.Duration) (v1.AgentRunBudget, error) {
 	var result v1.AgentRunBudget
@@ -43,7 +85,7 @@ func (s *Store) syncAgentRunBudget(ctx context.Context, accountID, boxID string,
 	}
 	_, err = s.DB.ExecContext(ctx, `INSERT INTO agent_run_budgets(account_id,box_id,assignment_generation,remaining_seconds,deadline_at)
 		VALUES($1,$2,$3,$4,$5) ON CONFLICT(account_id,box_id) DO UPDATE SET assignment_generation=excluded.assignment_generation,
-		remaining_seconds=excluded.remaining_seconds,deadline_at=excluded.deadline_at,extension_seconds=0,updated_at=now()
+		remaining_seconds=excluded.remaining_seconds,deadline_at=excluded.deadline_at,extension_seconds=0,notice_sent_at=NULL,updated_at=now()
 		WHERE agent_run_budgets.assignment_generation<>excluded.assignment_generation`, accountID, boxID, generation, seconds, deadline)
 	if err != nil {
 		return result, err
@@ -175,6 +217,10 @@ func (s *Server) agentRunBudgetHandler(w http.ResponseWriter, r *http.Request, p
 }
 
 func (s *Server) ReconcileAgentRunBudgetsNow(ctx context.Context) error {
+	return s.reconcileAgentRunBudgetsAt(ctx, time.Now().UTC())
+}
+
+func (s *Server) reconcileAgentRunBudgetsAt(ctx context.Context, now time.Time) error {
 	rows, err := s.Store.DB.QueryContext(ctx, `SELECT account_id::text,id::text FROM logical_boxes WHERE state<>'deleting'`)
 	if err != nil {
 		return err
@@ -197,17 +243,89 @@ func (s *Server) ReconcileAgentRunBudgetsNow(ctx context.Context) error {
 			return err
 		}
 	}
-	expired, err := s.Store.DB.QueryContext(ctx, `SELECT b.account_id::text,b.id::text,b.owner_user_id::text FROM agent_run_budgets rb JOIN logical_boxes b ON b.id=rb.box_id AND b.account_id=rb.account_id WHERE rb.deadline_at<=now() AND b.state='running'`)
+	upcoming, err := s.Store.DB.QueryContext(ctx, `SELECT b.account_id::text,b.id::text FROM agent_run_budgets rb JOIN logical_boxes b ON b.id=rb.box_id AND b.account_id=rb.account_id WHERE rb.notice_sent_at IS NULL AND rb.deadline_at>$1 AND rb.deadline_at<=$2 AND b.state='running'`, now, now.Add(runBudgetNoticeLead))
+	if err != nil {
+		return err
+	}
+	var notices []boxKey
+	for upcoming.Next() {
+		var key boxKey
+		if err = upcoming.Scan(&key.accountID, &key.boxID); err != nil {
+			upcoming.Close()
+			return err
+		}
+		notices = append(notices, key)
+	}
+	if err = upcoming.Err(); err != nil {
+		upcoming.Close()
+		return err
+	}
+	upcoming.Close()
+	for _, key := range notices {
+		if err = s.sendRunBudgetNotice(ctx, key.accountID, key.boxID, now); err != nil {
+			return err
+		}
+	}
+	expired, err := s.Store.DB.QueryContext(ctx, `SELECT b.account_id::text,b.id::text,b.owner_user_id::text,rb.deadline_at FROM agent_run_budgets rb JOIN logical_boxes b ON b.id=rb.box_id AND b.account_id=rb.account_id WHERE rb.deadline_at<=$1 AND b.state='running'`, now)
 	if err != nil {
 		return err
 	}
 	defer expired.Close()
 	for expired.Next() {
 		var accountID, boxID, userID string
-		if err := expired.Scan(&accountID, &boxID, &userID); err != nil {
+		var deadline time.Time
+		if err := expired.Scan(&accountID, &boxID, &userID, &deadline); err != nil {
 			return err
+		}
+		reason, err := runBudgetStopForBox(ctx, s.Store.DB, accountID, boxID, now, deadline)
+		if err != nil {
+			return err
+		}
+		if reason == "" {
+			continue
 		}
 		s.startLogicalBoxHibernate(Principal{AccountID: accountID, UserID: userID, Role: "user", Subject: "controller:run-budget"}, boxID)
 	}
 	return expired.Err()
+}
+
+func (s *Server) sendRunBudgetNotice(ctx context.Context, accountID, boxID string, now time.Time) error {
+	tx, err := s.Store.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var generation int64
+	err = tx.QueryRowContext(ctx, `UPDATE agent_run_budgets rb SET notice_sent_at=$3,updated_at=$3 FROM logical_boxes b
+		WHERE rb.account_id=$1 AND rb.box_id=$2 AND b.account_id=rb.account_id AND b.id=rb.box_id AND b.state='running'
+		AND rb.assignment_generation=b.assignment_generation AND rb.notice_sent_at IS NULL AND rb.deadline_at>$3 AND rb.deadline_at<=$3+interval '10 minutes'
+		RETURNING rb.assignment_generation`, accountID, boxID, now).Scan(&generation)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var taskID, state string
+	err = tx.QueryRowContext(ctx, `SELECT id::text,state FROM box_tasks WHERE account_id=$1 AND logical_box_id=$2 ORDER BY (state='active') DESC,created_at DESC,id DESC LIMIT 1`, accountID, boxID).Scan(&taskID, &state)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil {
+		id := uuid()
+		_, err = tx.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key,chat_key,thread_id)
+			VALUES($1,$2,$3,'system',$4,$5,$6,$7,$8,$1) ON CONFLICT(account_id,idempotency_key) DO NOTHING`, id, accountID, taskID, "Run limit in 10 min. Ask the owner to add +2 h if more time is needed.", state == "active", map[bool]string{true: "queued", false: "delivered"}[state == "active"], fmt.Sprintf("run-budget-notice:%s:%d", boxID, generation), chatMessageKey())
+		if err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if s.SendRunBudgetPush != nil {
+		s.SendRunBudgetPush(accountID, boxID)
+	} else {
+		s.pushAccountNotification(accountID, map[string]string{"title": "Run limit in 10 min", "body": "This box's run time expires in 10 minutes.", "box": boxID, "url": "/chat#box=" + boxID, "runBudgetAction": "add2h"})
+	}
+	return nil
 }

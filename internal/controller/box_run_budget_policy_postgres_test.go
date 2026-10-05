@@ -112,8 +112,13 @@ func TestBoxRunBudgetPolicyPostgres(t *testing.T) {
 		return response, policy
 	}
 	initialDeadline := *budget.DeadlineAt
+	response, view = adjust("add", 2*3600, initialDeadline)
+	if response.Code != http.StatusOK || view.DeadlineAt == nil || view.RemainingSeconds < 6*3600-10 {
+		t.Fatalf("add two hours from notice: status=%d policy=%+v body=%s", response.Code, view, response.Body.String())
+	}
+	initialDeadline = *view.DeadlineAt
 	response, view = adjust("add", 8*3600, initialDeadline)
-	if response.Code != http.StatusOK || view.Seconds != 4*3600 || view.RemainingSeconds < 12*3600-10 || view.DeadlineAt == nil || view.RunningSince == nil || view.RunningSince.Sub(started) > time.Second || started.Sub(*view.RunningSince) > time.Second {
+	if response.Code != http.StatusOK || view.Seconds != 4*3600 || view.RemainingSeconds < 14*3600-10 || view.DeadlineAt == nil || view.RunningSince == nil || view.RunningSince.Sub(started) > time.Second || started.Sub(*view.RunningSince) > time.Second {
 		t.Fatalf("add eight hours: status=%d policy=%+v body=%s", response.Code, view, response.Body.String())
 	}
 	stale, _ := adjust("add", 8*3600, initialDeadline)

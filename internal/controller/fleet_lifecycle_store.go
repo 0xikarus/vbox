@@ -331,6 +331,13 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 			return assignment, err
 		}
 	}
+	if target == v1.LogicalBoxHibernating && box.State != v1.LogicalBoxHibernating {
+		checkedReason := ""
+		if saved, ok := ctx.Value(runBudgetStopReasonKey{}).(*string); ok {
+			checkedReason = *saved
+		}
+		assignment.Box.LastStopReason = logicalBoxStopReason(p.Subject, checkedReason)
+	}
 	if target == v1.LogicalBoxHibernating && box.State == v1.LogicalBoxHibernating {
 		return assignment, tx.Commit()
 	}
@@ -338,7 +345,7 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 		return assignment, tx.Commit()
 	}
 	expires := time.Now().UTC().Add(5 * time.Minute)
-	result, err := tx.ExecContext(ctx, "UPDATE logical_boxes SET state=$5,lease_owner=CASE WHEN $5='hibernating' THEN NULL ELSE lease_owner END,lease_expires_at=CASE WHEN $5='hibernating' THEN NULL ELSE $6::timestamptz END,restoration_state=CASE WHEN $5='hibernating' THEN 'hibernate-queued' ELSE restoration_state END,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4", p.AccountID, box.ID, box.AssignmentGeneration, assignment.FencingToken, target, expires)
+	result, err := tx.ExecContext(ctx, "UPDATE logical_boxes SET state=$5,lease_owner=CASE WHEN $5='hibernating' THEN NULL ELSE lease_owner END,lease_expires_at=CASE WHEN $5='hibernating' THEN NULL ELSE $6::timestamptz END,restoration_state=CASE WHEN $5='hibernating' THEN 'hibernate-queued' ELSE restoration_state END,metadata=CASE WHEN $5='hibernating' THEN jsonb_set(metadata,'{lastStop}',to_jsonb($7::text),true) ELSE metadata END,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4", p.AccountID, box.ID, box.AssignmentGeneration, assignment.FencingToken, target, expires, assignment.Box.LastStopReason)
 	if err != nil {
 		return assignment, err
 	}
@@ -359,6 +366,22 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 		assignment.Box.RestorationState = "hibernate-queued"
 	}
 	return assignment, tx.Commit()
+}
+
+type runBudgetStopReasonKey struct{}
+
+func logicalBoxStopReason(subject, checked string) string {
+	if checked == "run-limit-hard-cap" || checked == "run-limit" {
+		return checked
+	}
+	switch subject {
+	case "controller:desktop-idle", "controller:process-idle":
+		return "idle"
+	case "controller:capacity":
+		return "capacity"
+	default:
+		return "manual"
+	}
 }
 
 type pendingLogicalBoxHibernate struct {

@@ -47,8 +47,8 @@ func (s *Server) boxRunBudgetPolicy(w http.ResponseWriter, r *http.Request, p Pr
 		}
 		if err := decodeJSON(r, &request); err != nil || request.ExpectedDeadlineAt == nil || (request.Action != "reset" && request.Action != "add") ||
 			(request.Action == "reset" && request.Seconds != 0) ||
-			(request.Action == "add" && request.Seconds != 4*3600 && request.Seconds != 8*3600 && request.Seconds != 24*3600) {
-			writeError(w, http.StatusBadRequest, fmt.Errorf("choose reset or add 4, 8, or 24 hours"))
+			(request.Action == "add" && request.Seconds != 2*3600 && request.Seconds != 4*3600 && request.Seconds != 8*3600 && request.Seconds != 24*3600) {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("choose reset or add 2, 4, 8, or 24 hours"))
 			return
 		}
 		if err := s.Store.AdjustBoxRunBudget(r.Context(), p.AccountID, box.ID, request.Action, request.Seconds, *request.ExpectedDeadlineAt, s.DefaultRunBudget); err != nil {
@@ -85,7 +85,7 @@ func (s *Server) boxRunBudgetPolicy(w http.ResponseWriter, r *http.Request, p Pr
 // configured limit remains the default for the next allocation.
 func (s *Store) AdjustBoxRunBudget(ctx context.Context, accountID, boxID, action string, addSeconds int64, expectedDeadline time.Time, defaultBudget time.Duration) error {
 	if (action != "reset" && action != "add") || (action == "reset" && addSeconds != 0) ||
-		(action == "add" && addSeconds != 4*3600 && addSeconds != 8*3600 && addSeconds != 24*3600) {
+		(action == "add" && addSeconds != 2*3600 && addSeconds != 4*3600 && addSeconds != 8*3600 && addSeconds != 24*3600) {
 		return fmt.Errorf("invalid run-time adjustment")
 	}
 	if _, err := s.syncAgentRunBudget(ctx, accountID, boxID, defaultBudget); err != nil {

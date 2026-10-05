@@ -28,12 +28,12 @@ window.VMBoxRunBudgetPolicy = (() => {
   const save=text('button',compact?'Save':'Start countdown');save.type='button';save.disabled=true;
   controls.append(label,save);
   const actions=text('div','');actions.className='idle-policy-controls run-budget-actions';actions.setAttribute('role','group');actions.setAttribute('aria-label','Current run-time countdown');
-  const buttons=[['Reset countdown','reset',0],['+4h','add',4*3600],['+8h','add',8*3600],['+24h','add',24*3600]].map(([caption,action,seconds])=>{
+  const buttons=[['Reset countdown','reset',0],['+2h','add',2*3600],['+4h','add',4*3600],['+8h','add',8*3600],['+24h','add',24*3600]].map(([caption,action,seconds])=>{
    const button=text('button',caption);button.type='button';button.disabled=true;
    button.title=action==='reset'?'Restart the countdown from the saved limit':'Add time to this run only';
    button.addEventListener('click',()=>void changeCountdown(action,seconds));actions.append(button);return button;
   });
-  const note=text('p','0 turns the countdown off. Start countdown saves the hours and starts the timer; +4h / +8h / +24h and Reset change this run only. Elapsed time is unchanged.');note.className='idle-policy-note';
+  const note=text('p','0 turns the countdown off. Start countdown saves the hours and starts the timer; +2h / +4h / +8h / +24h and Reset change this run only. Elapsed time is unchanged.');note.className='idle-policy-note';
   const status=text('p','Loading run-time limit…');status.className='idle-policy-status';status.setAttribute('role','status');
   const retry=text('button','Retry');retry.type='button';retry.className='idle-policy-retry';retry.hidden=true;
   card.append(top,elapsed,remaining,controls,actions,note,status,retry);root.append(card);
