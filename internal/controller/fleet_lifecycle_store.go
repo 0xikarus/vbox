@@ -13,10 +13,11 @@ import (
 )
 
 type fleetAssignment struct {
-	Box          v1.LogicalBox
-	Slot         v1.ComputeSlot
-	FencingToken string
-	Released     bool
+	Box            v1.LogicalBox
+	Slot           v1.ComputeSlot
+	FencingToken   string
+	Released       bool
+	MissingCompute bool
 }
 
 func (s *Store) LogicalBox(ctx context.Context, p Principal, id string) (v1.LogicalBox, error) {
@@ -153,7 +154,7 @@ func (s *Store) MarkAssignmentAttaching(ctx context.Context, allocation v1.Alloc
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return fmt.Errorf("stale compute-slot assignment fencing token")
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE allocation_requests SET state='attaching',phase='attaching-volume',failure_reason=NULL,updated_at=now() WHERE id=$1 AND logical_box_id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state IN ('reserved','attaching')", allocation.RequestID, allocation.LogicalBoxID, allocation.AssignmentGeneration, allocation.FencingToken); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE allocation_requests SET state='attaching',attach_started_at=COALESCE(attach_started_at,now()),phase='attaching-volume',failure_reason=NULL,updated_at=now() WHERE id=$1 AND logical_box_id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state IN ('reserved','attaching')", allocation.RequestID, allocation.LogicalBoxID, allocation.AssignmentGeneration, allocation.FencingToken); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -307,7 +308,7 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 	if target == v1.LogicalBoxDeleting && box.State == v1.LogicalBoxDeleting && box.SlotID == "" {
 		return assignment, tx.Commit()
 	}
-	failedCreation := target == v1.LogicalBoxDeleting && box.State == v1.LogicalBoxAttaching && box.FailureReason != "" && box.VolumeID != "" && !pendingVolume(box.VolumeID)
+	failedCreation := target == v1.LogicalBoxDeleting && (box.State == v1.LogicalBoxFailed || box.State == v1.LogicalBoxAttaching && box.FailureReason != "") && box.VolumeID != "" && !pendingVolume(box.VolumeID)
 	if box.SlotID == "" || (!failedCreation && box.State != v1.LogicalBoxRunning && box.State != v1.LogicalBoxDraining && box.State != v1.LogicalBoxHibernating && box.State != v1.LogicalBoxDeleting) {
 		return assignment, fmt.Errorf("logical box %q cannot transition from %s", box.Name, box.State)
 	}
@@ -482,7 +483,7 @@ func (s *Store) DeleteLogicalBoxRecord(ctx context.Context, p Principal, assignm
 	}
 	imageRows.Close()
 	if assignment.Slot.ID != "" {
-		result, err := tx.ExecContext(ctx, "UPDATE compute_slots SET state='free',lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,deployment_instance_id=NULL,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state='draining'", p.AccountID, assignment.Slot.ID, assignment.Box.AssignmentGeneration, assignment.FencingToken)
+		result, err := tx.ExecContext(ctx, "UPDATE compute_slots SET state=CASE WHEN $5 THEN 'unhealthy' ELSE 'free' END,health=CASE WHEN $5 THEN 'unhealthy' ELSE health END,lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,deployment_instance_id=NULL,failure_reason=CASE WHEN $5 THEN 'provider compute resource missing' ELSE NULL END,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state='draining'", p.AccountID, assignment.Slot.ID, assignment.Box.AssignmentGeneration, assignment.FencingToken, assignment.MissingCompute)
 		if err != nil {
 			return err
 		}

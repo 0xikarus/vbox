@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS allocation_requests (
   UNIQUE(account_id, idempotency_key)
 );
 ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS phase text;
+ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS attach_started_at timestamptz;
 ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS retry_count integer NOT NULL DEFAULT 0;
 ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS session_choice text;
 ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS session_choice_applied boolean NOT NULL DEFAULT false;

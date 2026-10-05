@@ -720,14 +720,14 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/available-workers", nil, &result); err != nil {
 			return nil, err
 		}
-		return desktopToolJSON(result)
+		return desktopToolJSON(map[string]any{"workers": result})
 	}
 	if name == "list_agent_boxes" {
 		var result []map[string]any
 		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/boxes", nil, &result); err != nil {
 			return nil, err
 		}
-		return desktopToolJSON(result)
+		return desktopToolJSON(map[string]any{"boxes": result})
 	}
 	if name == "get_agent_box" {
 		var request struct {

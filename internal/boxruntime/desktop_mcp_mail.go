@@ -23,7 +23,7 @@ func isDesktopMailTool(name string) bool {
 	return false
 }
 
-func desktopMailToolJSON(value any, untrusted bool) (map[string]any, error) {
+func desktopMailToolJSON(value map[string]any, untrusted bool) (map[string]any, error) {
 	result, err := desktopToolJSON(value)
 	if err != nil {
 		return nil, err

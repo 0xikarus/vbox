@@ -56,6 +56,62 @@ func TestListEmailsToolSupportsOptionalSearchWithoutDuplicateTool(t *testing.T) 
 	}
 }
 
+func TestListDesktopToolsReturnObjectStructuredContent(t *testing.T) {
+	tests := []struct {
+		name, path, response, key string
+	}{
+		{"get_available_workers", "/v1/agent-desktop/available-workers", `[{"slotId":"slot-1"}]`, "workers"},
+		{"list_agent_boxes", "/v1/agent-desktop/boxes", `[{"name":"box-1"}]`, "boxes"},
+		{"list_mail_addresses", "/v1/agent-desktop/mail/addresses", `{"addresses":[]}`, "addresses"},
+		{"list_emails", "/v1/agent-desktop/mail/messages", `{"messages":[]}`, "messages"},
+		{"list_outbox", "/v1/agent-desktop/mail/outbox", `{"messages":[]}`, "messages"},
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, test := range tests {
+			if r.URL.Path == test.path {
+				_, _ = io.WriteString(w, test.response)
+				return
+			}
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	certFile := filepath.Join(home, "test-ca.pem")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSL_CERT_FILE", certFile)
+	configPath := filepath.Join(home, ".config", "vmbox", "desktop-agent.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	config, _ := json.Marshal(DesktopAgentConfig{Controller: server.URL, Assignment: "assignment", Token: strings.Repeat("a", 64)})
+	if err := os.WriteFile(configPath, config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := callDesktopTool(context.Background(), "assignment", test.name, json.RawMessage(`{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			structured, ok := result["structuredContent"].(map[string]any)
+			if !ok {
+				t.Fatalf("structuredContent must be an object, got %T", result["structuredContent"])
+			}
+			if _, ok := structured[test.key]; !ok {
+				t.Fatalf("structuredContent missing %q: %#v", test.key, structured)
+			}
+			content := result["content"].([]map[string]any)
+			if len(content) != 1 || content[0]["type"] != "text" {
+				t.Fatalf("text content missing: %#v", content)
+			}
+		})
+	}
+}
+
 func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 	for _, tool := range desktopMCPTools() {
 		if tool["name"] != "create_agent_box" {

@@ -254,6 +254,63 @@ func (s *Store) FailLogicalBoxCreation(ctx context.Context, creation logicalBoxC
 	return tx.Commit()
 }
 
+// FailTimedOutAttaches makes an attachment terminal after its original start
+// time, even when repeated retries keep updating progress timestamps. The
+// fenced slot stays draining until an explicit, provider-verified deletion.
+func (s *Store) FailTimedOutAttaches(ctx context.Context) (int, error) {
+	const reason = "attachment timed out after 30 minutes"
+	var count int
+	err := s.DB.QueryRowContext(ctx, `WITH expired AS (
+		UPDATE logical_boxes b SET state='failed',restoration_state='attach-timed-out',failure_reason=$1,lease_owner=NULL,lease_expires_at=NULL,updated_at=now()
+		WHERE b.state='attaching' AND b.slot_id IS NOT NULL AND (
+			(b.restoration_state LIKE 'creation-%' AND b.created_at < now()-interval '30 minutes'
+				AND NOT EXISTS (SELECT 1 FROM allocation_requests r WHERE r.logical_box_id=b.id))
+			OR EXISTS (SELECT 1 FROM allocation_requests r WHERE r.logical_box_id=b.id AND r.state='attaching'
+				AND COALESCE(r.attach_started_at,r.created_at) < now()-interval '30 minutes')
+		)
+		RETURNING b.account_id,b.id,b.slot_id,b.assignment_generation,b.fencing_token
+	), slots AS (
+		UPDATE compute_slots s SET state='draining',failure_reason=$1,updated_at=now()
+		FROM expired e WHERE s.account_id=e.account_id AND s.id=e.slot_id
+			AND s.assignment_generation=e.assignment_generation AND s.fencing_token=e.fencing_token
+		RETURNING s.id
+	), requests AS (
+		UPDATE allocation_requests r SET state='failed',phase='attach-timed-out',failure_reason=$1,updated_at=now()
+		FROM expired e WHERE r.account_id=e.account_id AND r.logical_box_id=e.id
+			AND r.assignment_generation=e.assignment_generation AND r.fencing_token=e.fencing_token AND r.state='attaching'
+		RETURNING r.id
+	)
+	SELECT count(*) FROM expired`, reason).Scan(&count)
+	return count, err
+}
+
+func (s *Store) FailMissingAttach(ctx context.Context, p Principal, box v1.LogicalBox) error {
+	const reason = "provider compute resource not found during attachment"
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET state='failed',restoration_state='provider-compute-missing',failure_reason=$3,lease_owner=NULL,lease_expires_at=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND state='attaching' AND slot_id=$4 AND assignment_generation=$5`, p.AccountID, box.ID, reason, box.SlotID, box.AssignmentGeneration)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("logical box attachment changed; retry")
+	}
+	result, err = tx.ExecContext(ctx, `UPDATE compute_slots s SET state='draining',failure_reason=$3,updated_at=now() FROM logical_boxes b WHERE b.account_id=$1 AND b.id=$2 AND s.id=b.slot_id AND s.account_id=b.account_id AND s.assignment_generation=b.assignment_generation AND s.fencing_token=b.fencing_token`, p.AccountID, box.ID, reason)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("logical box compute claim changed; retry")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE allocation_requests SET state='failed',phase='provider-compute-missing',failure_reason=$3,updated_at=now() WHERE account_id=$1 AND logical_box_id=$2 AND state='attaching'`, p.AccountID, box.ID, reason); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBoxCreation, error) {
 	rows, err := s.DB.QueryContext(ctx, "SELECT b.account_id::text,b.owner_user_id::text,b.id::text,COALESCE((b.metadata->>'diskGiB')::bigint,10),COALESCE(b.metadata->>'region',''),COALESCE((b.metadata->>'allocateWhenReady')::boolean,false),COALESCE(b.metadata->>'allocationIdempotencyKey',''),COALESCE(b.metadata->>'creationSlotId','') FROM logical_boxes b WHERE b.state='attaching' AND b.slot_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM allocation_requests r WHERE r.logical_box_id=b.id) ORDER BY b.created_at")
 	if err != nil {
