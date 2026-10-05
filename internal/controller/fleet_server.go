@@ -325,10 +325,27 @@ func (s *Server) deleteLogicalBoxVolumeHandler(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
-	if box.State == v1.LogicalBoxAttaching && box.RestorationState == "creation-reserved" && box.FailureReason != "" && pendingVolume(box.VolumeID) {
+	if (box.State == v1.LogicalBoxAttaching || box.State == v1.LogicalBoxFailed) && pendingVolume(box.VolumeID) {
 		if request.Confirmation != box.Name {
 			writeError(w, http.StatusConflict, fmt.Errorf("deletion confirmation must exactly match logical box name %q", box.Name))
 			return
+		}
+		if box.State != v1.LogicalBoxAttaching || box.RestorationState != "creation-reserved" || box.FailureReason == "" {
+			missing, err := s.missingProviderCompute(r.Context(), p.AccountID, box)
+			if err != nil || !missing {
+				if err == nil {
+					err = fmt.Errorf("cannot discard an unrecorded volume while provider compute exists")
+				}
+				writeError(w, http.StatusConflict, err)
+				return
+			}
+			if box.State == v1.LogicalBoxAttaching {
+				if err := s.markMissingAttach(r.Context(), p, box); err != nil {
+					writeError(w, http.StatusConflict, err)
+					return
+				}
+				box.State = v1.LogicalBoxFailed
+			}
 		}
 		if err := s.cancelUnmaterializedBoxCreation(r.Context(), p, box); err != nil {
 			writeError(w, http.StatusConflict, err)

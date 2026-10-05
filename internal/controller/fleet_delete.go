@@ -12,25 +12,25 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
-// CancelUnmaterializedBoxCreation removes a failed creation that never reached
-// volume allocation. No provider volume exists at this phase, so attempting a
-// normal detach/delete would leave the placeholder permanently stuck.
+// CancelUnmaterializedBoxCreation removes a failed creation with only a
+// placeholder volume. The caller verifies that the provider service is gone
+// unless the creation failed before requesting any volume.
 func (s *Store) CancelUnmaterializedBoxCreation(ctx context.Context, p Principal, box v1.LogicalBox) error {
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE compute_slots s SET state='free',health='unhealthy',lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,deployment_instance_id=NULL,failure_reason='failed creation before volume allocation',updated_at=now()
-		FROM logical_boxes b WHERE b.account_id=$1 AND b.id=$2 AND b.name=$3 AND b.owner_user_id=$4 AND b.state='attaching' AND b.restoration_state='creation-reserved' AND b.failure_reason IS NOT NULL AND b.failure_reason<>'' AND b.volume_id LIKE 'pending:%'
-		AND s.id=b.slot_id AND s.account_id=b.account_id AND s.assignment_generation=b.assignment_generation AND s.fencing_token=b.fencing_token AND s.state='draining'`, p.AccountID, box.ID, box.Name, box.OwnerUserID)
+	result, err := tx.ExecContext(ctx, `UPDATE compute_slots s SET state=CASE WHEN $5 THEN 'unhealthy' ELSE 'free' END,health='unhealthy',lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,deployment_instance_id=NULL,failure_reason='failed creation before volume allocation',updated_at=now()
+		FROM logical_boxes b WHERE b.account_id=$1 AND b.id=$2 AND b.name=$3 AND b.owner_user_id=$4 AND b.state IN ('attaching','failed') AND b.failure_reason IS NOT NULL AND b.failure_reason<>'' AND b.volume_id LIKE 'pending:%'
+		AND s.id=b.slot_id AND s.account_id=b.account_id AND s.assignment_generation=b.assignment_generation AND s.fencing_token=b.fencing_token AND s.state='draining'`, p.AccountID, box.ID, box.Name, box.OwnerUserID, box.State == v1.LogicalBoxFailed)
 	if err != nil {
 		return err
 	}
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return fmt.Errorf("failed creation changed while cancelling; retry")
 	}
-	result, err = tx.ExecContext(ctx, `DELETE FROM logical_boxes WHERE account_id=$1 AND id=$2 AND name=$3 AND owner_user_id=$4 AND state='attaching' AND restoration_state='creation-reserved' AND failure_reason IS NOT NULL AND failure_reason<>'' AND volume_id LIKE 'pending:%'`, p.AccountID, box.ID, box.Name, box.OwnerUserID)
+	result, err = tx.ExecContext(ctx, `DELETE FROM logical_boxes WHERE account_id=$1 AND id=$2 AND name=$3 AND owner_user_id=$4 AND state IN ('attaching','failed') AND failure_reason IS NOT NULL AND failure_reason<>'' AND volume_id LIKE 'pending:%'`, p.AccountID, box.ID, box.Name, box.OwnerUserID)
 	if err != nil {
 		return err
 	}
@@ -52,6 +52,41 @@ func (s *Server) cancelUnmaterializedBoxCreation(ctx context.Context, p Principa
 	return s.Store.CancelUnmaterializedBoxCreation(ctx, p, box)
 }
 
+func (s *Server) missingProviderCompute(ctx context.Context, accountID string, box v1.LogicalBox) (bool, error) {
+	assignment, err := s.Store.assignment(ctx, accountID, box.ID)
+	if err != nil {
+		return false, err
+	}
+	if assignment.Slot.ServiceID == "" {
+		return false, fmt.Errorf("compute slot has no provider service identity")
+	}
+	prov, err := s.provider(ctx, accountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		return false, err
+	}
+	_, err = prov.Inspect(ctx, assignment.Slot.ServiceID)
+	if errors.Is(err, provider.ErrNotFound) {
+		return true, nil
+	}
+	return false, err
+}
+
+func (s *Server) markMissingAttach(ctx context.Context, p Principal, box v1.LogicalBox) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, active := s.activeCreations[p.AccountID+":"+box.ID]; active {
+		return fmt.Errorf("logical box creation is still active; retry deletion shortly")
+	}
+	missing, err := s.missingProviderCompute(ctx, p.AccountID, box)
+	if err != nil {
+		return err
+	}
+	if !missing {
+		return fmt.Errorf("logical box attachment is still active")
+	}
+	return s.Store.FailMissingAttach(ctx, p, box)
+}
+
 func (s *Server) queueLogicalBoxDelete(ctx context.Context, p Principal, id, confirmation string) (v1.LogicalBox, error) {
 	box, err := s.Store.LogicalBox(ctx, p, id)
 	if err != nil {
@@ -68,6 +103,18 @@ func (s *Server) queueLogicalBoxDelete(ctx context.Context, p Principal, id, con
 		defer s.mu.Unlock()
 		if _, active := s.activeCreations[p.AccountID+":"+box.ID]; active {
 			return box, fmt.Errorf("logical box creation is still active; retry deletion shortly")
+		}
+		if box.FailureReason == "" {
+			missing, err := s.missingProviderCompute(ctx, p.AccountID, box)
+			if err != nil {
+				return box, err
+			}
+			if !missing {
+				return box, fmt.Errorf("logical box attachment is still active")
+			}
+			if err := s.Store.FailMissingAttach(ctx, p, box); err != nil {
+				return box, err
+			}
 		}
 	}
 	a, err := s.Store.BeginLogicalBoxRelease(ctx, p, box.ID, v1.LogicalBoxDeleting)
@@ -213,7 +260,10 @@ func (s *Server) completeLogicalBoxDelete(ctx context.Context, p Principal, a fl
 			return fmt.Errorf("provider lacks independent attached-volume inspection")
 		}
 		attached, err := inspector.AttachedStorage(ctx, a.Slot.ServiceID)
-		if err != nil {
+		if errors.Is(err, provider.ErrNotFound) {
+			a.MissingCompute = true
+			err = nil
+		} else if err != nil {
 			return fmt.Errorf("inspect attached volume: %w", err)
 		}
 		if attached != nil {
@@ -251,7 +301,9 @@ func (s *Server) completeLogicalBoxDelete(ctx context.Context, p Principal, a fl
 		if err := phase("delete-verifying-detach"); err != nil {
 			return err
 		}
-		attached, err = inspector.AttachedStorage(ctx, a.Slot.ServiceID)
+		if !a.MissingCompute {
+			attached, err = inspector.AttachedStorage(ctx, a.Slot.ServiceID)
+		}
 		if err != nil {
 			return err
 		}
@@ -262,15 +314,17 @@ func (s *Server) completeLogicalBoxDelete(ctx context.Context, p Principal, a fl
 	if err := phase("delete-volume"); err != nil {
 		return err
 	}
-	if err := prov.DeleteStorage(ctx, storage, provider.Owner{AccountID: p.AccountID, BoxID: a.Box.Name}); err != nil {
+	if err := prov.DeleteStorage(ctx, storage, provider.Owner{AccountID: p.AccountID, BoxID: a.Box.Name}); err != nil && !errors.Is(err, provider.ErrNotFound) {
 		return err
 	}
 	if a.Slot.ID != "" {
 		if err := phase("delete-sanitizing-compute"); err != nil {
 			return err
 		}
-		if err := detachable.SanitizeSlot(ctx, a.Slot.ServiceID); err != nil {
-			return err
+		if !a.MissingCompute {
+			if err := detachable.SanitizeSlot(ctx, a.Slot.ServiceID); err != nil {
+				return err
+			}
 		}
 	}
 	if err := phase("delete-finalizing"); err != nil {

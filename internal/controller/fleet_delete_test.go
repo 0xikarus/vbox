@@ -18,14 +18,15 @@ import (
 
 type deletionProvider struct {
 	fakeProvider
-	attached   *provider.Storage
-	inspectErr error
-	deleteErr  error
-	started    chan struct{}
-	release    chan struct{}
-	deletes    atomic.Int32
-	flushes    atomic.Int32
-	sanitized  atomic.Int32
+	attached       *provider.Storage
+	inspectErr     error
+	missingCompute bool
+	deleteErr      error
+	started        chan struct{}
+	release        chan struct{}
+	deletes        atomic.Int32
+	flushes        atomic.Int32
+	sanitized      atomic.Int32
 }
 
 type sharedDeletionProvider struct{ *deletionProvider }
@@ -33,7 +34,16 @@ type sharedDeletionProvider struct{ *deletionProvider }
 func (p *sharedDeletionProvider) Name() string { return "shared-worker" }
 
 func (p *deletionProvider) AttachedStorage(context.Context, string) (*provider.Storage, error) {
+	if p.missingCompute {
+		return nil, provider.ErrNotFound
+	}
 	return p.attached, p.inspectErr
+}
+func (p *deletionProvider) Inspect(context.Context, string) (provider.Box, error) {
+	if p.missingCompute {
+		return provider.Box{}, provider.ErrNotFound
+	}
+	return provider.Box{ID: "box-provider-id", State: provider.StateRunning}, nil
 }
 func (p *deletionProvider) Exec(context.Context, string, []string, provider.ExecOptions) (provider.ExecResult, error) {
 	p.flushes.Add(1)
@@ -115,6 +125,33 @@ func TestDurableDeletionPostgres(t *testing.T) {
 		return id, slot
 	}
 	serverFor := func(p *deletionProvider) *Server { return NewServer(store, provider.NewRegistry(p)) }
+	t.Run("stale creation and allocation attachments become failed", func(t *testing.T) {
+		creationID, _ := makeBox(t, "stale-creation", true)
+		allocationBoxID, _ := makeBox(t, "stale-allocation", true)
+		if _, err := store.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='attaching',restoration_state='creation-initializing',created_at=now()-interval '31 minutes' WHERE id=$1`, creationID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='attaching',restoration_state='pending' WHERE id=$1`, allocationBoxID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.DB.ExecContext(ctx, `INSERT INTO allocation_requests(id,account_id,logical_box_id,state,idempotency_key,requested_by,slot_id,assignment_generation,fencing_token,attach_started_at) SELECT $1,$2,id,'attaching',$3,$4,slot_id,assignment_generation,fencing_token,now()-interval '31 minutes' FROM logical_boxes WHERE id=$5`, uuid(), owner.AccountID, "stale-allocation", owner.UserID, allocationBoxID); err != nil {
+			t.Fatal(err)
+		}
+		count, err := store.FailTimedOutAttaches(ctx)
+		if err != nil || count != 2 {
+			t.Fatalf("expired attachments=%d err=%v", count, err)
+		}
+		for _, id := range []string{creationID, allocationBoxID} {
+			var state, reason string
+			if err := store.DB.QueryRowContext(ctx, `SELECT state,failure_reason FROM logical_boxes WHERE id=$1`, id).Scan(&state, &reason); err != nil || state != "failed" || !strings.Contains(reason, "timed out") {
+				t.Fatalf("box %s state=%s reason=%q err=%v", id, state, reason, err)
+			}
+		}
+		var allocationState string
+		if err := store.DB.QueryRowContext(ctx, `SELECT state FROM allocation_requests WHERE logical_box_id=$1`, allocationBoxID).Scan(&allocationState); err != nil || allocationState != "failed" {
+			t.Fatalf("allocation state=%s err=%v", allocationState, err)
+		}
+	})
 	t.Run("failed attaching creation can be cancelled and its volume removed", func(t *testing.T) {
 		id, slot := makeBox(t, "failed-creation", true)
 		if _, err := store.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='attaching',failure_reason='provider access check failed' WHERE id=$1`, id); err != nil {
@@ -144,6 +181,58 @@ func TestDurableDeletionPostgres(t *testing.T) {
 		var state string
 		if err := store.DB.QueryRowContext(ctx, `SELECT state FROM compute_slots WHERE id=$1`, slot).Scan(&state); err != nil || state != "free" {
 			t.Fatal("slot was not released", state, err)
+		}
+	})
+	t.Run("missing provider compute fails attachment and permits deletion", func(t *testing.T) {
+		id, slot := makeBox(t, "missing-compute", true)
+		if _, err := store.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='attaching',failure_reason=NULL WHERE id=$1`, id); err != nil {
+			t.Fatal(err)
+		}
+		p := &deletionProvider{missingCompute: true}
+		s := serverFor(p)
+		box, err := s.queueLogicalBoxDelete(ctx, owner, id, "missing-compute")
+		if err != nil || box.State != "deleting" {
+			t.Fatalf("queue missing compute deletion: box=%+v err=%v", box, err)
+		}
+		if err := s.resumeLogicalBoxDelete(ctx, owner, id); err != nil {
+			t.Fatal(err)
+		}
+		if p.deletes.Load() != 1 || p.flushes.Load() != 0 || p.sanitized.Load() != 0 {
+			t.Fatalf("missing compute deletion touched absent service: deletes=%d flushes=%d sanitized=%d", p.deletes.Load(), p.flushes.Load(), p.sanitized.Load())
+		}
+		var state, health string
+		if err := store.DB.QueryRowContext(ctx, `SELECT state,health FROM compute_slots WHERE id=$1`, slot).Scan(&state, &health); err != nil || state != "unhealthy" || health != "unhealthy" {
+			t.Fatalf("slot not released unhealthy: state=%s health=%s err=%v", state, health, err)
+		}
+		var count int
+		if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM logical_boxes WHERE id=$1`, id).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("volume record retained: count=%d err=%v", count, err)
+		}
+	})
+	t.Run("timed out pending creation with missing compute can be deleted", func(t *testing.T) {
+		id, slot := makeBox(t, "timed-out-pending", true)
+		if _, err := store.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='failed',volume_id='pending:' || id::text,volume_name='pending:timed-out-pending',restoration_state='attach-timed-out',failure_reason='attachment timed out after 30 minutes' WHERE id=$1`, id); err != nil {
+			t.Fatal(err)
+		}
+		p := &deletionProvider{missingCompute: true}
+		s := serverFor(p)
+		r := httptest.NewRequest(http.MethodDelete, "/volume", strings.NewReader(`{"confirmation":"timed-out-pending"}`)).WithContext(ctx)
+		r.SetPathValue("id", id)
+		w := httptest.NewRecorder()
+		s.deleteLogicalBoxVolumeHandler(w, r, owner)
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("delete timed out pending creation HTTP %d: %s", w.Code, w.Body.String())
+		}
+		var count int
+		if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM logical_boxes WHERE id=$1`, id).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("pending record retained: count=%d err=%v", count, err)
+		}
+		var state string
+		if err := store.DB.QueryRowContext(ctx, `SELECT state FROM compute_slots WHERE id=$1`, slot).Scan(&state); err != nil || state != "unhealthy" {
+			t.Fatalf("pending slot not released: state=%s err=%v", state, err)
+		}
+		if p.deletes.Load() != 0 {
+			t.Fatal("attempted to delete an unrecorded provider volume")
 		}
 	})
 	t.Run("failed creation before volume allocation can be cancelled", func(t *testing.T) {

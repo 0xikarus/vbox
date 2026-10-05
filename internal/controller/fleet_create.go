@@ -377,6 +377,9 @@ func (s *Server) finishLogicalBoxCreationActive(ctx context.Context, creation lo
 }
 
 func (s *Server) ReconcileLogicalBoxCreationsNow(ctx context.Context) error {
+	if _, err := s.Store.FailTimedOutAttaches(ctx); err != nil {
+		return err
+	}
 	creations, err := s.Store.RecoverableLogicalBoxCreations(ctx)
 	if err != nil {
 		return err
