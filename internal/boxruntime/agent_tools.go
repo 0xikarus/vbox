@@ -135,7 +135,7 @@ func desktopAgentImageRequest(ctx context.Context, assignment, method, path stri
 	return data, nil
 }
 
-func desktopToolJSON(value any) (map[string]any, error) {
+func desktopToolJSON(value map[string]any) (map[string]any, error) {
 	encoded, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return nil, err
