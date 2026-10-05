@@ -7,7 +7,7 @@ import puppeteer from 'puppeteer-core';
 
 const web=resolve('internal/controller/web');
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
-const box={id:'builder',name:'Builder',state:'running',defaultAgent:'claude',provider:'shared-worker',providerCredential:'pool',slotId:'slot-1',assignmentGeneration:3,processing:true};
+const box={id:'builder',name:'Builder',state:'running',defaultAgent:'claude',provider:'shared-worker',providerCredential:'pool',slotId:'slot-1',assignmentGeneration:3,processing:true,lastStopReason:'run-limit-hard-cap'};
 const gib=1024**3;
 
 test('Details drawer uses grouped rows, subpages and credential slots',async()=>{
@@ -98,6 +98,7 @@ test('Details drawer uses grouped rows, subpages and credential slots',async()=>
    await page.$eval('#inspect-prototype-back',button=>button.click());
    await page.$eval('[data-ip-row="technical"]',button=>button.click());
    await page.waitForFunction(()=>document.querySelectorAll('#ip-technical-table .ip-technical-row').length>0);
+   assert.equal(await page.$$eval('#ip-technical-table .ip-technical-row',rows=>rows.find(row=>row.firstElementChild?.textContent==='Last stop')?.lastElementChild?.textContent),'run limit · hard cap');
    assert.ok(await page.$$eval('#ip-technical-table .ip-technical-row',rows=>rows.every(row=>row.querySelectorAll('span').length===2&&(row.classList.contains('ip-technical-copy')===!!row.querySelector('svg')))));
    assert.ok(await page.$eval('#ip-technical-table .ip-technical-row',row=>row.classList.contains('ip-technical-copy')));
    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async value=>{window.copiedDetail=value}}}));

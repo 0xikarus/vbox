@@ -17,20 +17,25 @@ self.addEventListener('push', event => {
     }
     const url=destination(data);
     const open = windows.find(client => client.visibilityState === 'visible' && client.url === url);
-    if (open) { try { await open.focus(); } catch (e) { /* focus is best-effort */ } return; }
+    if (open && data.runBudgetAction!=='add2h') { try { await open.focus(); } catch (e) { /* focus is best-effort */ } return; }
     await self.registration.showNotification(data.title || 'vbox agent', {
       body: data.body || 'New reply',
       tag: 'vmbox-' + (data.box || data.url || 'chat'),
       renotify: true,
       icon: '/icon-192.png',
       badge: '/badge-96.png',
-      data: { url }
+      data: { url, box:data.box||'', runBudgetAction:data.runBudgetAction||'' },
+      ...(data.runBudgetAction==='add2h'?{actions:[{action:'run-budget-add-2h',title:'+2 h'}]}:{})
     });
   })());
 });
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const url = destination({url:(event.notification.data && event.notification.data.url) || '/chat'});
+  const data=event.notification.data||{};
+  let url=destination({url:data.url||'/chat'});
+  if(event.action==='run-budget-add-2h'&&data.runBudgetAction==='add2h'&&data.box){
+    const target=new URL(url);target.hash=new URLSearchParams({box:data.box,runBudgetAdd:'7200'}).toString();url=target.href;
+  }
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const pathname=new URL(url).pathname;

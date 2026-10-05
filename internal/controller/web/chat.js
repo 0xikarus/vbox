@@ -3023,10 +3023,23 @@ function pairTileStatus(tile,mode,label){
  navList.addEventListener('touchmove',event=>moveNavSwipe(event,'forward'),{passive:false});
  navList.addEventListener('touchend',finishNavSwipe,{passive:true});
  navList.addEventListener('touchcancel',finishNavSwipe,{passive:true});
+ async function consumeRunBudgetNoticeAction(){
+  const params=new URLSearchParams(location.hash.slice(1)),id=params.get('box');
+  if(!owner||params.get('runBudgetAdd')!=='7200'||!id||!boxes.has(id))return;
+  params.delete('runBudgetAdd');history.replaceState(null,'',location.pathname+location.search+'#'+params.toString());
+  try{
+   const policy=await api(boxPath(id)+'/run-budget-policy');
+   if(!policy.deadlineAt)throw Error('This box has no active run-time countdown.');
+   await api(boxPath(id)+'/run-budget-policy/adjust','POST',{},{action:'add',seconds:7200,expectedDeadlineAt:policy.deadlineAt});
+   toast('Added 2 hours to this run.');
+   const root=$('#inspect-run-budget-policy');if(root&&selected===id){delete root.dataset.budgetKey;renderInspect()}
+  }catch(error){toast(error.message||'Could not add time to this run.')}
+ }
  addEventListener('hashchange',()=>{
   const params=new URLSearchParams(location.hash.slice(1)),pair=params.get('pair');
   if(pair){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match&&match!==selectedPair&&openingSelection!=='pair:'+match)void openPair(match);return}
-  const id=params.get('box');if(id&&id!==selected&&boxes.has(id)&&openingSelection!=='box:'+id)void openBox(id);
+  const id=params.get('box');if(id&&id!==selected&&boxes.has(id)&&openingSelection!=='box:'+id)void openBox(id).then(consumeRunBudgetNoticeAction);
+  else void consumeRunBudgetNoticeAction();
  });
 
  /* ---------- takeover popup: VNC/TMUX control ---------- */
@@ -3446,6 +3459,7 @@ function pairTileStatus(tile,mode,label){
    ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
    ['Box ping',livePing==null?'—':livePing+' ms'],
    ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
+   ...(box.lastStopReason?[['Last stop',({'run-limit':'run limit','run-limit-hard-cap':'run limit · hard cap',idle:'idle',manual:'manual',capacity:'capacity'})[box.lastStopReason]||box.lastStopReason]]:[]),
    ...(remote?[['Last remote control',remoteActor+(remoteWhen?' · '+remoteWhen:'')+' · '+remoteActions+' '+(remoteActions===1?'action':'actions'),null,null,{title:remoteAt||''}]]:[]),
    ...inspectObservationRows(box),
    ['Instructions synced',instructionSyncLabel(sync),null,null,{title:instructionSyncFull(sync)}],
@@ -4318,6 +4332,7 @@ function pairTileStatus(tile,mode,label){
    const params=new URLSearchParams(location.hash.slice(1)),id=params.get('box'),pair=params.get('pair');
    if(pair&&owner){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match)await openPair(match)}
    else if(id&&boxes.has(id))await openBox(id);
+   await consumeRunBudgetNoticeAction();
    if(owner)void loadChatCommands().catch(e=>{if(selected)statusEl.textContent=e.message});
    if(owner){clearInterval(usageTimer);void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)}
    schedule();renderInstallState();renderPushState();void checkPushState({repair:true});
