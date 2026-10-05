@@ -1,10 +1,28 @@
 package sharedworker
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/0xikarus/vmbox-service/internal/provider"
 )
+
+func TestOldWorkerHostResourcesDoNotReportZeroFree(t *testing.T) {
+	var old provider.HostResources
+	if err := json.Unmarshal([]byte(`{"diskTotalBytes":100,"diskUsedBytes":90}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.DiskFreeBytes != nil || strings.Contains(string(encoded), "diskFreeBytes") {
+		t.Fatalf("old worker free-space field: %s", encoded)
+	}
+}
 
 func TestHostResourcesUsesFiniteCgroupLimit(t *testing.T) {
 	dir := t.TempDir()

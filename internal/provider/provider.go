@@ -55,6 +55,8 @@ type ResourceUsage struct {
 	MemoryUsedBytes       int64      `json:"memoryUsedBytes"`
 	SwapUsedBytes         int64      `json:"swapUsedBytes"`
 	DiskUsedBytes         *int64     `json:"diskUsedBytes,omitempty"`
+	DiskWorkspaceBytes    *int64     `json:"diskWorkspaceBytes,omitempty"`
+	DiskWritableBytes     *int64     `json:"diskWritableBytes,omitempty"`
 	DiskTotalBytes        *int64     `json:"diskTotalBytes,omitempty"`
 	DiskEnforced          bool       `json:"diskEnforced"`
 	DiskObservedAt        *time.Time `json:"diskObservedAt,omitempty"`
@@ -62,6 +64,7 @@ type ResourceUsage struct {
 	DiskUnavailableReason string     `json:"diskUnavailableReason,omitempty"`
 	HostDiskUsedBytes     *int64     `json:"hostDiskUsedBytes,omitempty"`
 	HostDiskTotalBytes    *int64     `json:"hostDiskTotalBytes,omitempty"`
+	HostDiskFreeBytes     *int64     `json:"hostDiskFreeBytes,omitempty"`
 	ObservedAt            time.Time  `json:"observedAt"`
 }
 
@@ -72,6 +75,7 @@ type HostResources struct {
 	SwapFreeBytes        int64     `json:"swapFreeBytes"`
 	DiskTotalBytes       int64     `json:"diskTotalBytes"`
 	DiskUsedBytes        int64     `json:"diskUsedBytes"`
+	DiskFreeBytes        *int64    `json:"diskFreeBytes,omitempty"`
 	CPUCores             float64   `json:"cpuCores"`
 	CPULoad1             float64   `json:"cpuLoad1"`
 	CPUPercent           float64   `json:"cpuPercent"`

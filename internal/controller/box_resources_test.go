@@ -35,8 +35,10 @@ func TestBoxResourcesIncludesOptionalUsage(t *testing.T) {
 			var prov provider.Provider = &limitsTestProvider{resources: provider.Resources{CPU: 1, MemoryMiB: 2048, DiskGiB: 2}}
 			observed := time.Now().UTC()
 			diskUsed, diskTotal := int64(1500000000), int64(2<<30)
+			workspaceBytes, writableBytes := int64(1200000000), int64(300000000)
+			hostTotal, hostUsed, hostFree := int64(100<<30), int64(92<<30), int64(8<<30)
 			if withUsage {
-				prov = &usageTestProvider{limitsTestProvider: limitsTestProvider{resources: provider.Resources{CPU: 1, MemoryMiB: 2048, DiskGiB: 2}}, usage: provider.ResourceUsage{MemoryUsedBytes: 1200000000, SwapUsedBytes: 100000000, DiskUsedBytes: &diskUsed, DiskTotalBytes: &diskTotal, DiskObservedAt: &observed, ObservedAt: observed}}
+				prov = &usageTestProvider{limitsTestProvider: limitsTestProvider{resources: provider.Resources{CPU: 1, MemoryMiB: 2048, DiskGiB: 2}}, usage: provider.ResourceUsage{MemoryUsedBytes: 1200000000, SwapUsedBytes: 100000000, DiskUsedBytes: &diskUsed, DiskWorkspaceBytes: &workspaceBytes, DiskWritableBytes: &writableBytes, DiskTotalBytes: &diskTotal, DiskObservedAt: &observed, HostDiskTotalBytes: &hostTotal, HostDiskUsedBytes: &hostUsed, HostDiskFreeBytes: &hostFree, ObservedAt: observed}}
 			}
 			server := NewServer(store, provider.NewRegistry())
 			server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return prov, nil }
@@ -60,7 +62,7 @@ func TestBoxResourcesIncludesOptionalUsage(t *testing.T) {
 			if hasUsage != withUsage || data["resources"] == nil {
 				t.Fatalf("usage presence=%v body=%s", hasUsage, rec.Body.String())
 			}
-			if withUsage && (data["diskTotalBytes"] != float64(diskTotal) || data["diskEnforced"] != false || data["diskObservedAt"] == nil) {
+			if withUsage && (data["diskTotalBytes"] != float64(diskTotal) || data["diskWorkspaceBytes"] != float64(workspaceBytes) || data["diskWritableBytes"] != float64(writableBytes) || data["hostDiskFreeBytes"] != float64(hostFree) || data["diskEnforced"] != false || data["diskObservedAt"] == nil) {
 				t.Fatalf("usage=%s", rec.Body.String())
 			}
 			if err := mock.ExpectationsWereMet(); err != nil {
