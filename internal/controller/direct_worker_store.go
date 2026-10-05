@@ -192,7 +192,10 @@ func (s *Store) WorkerAssignment(ctx context.Context, w DirectWorker) (fleetAssi
  WHERE b.account_id=$1 AND b.slot_id=$2 AND b.assignment_generation=c.assignment_generation
  AND b.fencing_token=c.fencing_token AND b.state IN ('reserved','attaching','running','draining','hibernating','deleting')`, w.AccountID, w.SlotID).Scan(&boxID)
 	if err != nil {
-		return fleetAssignment{}, errors.New("worker has no current box assignment")
+		if errors.Is(err, sql.ErrNoRows) {
+			return fleetAssignment{}, errWorkerAssignmentChanged
+		}
+		return fleetAssignment{}, err
 	}
 	return s.assignment(ctx, w.AccountID, boxID)
 }

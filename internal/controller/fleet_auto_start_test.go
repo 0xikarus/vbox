@@ -38,6 +38,10 @@ func TestSavedNewBoxAutoStartSurvivesControllerRestartPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err = store.DB.ExecContext(ctx, `INSERT INTO provider_credentials(id,account_id,provider,name,encrypted_value)
+ VALUES($1,$2,'railway','','fixture')`, uuid(), owner.AccountID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = store.DB.ExecContext(ctx, `INSERT INTO compute_slots(id,account_id,provider,ordinal,state,service_id,region,health)
  VALUES($1,$2,'railway',1,'free','disposable-start-slot','region-a','healthy')`, uuid(), owner.AccountID); err != nil {
 		t.Fatal(err)

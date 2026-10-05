@@ -135,6 +135,10 @@ func TestLoginProfilesPostgres(t *testing.T) {
 		t.Fatal("secret in metadata")
 	}
 	slot := uuid()
+	if _, err = s.DB.ExecContext(ctx, `INSERT INTO provider_credentials(id,account_id,provider,name,encrypted_value)
+ VALUES($1,$2,'railway','','fixture')`, uuid(), p.AccountID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.DB.ExecContext(ctx, `INSERT INTO compute_slots(id,account_id,provider,ordinal,state,service_id,health,region) VALUES($1,$2,'railway',1,'free','profile-test-service','healthy','test-region')`, slot, p.AccountID); err != nil {
 		t.Fatal(err)
 	}
