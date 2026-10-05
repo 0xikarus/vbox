@@ -57,7 +57,7 @@ func allocatedBytes(info os.FileInfo) int64 {
 func chromiumTemp(name string) bool {
 	return strings.HasPrefix(name, "chrome-") || strings.HasPrefix(name, "chromium-") ||
 		strings.HasPrefix(name, "puppeteer-") || strings.HasPrefix(name, "puppeteer_dev_chrome_profile-") ||
-		strings.HasPrefix(name, ".org.chromium.Chromium.")
+		strings.HasPrefix(name, ".org.chromium.Chromium.") || strings.HasPrefix(name, "org.chromium.Chromium.")
 }
 
 func coreDump(name string) bool { return name == "core" || strings.HasPrefix(name, "core.") }

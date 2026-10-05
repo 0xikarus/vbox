@@ -30,15 +30,18 @@ func TestCleanupStaleTempRespectsAgeOwnershipAndOpenFiles(t *testing.T) {
 		}
 	}
 	stale := filepath.Join(private, "puppeteer-stale")
+	chromiumUnpack := filepath.Join(private, "org.chromium.Chromium.chromium_chrome_Unpacker_BeginUnzipping.a1b2")
+	chromiumFetcher := filepath.Join(system, "org.chromium.Chromium.chromium_chrome_url_fetcher_c3d4")
+	chromiumHidden := filepath.Join(private, ".org.chromium.Chromium.e5f6")
 	active := filepath.Join(private, "chromium-open")
 	recent := filepath.Join(system, "chrome-recent")
-	for _, path := range []string{stale, active, recent} {
+	for _, path := range []string{stale, chromiumUnpack, chromiumFetcher, chromiumHidden, active, recent} {
 		if err := os.Mkdir(path, 0700); err != nil {
 			t.Fatal(err)
 		}
 		oldFile(filepath.Join(path, "payload"))
 	}
-	for _, path := range []string{stale, active} {
+	for _, path := range []string{stale, chromiumUnpack, chromiumFetcher, chromiumHidden, active} {
 		if err := os.Chtimes(path, old, old); err != nil {
 			t.Fatal(err)
 		}
@@ -56,10 +59,10 @@ func TestCleanupStaleTempRespectsAgeOwnershipAndOpenFiles(t *testing.T) {
 	}
 	key, _ := inode(info)
 	result, err := cleanupTempAt(context.Background(), root, private, system, os.Geteuid(), now, map[inodeKey]bool{key: true})
-	if err != nil || result.Removed < 3 || result.ReclaimedBytes <= 0 || result.Skipped == 0 {
+	if err != nil || result.Removed < 9 || result.ReclaimedBytes <= 0 || result.Skipped == 0 {
 		t.Fatalf("cleanup result=%+v err=%v", result, err)
 	}
-	for _, path := range []string{stale, core} {
+	for _, path := range []string{stale, chromiumUnpack, chromiumFetcher, chromiumHidden, core} {
 		if _, err := os.Lstat(path); !os.IsNotExist(err) {
 			t.Fatalf("stale path remains %s: %v", path, err)
 		}
