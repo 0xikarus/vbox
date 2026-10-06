@@ -334,10 +334,27 @@ func TestGeneratedTaskSessionsAreSafeAndDistinct(t *testing.T) {
 func TestRecoverStaleBoxMessagesMakesInterruptedDeliveryAmbiguous(t *testing.T) {
 	store, mock := testStore(t)
 	before := time.Now().UTC().Add(-2 * time.Minute)
-	mock.ExpectExec("UPDATE box_messages parent SET state='delivered'").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE box_messages parent SET state='read'").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("UPDATE box_messages SET state='ambiguous'").WithArgs(before).WillReturnResult(sqlmock.NewResult(0, 1))
 	if err := store.RecoverStaleBoxMessages(context.Background(), before); err != nil {
 		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAmbiguousMessageRemainsEligibleForExactReceiptProbe(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery(`(?s)SELECT m.account_id::text.*m.state='ambiguous' AND t.state='active'`).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "message_id", "task_id", "submit"}).AddRow("account-a", "message-a", "task-a", true))
+	mock.ExpectQuery(`FROM box_tasks t JOIN logical_boxes b`).WithArgs("account-a", "task-a").
+		WillReturnRows(boxTaskRow("task-a", "active"))
+	mock.ExpectQuery(`FROM box_messages`).WithArgs("account-a", "message-a").
+		WillReturnRows(boxMessageRow("message-a", "task-a", "user-a", "user", "prompt", "ambiguous"))
+	values, err := store.AmbiguousActiveBoxMessages(context.Background())
+	if err != nil || len(values) != 1 || values[0].Message.State != "ambiguous" || !values[0].Submit {
+		t.Fatalf("values=%+v err=%v", values, err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

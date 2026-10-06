@@ -270,6 +270,19 @@ func (s *Store) SetBoxSessionBusy(ctx context.Context, accountID, boxID, session
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return fmt.Errorf("active agent chat session not found")
 	}
+	if busy {
+		// This event is emitted when the agent starts a turn. Only messages
+		// already handed to this session can be marked read; the state update
+		// also upgrades uncertain handoffs and cannot be undone by a late receipt.
+		_, err = s.DB.ExecContext(ctx, `UPDATE box_messages m SET state='read',failure_reason=NULL,updated_at=now()
+			FROM box_tasks t WHERE m.account_id=$1 AND m.task_id=t.id AND t.account_id=$1
+			AND t.logical_box_id=$2 AND t.session_name=$3 AND t.state='active'
+			AND m.direction IN ('user','box') AND m.submit AND m.state IN ('delivering','delivered','ambiguous')
+			AND m.created_at<=t.agent_busy_updated_at`, accountID, boxID, session)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -484,7 +497,7 @@ func (s *Store) UnansweredBoxMessages(ctx context.Context, p Principal, taskID s
 	}
 	rows, err := s.DB.QueryContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,''),COALESCE(m.parent_message_id::text,''),COALESCE(m.thread_id,m.id)::text
 		FROM box_messages m
-		WHERE m.account_id=$1 AND m.task_id=$2 AND m.direction='user' AND m.state='delivered' AND m.submit
+		WHERE m.account_id=$1 AND m.task_id=$2 AND m.direction='user' AND m.state IN ('delivered','read') AND m.submit
 		AND NOT EXISTS (
 			SELECT 1 FROM box_messages reply
 			WHERE reply.account_id=m.account_id AND reply.idempotency_key='agent-reply:' || m.id::text
@@ -516,9 +529,9 @@ func (s *Store) UpsertAgentBoxMessage(ctx context.Context, accountID, taskID, re
 	result, err := s.DB.ExecContext(ctx, `WITH target AS (
 		SELECT id,thread_id FROM box_messages WHERE account_id=$2 AND task_id=$3 AND id=$7
 	), confirmed AS (
-		UPDATE box_messages parent SET state='delivered',failure_reason=NULL,updated_at=now()
-		FROM target WHERE parent.id=target.id AND parent.account_id=$2 AND $5='delivered'
-		AND parent.state IN ('queued','delivering','ambiguous','failed') RETURNING parent.id
+		UPDATE box_messages parent SET state='read',failure_reason=NULL,updated_at=now()
+		FROM target WHERE parent.id=target.id AND parent.account_id=$2
+		AND parent.direction IN ('user','box') AND parent.state<>'read' RETURNING parent.id
 	)
 	INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key,parent_message_id,thread_id)
 		SELECT $1,$2,$3,'agent',$4,false,$5,$6,target.id,COALESCE(target.thread_id,target.id)
@@ -567,10 +580,11 @@ func (s *Store) ClaimBoxMessage(ctx context.Context, accountID, id string) (bool
 func (s *Store) SetBoxMessageState(ctx context.Context, accountID, id, state, failure string) error {
 	_, err := s.DB.ExecContext(ctx, `WITH message AS (
 		UPDATE box_messages SET state=$3,failure_reason=NULLIF($4,''),updated_at=now()
-		WHERE account_id=$1 AND id=$2 AND (state<>'delivered' OR $3='delivered') RETURNING id,task_id,direction,submit
+		WHERE account_id=$1 AND id=$2 AND state<>'read'
+		AND (state<>'delivered' OR $3 IN ('delivered','read')) RETURNING id,task_id,direction,submit
 	) UPDATE box_tasks task SET agent_busy=true,agent_busy_updated_at=now(),agent_busy_message_id=message.id
 	FROM message WHERE task.account_id=$1 AND task.id=message.task_id AND task.agent<>'shell'
-	AND $3='delivered' AND message.submit AND message.direction IN ('user','box')
+	AND $3 IN ('delivered','read') AND message.submit AND message.direction IN ('user','box')
 	AND NOT EXISTS (SELECT 1 FROM box_messages reply WHERE reply.account_id=$1
 		AND reply.idempotency_key='agent-reply:' || message.id::text AND reply.state='delivered')`, accountID, id, state, failure)
 	return err
@@ -579,8 +593,8 @@ func (s *Store) SetBoxMessageState(ctx context.Context, accountID, id, state, fa
 func (s *Store) RecoverStaleBoxMessages(ctx context.Context, before time.Time) error {
 	// A worker can publish its reply before the delivery call returns. Repair
 	// messages left in-flight by a controller restart or an old request timeout.
-	if _, err := s.DB.ExecContext(ctx, `UPDATE box_messages parent SET state='delivered',failure_reason=NULL,updated_at=now()
-		WHERE parent.state IN ('queued','delivering','ambiguous','failed') AND EXISTS (
+	if _, err := s.DB.ExecContext(ctx, `UPDATE box_messages parent SET state='read',failure_reason=NULL,updated_at=now()
+		WHERE parent.direction IN ('user','box') AND parent.state<>'read' AND EXISTS (
 			SELECT 1 FROM box_messages reply WHERE reply.account_id=parent.account_id
 			AND reply.idempotency_key='agent-reply:' || parent.id::text AND reply.state='delivered'
 		)`); err != nil {

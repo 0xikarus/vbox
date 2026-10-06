@@ -312,7 +312,7 @@ func (s *Store) GroupMessage(ctx context.Context, p Principal, id string) (v1.Gr
 	if err != nil {
 		return message, err
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT d.logical_box_id::text,b.name,COALESCE(d.task_id::text,''),COALESCE(d.box_message_id::text,''),COALESCE(bm.state,d.state),COALESCE(d.failure_reason,''),d.updated_at FROM chat_group_deliveries d JOIN logical_boxes b ON b.id=d.logical_box_id AND b.account_id=d.account_id LEFT JOIN box_messages bm ON bm.id=d.box_message_id AND bm.account_id=d.account_id WHERE d.account_id=$1 AND d.message_id=$2 ORDER BY b.name,b.id`, p.AccountID, id)
+	rows, err := s.DB.QueryContext(ctx, `SELECT d.logical_box_id::text,b.name,COALESCE(d.task_id::text,''),COALESCE(d.box_message_id::text,''),COALESCE(bm.state,d.state),COALESCE(d.failure_reason,''),GREATEST(d.updated_at,bm.updated_at) FROM chat_group_deliveries d JOIN logical_boxes b ON b.id=d.logical_box_id AND b.account_id=d.account_id LEFT JOIN box_messages bm ON bm.id=d.box_message_id AND bm.account_id=d.account_id WHERE d.account_id=$1 AND d.message_id=$2 ORDER BY b.name,b.id`, p.AccountID, id)
 	if err != nil {
 		return message, err
 	}

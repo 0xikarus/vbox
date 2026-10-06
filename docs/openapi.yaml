@@ -1243,7 +1243,7 @@ components:
         userId: {type: string}
         direction: {enum: [user_to_agent, agent_to_user]}
         text: {type: string}
-        state: {enum: [queued, delivering, delivered, failed, ambiguous]}
+        state: {enum: [queued, delivering, delivered, read, failed, ambiguous]}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
     TerminalSnapshot:

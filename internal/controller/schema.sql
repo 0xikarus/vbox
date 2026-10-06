@@ -341,7 +341,7 @@ CREATE TABLE IF NOT EXISTS box_messages (
   direction text NOT NULL CHECK (direction IN ('user','system','agent')),
   body text NOT NULL,
   submit boolean NOT NULL DEFAULT true,
-  state text NOT NULL CHECK (state IN ('queued','delivering','streaming','delivered','ambiguous','failed')),
+  state text NOT NULL CHECK (state IN ('queued','delivering','streaming','delivered','read','ambiguous','failed')),
   idempotency_key text NOT NULL,
   failure_reason text,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -352,11 +352,11 @@ DO $$ BEGIN
   IF EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conrelid='box_messages'::regclass AND conname='box_messages_state_check'
-      AND position('streaming' IN pg_get_constraintdef(oid))=0
+      AND (position('streaming' IN pg_get_constraintdef(oid))=0 OR position('read' IN pg_get_constraintdef(oid))=0)
   ) THEN
     ALTER TABLE box_messages DROP CONSTRAINT box_messages_state_check;
     ALTER TABLE box_messages ADD CONSTRAINT box_messages_state_check
-      CHECK (state IN ('queued','delivering','streaming','delivered','ambiguous','failed'));
+      CHECK (state IN ('queued','delivering','streaming','delivered','read','ambiguous','failed'));
   END IF;
 END $$;
 
