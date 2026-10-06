@@ -1914,8 +1914,8 @@
   group.append(toggle,list);return group;
  }
  function messageAuthor(message){return message.pairAuthor||(message.direction==='user'?'You':message.direction==='box'?(boxes.get(message.senderBoxId)?.name||'Agent box'):'Agent')}
- function setReply(message){replyingTo=message;replyPreview.hidden=false;$('#reply-preview-text').textContent=replyQuoteText(message);inputEl.focus()}
- function cancelReply(){replyingTo=null;replyPreview.hidden=true;$('#reply-preview-text').textContent=''}
+ function setReply(message){replyingTo=message;replyPreview.hidden=false;$('#reply-preview-text').textContent=replyQuoteText(message);inputEl.focus();renderCompactHint()}
+ function cancelReply(){replyingTo=null;replyPreview.hidden=true;$('#reply-preview-text').textContent='';renderCompactHint()}
  $('#reply-cancel').onclick=cancelReply;
  let openThreadID='';
  const threadComposer=$('#thread-composer'),threadFileInput=$('#thread-attachments'),threadStatus=$('#thread-status');
@@ -2733,7 +2733,7 @@ function pairTileStatus(tile,mode,label){
   send.title=running?label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line'):box?.resumeCandidate?'Choose whether to restore the saved '+agentLabel(box)+' session first.':box?.resumeCheckPending?'Checking for a saved conversation…':'Wait for this box to be running before sending';
   const reason=$('#send-blocked-reason');reason.hidden=!hasContent||running;reason.textContent=reason.hidden?'':send.title;
  }
- inputEl.addEventListener('input',()=>{grow();updateSendState();if(acceptingComposerSuggestion)acceptingComposerSuggestion=false;else void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
+ inputEl.addEventListener('input',()=>{grow();updateSendState();renderCompactHint();if(acceptingComposerSuggestion)acceptingComposerSuggestion=false;else void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
  let composerHintShown=false;
  inputEl.addEventListener('focus',()=>{
   if(composerHintShown)return;composerHintShown=true;
@@ -3174,6 +3174,7 @@ function pairTileStatus(tile,mode,label){
   if(status?.kind==='busy'){element.disabled=true;compactHintNodes(element,'busy','Compacting…');element.hidden=false;return}
   if(status?.kind==='success'){element.disabled=true;compactHintNodes(element,'success','Context compacted');element.hidden=false;return}
   if(status?.kind==='error'){element.disabled=false;compactHintNodes(element,'error',status.error||'Compaction failed', 'Retry');element.hidden=false;return}
+  if(replyingTo||inputEl.value.trim()){element.hidden=true;return}
   if(!compactHintEligible(box)){element.hidden=true;return}
   element.disabled=false;compactHintNodes(element,'idle','Context is getting long','Compact');element.hidden=false;
  }

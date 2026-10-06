@@ -159,3 +159,19 @@ test('The hint hides after a compact and only returns once the conversation grow
   await page.close();
  });
 });
+
+test('Compact hint hides while the composer has text or a reply quote is active',async()=>{
+ await withChat({},async(browser,base)=>{
+  const page=await open(browser,base,baseBox);
+  await page.waitForFunction(()=>!document.querySelector('#compact-hint').hidden);
+  await page.type('#chat-input','half-written message');
+  await page.waitForFunction(()=>document.querySelector('#compact-hint').hidden);
+  await page.$eval('#chat-input',i=>{i.value='';i.dispatchEvent(new Event('input',{bubbles:true}))});
+  await page.waitForFunction(()=>!document.querySelector('#compact-hint').hidden);
+  await page.$eval('#chat-messages .msg.user .msg-reply',b=>b.click());
+  await page.waitForFunction(()=>document.querySelector('#compact-hint').hidden);
+  await page.$eval('#reply-cancel',b=>b.click());
+  await page.waitForFunction(()=>!document.querySelector('#compact-hint').hidden);
+  await page.close();
+ });
+});
