@@ -3487,7 +3487,7 @@ function pairTileStatus(tile,mode,label){
   for(const [key,icon,title,action] of dangerous)$('#ip-danger').append(inspectPrototypeRow(key,icon,title,'',action,true));
   {
    const compactRow=inspectPrototypeRow('compact','minimize-2','Compact context','Summarize older context',()=>{},false);
-   $('#ip-settings').append(compactRow);
+   const clearRow=$('[data-ip-row="context"]');if(clearRow)clearRow.before(compactRow);else $('#ip-danger').append(compactRow);
    const panel=mk('div');panel.id='compact-confirm';panel.className='ip-compact-confirm';panel.hidden=true;
    const copy=mk('p','Compact summarizes earlier messages so the agent keeps this conversation with less context. Clear context instead discards all prior context and starts fresh. Chat history stays visible either way.');copy.className='ip-compact-confirm-text';
    const actions=mk('div');actions.className='ip-compact-confirm-actions';
@@ -3543,7 +3543,6 @@ function pairTileStatus(tile,mode,label){
   setValue('technical','IDs & activity');
   inspectMail?.onBox(box);
   for(const key of ['power','credentials','contacts','access','attachments'])$('[data-ip-row="'+key+'"]').hidden=!owner;
-  $('[data-ip-row="compact"]').hidden=!owner;
   $('#ip-instructions-summary').textContent='Last synced · '+instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null);
   $('#ip-danger').closest('.ip-group').hidden=!owner;
   $('#ip-resync-instructions').hidden=!owner||box.state!=='running';$('[data-ip-row="restart"]').hidden=box.state!=='running';

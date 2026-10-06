@@ -62,6 +62,8 @@ test('Details: Compact context row confirms inline and calls the endpoint',async
  await withChat({},async(browser,base,compactCalls)=>{
   const page=await open(browser,base,baseBox);
   await openDetails(page);
+  assert.deepEqual(await page.$$eval('#ip-danger .ip-row',rows=>rows.map(r=>r.dataset.ipRow)),['restart','compact','context','clear-attachments'],'Compact sits immediately above Clear context');
+  assert.equal(await page.$eval('[data-ip-row="compact"]',r=>r.classList.contains('ip-row-danger')),false,'Compact stays non-danger');
   const idle=await rowState(page);
   assert.equal(idle.disabled,false,'row enabled for a running agent');
   assert.match(idle.value,/Summarize older context/);
