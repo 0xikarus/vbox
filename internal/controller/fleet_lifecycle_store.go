@@ -20,6 +20,84 @@ type fleetAssignment struct {
 	MissingCompute bool
 }
 
+// RetryTimedOutAllocation reuses the retained volume and the exact fenced slot
+// after the provider has confirmed that the slot holds no foreign volume.
+// It cannot recover a failed initial creation with a placeholder volume.
+func (s *Store) RetryTimedOutAllocation(ctx context.Context, p Principal, assignment fleetAssignment, leaseOwner string, leaseDuration time.Duration) (v1.Allocation, error) {
+	boxID := assignment.Box.ID
+	if leaseOwner == "" {
+		leaseOwner = "user:" + p.UserID
+	}
+	if leaseDuration <= 0 {
+		leaseDuration = 2 * time.Minute
+	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return v1.Allocation{}, err
+	}
+	defer tx.Rollback()
+	box, err := scanLogicalBox(tx.QueryRowContext(ctx, logicalBoxSelect+` WHERE account_id=$1 AND id=$2 FOR UPDATE`, p.AccountID, boxID))
+	if err != nil {
+		return v1.Allocation{}, err
+	}
+	if box.OwnerUserID != p.UserID && p.Role != "owner" {
+		return v1.Allocation{}, fmt.Errorf("logical box belongs to another user")
+	}
+	if box.State != v1.LogicalBoxFailed || box.RestorationState != "attach-timed-out" || box.SlotID != assignment.Slot.ID || box.AssignmentGeneration != assignment.Box.AssignmentGeneration || box.VolumeID != assignment.Box.VolumeID || box.VolumeID == "" || strings.HasPrefix(box.VolumeID, "pending:") {
+		return v1.Allocation{}, fmt.Errorf("logical box is no longer eligible for a timed-out wake retry")
+	}
+	slot, err := scanComputeSlot(tx.QueryRowContext(ctx, computeSlotSelect+` WHERE s.account_id=$1 AND s.id=$2 FOR UPDATE OF s`, p.AccountID, box.SlotID))
+	if err != nil {
+		return v1.Allocation{}, err
+	}
+	if slot.State != v1.FleetSlotDraining || slot.Health != "healthy" || slot.AssignmentGeneration != box.AssignmentGeneration || slot.Provider != box.Provider || slot.ProviderCredential != box.ProviderCredential || slot.ServiceID != assignment.Slot.ServiceID {
+		return v1.Allocation{}, fmt.Errorf("fenced worker slot is unavailable for retry")
+	}
+	allocation, err := scanAllocation(tx.QueryRowContext(ctx, allocationSelect+` WHERE r.account_id=$1 AND r.logical_box_id=$2 AND r.assignment_generation=$3 AND r.fencing_token=$4 AND r.state='failed' AND r.phase='attach-timed-out' ORDER BY r.created_at DESC LIMIT 1 FOR UPDATE OF r`, p.AccountID, box.ID, box.AssignmentGeneration, assignment.FencingToken))
+	if err != nil {
+		return v1.Allocation{}, err
+	}
+	if allocation.SlotID != slot.ID {
+		return v1.Allocation{}, fmt.Errorf("timed-out allocation has a different slot")
+	}
+	var otherActive bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM allocation_requests WHERE account_id=$1 AND logical_box_id=$2 AND id<>$3 AND state IN ('queued','reserved','attaching'))`, p.AccountID, box.ID, allocation.RequestID).Scan(&otherActive); err != nil {
+		return v1.Allocation{}, err
+	}
+	if otherActive {
+		return v1.Allocation{}, fmt.Errorf("another allocation is active for this box")
+	}
+	expires := time.Now().UTC().Add(leaseDuration)
+	result, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET state='reserved',restoration_state='pending',failure_reason=NULL,lease_owner=$5,lease_expires_at=$6,updated_at=now() WHERE account_id=$1 AND id=$2 AND slot_id=$3 AND assignment_generation=$4 AND fencing_token=$7 AND state='failed' AND restoration_state='attach-timed-out'`, p.AccountID, box.ID, slot.ID, box.AssignmentGeneration, leaseOwner, expires, assignment.FencingToken)
+	if err != nil {
+		return v1.Allocation{}, err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return v1.Allocation{}, fmt.Errorf("logical box fence changed during retry")
+	}
+	result, err = tx.ExecContext(ctx, `UPDATE compute_slots SET state='reserved',failure_reason=NULL,lease_owner=$5,lease_expires_at=$6,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND COALESCE(lease_owner,'')=$7 AND state='draining'`, p.AccountID, slot.ID, slot.AssignmentGeneration, assignment.FencingToken, leaseOwner, expires, slot.LeaseOwner)
+	if err != nil {
+		return v1.Allocation{}, err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return v1.Allocation{}, fmt.Errorf("worker slot fence changed during retry")
+	}
+	result, err = tx.ExecContext(ctx, `UPDATE allocation_requests SET state='reserved',phase='reserved',failure_reason=NULL,attach_started_at=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND slot_id=$3 AND assignment_generation=$4 AND fencing_token=$5 AND state='failed' AND phase='attach-timed-out'`, p.AccountID, allocation.RequestID, slot.ID, box.AssignmentGeneration, assignment.FencingToken)
+	if err != nil {
+		return v1.Allocation{}, err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return v1.Allocation{}, fmt.Errorf("allocation fence changed during retry")
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.wake.retry','logical_box',$3,jsonb_build_object('allocation_id',$4::text))`, p.AccountID, p.UserID, box.ID, allocation.RequestID); err != nil {
+		return v1.Allocation{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return v1.Allocation{}, err
+	}
+	return s.Allocation(ctx, p.AccountID, allocation.RequestID)
+}
+
 func (s *Store) LogicalBox(ctx context.Context, p Principal, id string) (v1.LogicalBox, error) {
 	box, err := scanLogicalBox(s.DB.QueryRowContext(ctx, logicalBoxSelect+" WHERE account_id=$1 AND (id::text=$2 OR name=$2)", p.AccountID, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -154,7 +232,7 @@ func (s *Store) MarkAssignmentAttaching(ctx context.Context, allocation v1.Alloc
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return fmt.Errorf("stale compute-slot assignment fencing token")
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE allocation_requests SET state='attaching',attach_started_at=COALESCE(attach_started_at,now()),phase='attaching-volume',failure_reason=NULL,updated_at=now() WHERE id=$1 AND logical_box_id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state IN ('reserved','attaching')", allocation.RequestID, allocation.LogicalBoxID, allocation.AssignmentGeneration, allocation.FencingToken); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE allocation_requests SET state='attaching',attach_started_at=CASE WHEN phase='waiting-for-host-load' THEN now() ELSE COALESCE(attach_started_at,now()) END,phase='attaching-volume',failure_reason=NULL,updated_at=now() WHERE id=$1 AND logical_box_id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state IN ('reserved','attaching')", allocation.RequestID, allocation.LogicalBoxID, allocation.AssignmentGeneration, allocation.FencingToken); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -233,7 +311,7 @@ func (s *Store) RecoverableAllocations(ctx context.Context) ([]struct {
 	AccountID  string
 	Allocation v1.Allocation
 }, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT account_id::text,id::text FROM allocation_requests WHERE state IN ('reserved','attaching') ORDER BY created_at")
+	rows, err := s.DB.QueryContext(ctx, "SELECT account_id::text,id::text FROM allocation_requests WHERE state IN ('reserved','attaching') AND (phase IS DISTINCT FROM 'waiting-for-host-load' OR updated_at < now()-interval '2 minutes') ORDER BY created_at")
 	if err != nil {
 		return nil, err
 	}

@@ -22,6 +22,14 @@ processes and retains the volume; restoring a workspace is not proof that the ol
 process IDs survived. Deleting a box removes its workspace permanently. Do not
 delete a shared fleet service when asked to delete a logical box.
 
+Shared-worker wake checks host load before starting volume attachment. At a
+severe load level it records `waiting-for-host-load` and retries after a
+two-minute cooldown; the 30-minute attach timeout does not expire while waiting.
+If an attach already timed out, the workspace offers **Retry wake** only when
+the original slot and volume can be verified. The retry keeps the original
+assignment fence and volume. A failed initial creation with a placeholder
+volume is not eligible for this path.
+
 ## Code map
 
 `Dockerfile` preinstalls Python/pip/venv/pipx, pinned uv/uvx, Node/npm/npx,

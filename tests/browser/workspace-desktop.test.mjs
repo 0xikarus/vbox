@@ -8,7 +8,7 @@ const html=await readFile('internal/controller/web/workspace.html','utf8');
 const script=await readFile('internal/controller/web/workspace.js','utf8');
 const mascotScript=await readFile('internal/controller/web/mascot.js','utf8');
 test('workspace desktop selection, tabs, and manual fallback',async t=>{
- let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',state='running',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
+ let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',state='running',restorationState='',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
  let requests=[],interactiveRequests=[],defaultAgent='shell';
  let protectedBox=false,contacts=[],tags=['backend'];
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
@@ -37,7 +37,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   else if(path.endsWith('/secret-requests'))data=[];
   else if(path.endsWith('/sessions/interactive')){let body='';for await(const chunk of req)body+=chunk;interactiveRequests.push(JSON.parse(body));data={session:'shell-test'}}
   else if(path.endsWith('/desktop')&&method==='GET')data={enabled};
-  else if(path==='/v1/logical-boxes/test'){data={id:'test',name:'Test',state,tools,defaultAgent,roles:[{id:'role-1',name:'Builder'}]}}
+	else if(path==='/v1/logical-boxes/test'){data={id:'test',name:'Test',state,restorationState,volumeId:'volume-1',tools,defaultAgent,roles:[{id:'role-1',name:'Builder'}]}}
   else if(path==='/v1/logical-boxes/test/contacts'){
    if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);const contact=contacts.find(c=>c.contactBoxId===parsed.contact||c.contactName===parsed.contact);contact.override=parsed.state;contact.canMessage=parsed.state!=='block';contact.reason=parsed.state==='block'?'Blocked by an explicit connection override.':'Allowed by Builder.';return res.end(JSON.stringify(contact))}
    return res.end(JSON.stringify(contacts));
@@ -231,6 +231,18 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    assert.equal(requests.some(r=>r.startsWith('POST ')||r.includes('/desktop')),false);assert.equal(await p.evaluate(()=>window.terminals),0);assert.equal(await p.$eval('#connection-stats',e=>e.hidden),true);assert.match(await p.$eval('#lifecycle-note',e=>e.textContent),/does not start the box/);
    await p.click('#connect');await p.waitForFunction(()=>document.querySelector('#error').textContent.includes('Fixture stopped box'));
    assert.equal(requests.filter(r=>r.endsWith('/allocate')).length,1);assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();state='running';
+  });
+  await t.test('timed-out wake offers a retry; other failed states do not',async()=>{
+   state='failed';restorationState='attach-timed-out';
+   const p=await page();await p.waitForFunction(()=>document.querySelector('#connect').textContent==='Retry wake'&&!document.querySelector('#connect').hidden);
+   assert.equal(requests.some(r=>r.endsWith('/allocate')),false);
+   await p.click('#connect');await p.waitForFunction(()=>document.querySelector('#error').textContent.includes('Fixture stopped box'));
+   assert.equal(requests.filter(r=>r.endsWith('/allocate')).length,1);
+   await p.close();
+   restorationState='provider-compute-missing';
+   const other=await page();await other.waitForFunction(()=>document.querySelector('#connect').hidden);
+   assert.equal(requests.some(r=>r.endsWith('/allocate')),false);
+   await other.close();state='running';restorationState='';
   });
   await t.test('a box being created offers no resume action and connects when running',async()=>{
    state='attaching';const p=await page();await p.waitForFunction(()=>document.querySelector('#connect').hidden);

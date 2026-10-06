@@ -773,7 +773,7 @@ paths:
       responses: {'200': {description: Labels replaced}}
   /v1/logical-boxes/{id}/allocate:
     post:
-      description: Reserve a free slot or enqueue the logical box when the fleet is full.
+      description: Reserve a free slot or enqueue the box. A failed attach timeout can be retried on its original fenced slot after the provider verifies the attached volume.
       parameters:
         - {$ref: '#/components/parameters/ID'}
         - {$ref: '#/components/parameters/IdempotencyKey'}

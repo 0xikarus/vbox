@@ -221,7 +221,28 @@ func (s *Server) reserveLogicalBox(w http.ResponseWriter, r *http.Request, p Pri
 		return
 	}
 	duration := time.Duration(request.LeaseSeconds) * time.Second
-	allocation, err := s.Store.ReserveAllocation(r.Context(), p, r.PathValue("id"), r.Header.Get("Idempotency-Key"), request.LeaseOwner, duration)
+	idempotency := r.Header.Get("Idempotency-Key")
+	if idempotency == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("Idempotency-Key is required"))
+		return
+	}
+	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	var allocation v1.Allocation
+	rearmed := false
+	if box.State == v1.LogicalBoxFailed {
+		if box.RestorationState != "attach-timed-out" || strings.HasPrefix(box.VolumeID, "pending:") {
+			writeError(w, http.StatusConflict, fmt.Errorf("this failed box cannot be retried safely from its current state"))
+			return
+		}
+		allocation, err = s.retryTimedOutWake(r.Context(), p, box, request.LeaseOwner, duration)
+		rearmed = err == nil
+	} else {
+		allocation, err = s.Store.ReserveAllocation(r.Context(), p, box.ID, idempotency, request.LeaseOwner, duration)
+	}
 	if err != nil {
 		writeError(w, http.StatusConflict, err)
 		return
@@ -229,7 +250,7 @@ func (s *Server) reserveLogicalBox(w http.ResponseWriter, r *http.Request, p Pri
 	// A different idempotency key means ReserveAllocation returned the already
 	// active request for this box. Its original activation (or startup recovery)
 	// owns the provider mutation; this caller only follows its progress.
-	if (allocation.State == "reserved" || allocation.State == "attaching") && allocation.IdempotencyKey == r.Header.Get("Idempotency-Key") {
+	if rearmed || ((allocation.State == "reserved" || allocation.State == "attaching") && allocation.IdempotencyKey == idempotency && allocation.Phase != "waiting-for-host-load") {
 		go func() {
 			if err := s.activateAllocation(context.Background(), p.AccountID, allocation, allocation.State == "attaching"); err != nil {
 				s.Logger.Error("logical box allocation failed", "allocation", allocation.RequestID, "error", err)
@@ -241,6 +262,44 @@ func (s *Server) reserveLogicalBox(w http.ResponseWriter, r *http.Request, p Pri
 		status = http.StatusOK
 	}
 	writeJSON(w, status, allocation)
+}
+
+func (s *Server) retryTimedOutWake(ctx context.Context, p Principal, box v1.LogicalBox, leaseOwner string, duration time.Duration) (v1.Allocation, error) {
+	assignment, err := s.Store.assignment(ctx, p.AccountID, box.ID)
+	if err != nil {
+		return v1.Allocation{}, err
+	}
+	if assignment.Slot.ID == "" || assignment.Slot.ServiceID == "" || assignment.FencingToken == "" {
+		return v1.Allocation{}, fmt.Errorf("timed-out wake has no fenced worker slot")
+	}
+	prov, err := s.provider(ctx, p.AccountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		return v1.Allocation{}, err
+	}
+	if box.Provider == "shared-worker" {
+		if reader, ok := prov.(provider.HostResourcesProvider); ok {
+			loadCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			resources, loadErr := reader.HostResources(loadCtx)
+			cancel()
+			if loadErr == nil && sharedHostOverloaded(resources) {
+				return v1.Allocation{}, fmt.Errorf("shared worker is overloaded; retry the wake when host load falls")
+			}
+		}
+	}
+	inspector, ok := prov.(provider.AttachedStorageProvider)
+	if !ok {
+		return v1.Allocation{}, fmt.Errorf("worker cannot verify its attached volume")
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	attached, err := inspector.AttachedStorage(probeCtx, assignment.Slot.ServiceID)
+	cancel()
+	if err != nil {
+		return v1.Allocation{}, fmt.Errorf("worker volume inspection failed: %w", err)
+	}
+	if attached != nil && attached.ID != box.VolumeID {
+		return v1.Allocation{}, fmt.Errorf("worker slot contains a different volume")
+	}
+	return s.Store.RetryTimedOutAllocation(ctx, p, assignment, leaseOwner, duration)
 }
 
 func (s *Server) listLogicalBoxes(w http.ResponseWriter, r *http.Request, p Principal) {
