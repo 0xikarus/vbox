@@ -1,0 +1,21 @@
+vbox (vmbox-service)
+Copyright 2026 0xikarus
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+"vbox", the vbox logo and the vbox mascot are names and marks of the project
+owner. The Apache License does not grant permission to use them (section 6).
+
+This product bundles third-party components under their own licenses:
+
+- Inter typeface — SIL Open Font License 1.1
+  (internal/controller/web/inter-LICENSE.txt)
+- Motion — MIT License (internal/controller/web/motion-LICENSE.md)
+- noVNC — Mozilla Public License 2.0 (internal/controller/web/novnc-LICENSE.txt)
+- xterm.js and xterm-addon-fit — MIT License
+  (internal/controller/web/xterm-LICENSE.txt, xterm-fit-LICENSE.txt)
+- Lobe Icons harness SVGs — MIT License (docs/assets/HARNESS-ICONS.md).
+  Product names and marks belong to their respective owners.
+
+Go module dependencies are listed in go.mod; each is used under its own
+license.

@@ -137,8 +137,8 @@ test('Mail owner API: inbox, OTP, read, settings, approvals, notices, and permis
    }
    await page.click('[data-ip-row="mail"]');await page.waitForSelector('[data-mail-id="m1"]');
    await page.waitForSelector('.mail-address-own');
-   assert.match(await page.$eval('.mail-address-card',node=>node.textContent),/b@tra\.vet/);
-   assert.match(await page.$eval('.mail-address-card',node=>node.textContent),/reviewer@tra\.vet/);
+   assert.match(await page.$eval('.mail-address-card',node=>node.textContent),/b@example\.test/);
+   assert.match(await page.$eval('.mail-address-card',node=>node.textContent),/reviewer@example\.test/);
    assert.equal(await page.$eval('[data-ip-page="mail"]',node=>node.textContent.indexOf('Messages')<node.textContent.indexOf('Addresses')),true);
    assert.equal(await page.$eval('[data-mail-id="m1"]',node=>node.textContent.includes('483921')),false);
    assert.equal(await page.$('[data-mail-id="m3"]'),null);

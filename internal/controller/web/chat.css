@@ -227,6 +227,23 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize;user-select:none}
 #reply-preview strong{color:var(--accent-text)}
 #reply-preview-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-soft)}
 #reply-cancel{border:0;background:none;color:var(--ink-soft);font:inherit;font-size:var(--vb-type-rem-1-25);cursor:pointer}
+/* Compact context hint: a subtle, in-flow suggestion above the composer. */
+#compact-hint{display:none;align-self:center;align-items:center;gap:.4rem;max-width:calc(100% - 1rem);margin:.35rem auto .05rem;padding:.38rem .8rem;border:1px solid var(--line);border-radius:var(--vb-radius-pill);background:var(--surface2);color:var(--ink-soft);font:inherit;font-size:var(--vb-type-rem-0-76);cursor:pointer}
+#compact-hint:not([hidden]){display:inline-flex}
+#compact-hint[hidden]{display:none}
+#compact-hint:hover:not(:disabled){background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+#compact-hint:disabled{cursor:default}
+#compact-hint strong{color:var(--accent-text);font-weight:700}
+.compact-hint-sep{opacity:.5}
+#compact-hint svg{width:.95rem;height:.95rem;flex:none}
+#compact-hint .compact-hint-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#compact-hint[data-state="success"]{color:var(--ok-text);border-color:var(--ok)}
+#compact-hint[data-state="success"] strong{color:var(--ok-text)}
+#compact-hint[data-state="error"]{color:var(--warn-text);border-color:var(--warn)}
+#compact-hint[data-state="error"] strong{color:var(--warn-text)}
+.compact-hint-spinner{width:.85rem;height:.85rem;flex:none;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:compact-hint-spin .7s linear infinite}
+@keyframes compact-hint-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.compact-hint-spinner{animation-duration:1.6s}}
 #chat-composer{display:flex;align-items:flex-end;gap:.35rem;background:var(--surface);
   padding:.4rem .5rem calc(env(safe-area-inset-bottom) + .4rem);flex:none;margin:0;border-top:1px solid var(--line)}
 #chat-composer button{flex:none;border:0;border-radius:var(--radius);width:2.8rem;height:2.8rem;font-size:var(--vb-type-rem-1-25);
