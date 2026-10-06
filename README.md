@@ -9,7 +9,14 @@
 
 vbox is a self-hosted home for coding agents. Each box keeps its files and agent sessions, with chat, a desktop, and a TMUX terminal in the browser. A controller manages accounts, storage, and worker capacity; you choose where to run it.
 
-Codex, Claude Code, and OpenCode are supported. Boxes can also use owner-approved MCP tools to message each other and work with desktops.
+Codex, Claude Code, and OpenCode are supported, but any harness can be used inside a box. Boxes can also use owner-approved MCP tools to message each other and work with each other and third-party websites.
+
+## What you can do
+
+- **Work across boxes:** pin chats, read box ↔ box messages, and keep both desktops visible above their conversation. The mascot and short activity phrase show each agent's current mood and work.
+- **Chat with context:** send images, annotate them with pen, rectangle, ellipse, line, or arrow, and reply in threads. Mobile swipe gestures navigate chats; a local chat cache makes revisits quicker.
+- **Manage capacity:** the Providers popup summarizes workers, slots, and host resources; the Providers page lets owners edit and delete provider configurations. Details shows RAM, swap, disk, activity, hibernation, and limits. Usage is available from the top bar.
+- **Keep work between sessions:** hibernation frees a worker slot while retaining box files. Wake the box to resume; closing a browser tab leaves a running box alone.
 
 ## Screenshots
 
@@ -27,16 +34,9 @@ These screens use fixture boxes named **builder** and **reviewer**. The desktop 
 | --- | --- |
 | <img src="docs/assets/ui/providers.webp" alt="Providers popup showing workers, slots, and host resources" width="700"> | <img src="docs/assets/ui/workspace.webp" alt="Workspace desktop beside status, resources, and power controls" width="700"> |
 
-| Image annotation | Mobile swipe |
-| --- | --- |
-| <img src="docs/assets/ui/annotation.webp" alt="Annotating a chat image with a rectangle and arrow" width="700"> | <img src="docs/assets/ui/swipe-mobile.gif" alt="Swiping between the mobile chat list and a conversation" width="260"> |
-
-## What you can do
-
-- **Work across boxes:** pin chats, read box ↔ box messages, and keep both desktops visible above their conversation. The mascot and short activity phrase show each agent's current mood and work.
-- **Chat with context:** send images, annotate them with pen, rectangle, ellipse, line, or arrow, and reply in threads. Mobile swipe gestures navigate chats; a local chat cache makes revisits quicker.
-- **Manage capacity:** the Providers popup summarizes workers, slots, and host resources; the Providers page lets owners edit and delete provider configurations. Details shows RAM, swap, disk, activity, hibernation, and limits. Usage is available from the top bar.
-- **Keep work between sessions:** hibernation frees a worker slot while retaining box files. Wake the box to resume; closing a browser tab leaves a running box alone.
+| Image annotation |
+| --- |
+| <img src="docs/assets/ui/annotation.webp" alt="Annotating a chat image with a rectangle and arrow" width="700"> |
 
 ## Quick start
 
@@ -59,14 +59,6 @@ vbox builder
 
 The CLI is named `vbox`; `vmbox` is a compatibility symlink. Run `vbox help` for other commands.
 
-## Architecture
-
-The controller serves the browser UI and API, stores account and box metadata in PostgreSQL, and assigns running boxes to worker slots. Workers host the box environment and persistent files. Hibernation stops processes and releases the slot; the box can be placed again when it wakes. Agent permissions and provider settings are controlled by the owner.
-
 ## Documentation
 
 Start with the [documentation index](docs/README.md). See [controller operations](docs/CONTROLLER.md), [worker isolation](docs/SHARED-WORKERS.md), the [agent desktop guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md), and the [API contract](docs/openapi.yaml).
-
-## License
-
-vbox is licensed under the [Apache License 2.0](LICENSE). Bundled third-party components and their licenses are listed in [NOTICE](NOTICE). The vbox name and logo are not covered by the license. To report a vulnerability, see [SECURITY.md](SECURITY.md); to contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
