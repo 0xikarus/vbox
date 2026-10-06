@@ -160,7 +160,7 @@ test('account Mail panel supports folders, search, message detail, quarantine an
     assert.equal(await page.$eval('.mail-panel-list-pane .mail-panel-pane-head',node=>node.querySelector('[data-mobile-menu=folders]').textContent.includes('Inbox')&&node.querySelector('[data-mobile-menu=scope]').textContent.includes('All boxes')&&getComputedStyle(node.querySelector('.mail-panel-list-title')).display==='none'&&node.querySelector('.mail-panel-mobile-unread').textContent==='2 unread'),true);
    }
    assert.equal(await page.$('.mail-panel-row[data-item="m3"]'),null);
-   assert.match(await page.$eval('.mail-panel-row[data-item="m1"]',node=>node.textContent),/builder@tra\.vet/);
+   assert.match(await page.$eval('.mail-panel-row[data-item="m1"]',node=>node.textContent),/builder@example\.test/);
    await clickMail(page,'.mail-panel-row[data-item="m1"]');await page.waitForSelector('.mail-panel-body');await save('detail');
    if(width===390)assert.equal(await page.$$eval('.mail-panel-detail-tools button,.mail-panel-detail-tools a',nodes=>nodes.every(node=>{const r=node.getBoundingClientRect();return r.width>=40&&r.height>=40&&!!node.getAttribute('aria-label')&&!!node.getAttribute('title')})),true,'phone message actions have labels, tooltips, and 40px targets');
    assert.equal(await page.$eval('.mail-panel-body',node=>node.textContent.includes('483921')),false);
