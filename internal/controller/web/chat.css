@@ -166,6 +166,8 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize;user-select:none}
   color:var(--ink-soft);margin-top:.1rem;user-select:none}
 .msg .meta .ticks.failed{color:var(--danger)}
 .msg .meta .ticks{display:inline-flex;align-items:center;gap:.18rem}
+.msg .meta .ticks.uncertain{opacity:.72}
+.msg .meta .ticks.read{color:#44caff}
 .msg .meta .ticks svg{width:.85rem;height:.85rem;flex:none}
 .msg img.chat-image{display:block;max-width:18rem;max-height:14rem;border-radius:var(--radius-sm);margin:.25rem 0}
 /* every attachment and media embed is a real focusable control */
@@ -709,6 +711,11 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize;user-select:none}
 .msg.user .text a{color:var(--vb-swatch-fff)}
 .msg.user .meta{color:rgba(255,255,255,.78)}
 .msg.user .meta .ticks.failed{color:var(--vb-swatch-ffd0d0)}
+.msg.user .meta .ticks.read{color:#78ddff}
+@media(prefers-color-scheme:dark){
+ .msg.user .meta .ticks.read{color:#006fa4}
+ .msg.user .meta .ticks.failed{color:#a91d35}
+}
 .load-older{display:block;margin:.45rem auto 1rem;padding:.5rem .9rem;border:1px solid var(--line);
   border-radius:var(--radius-sm);background:var(--surface);color:var(--accent-text);font:inherit;font-size:var(--vb-type-rem-0-82);font-weight:700;cursor:pointer}
 .load-older:disabled{opacity:.6;cursor:wait}

@@ -91,7 +91,10 @@ func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.B
 	result, execErr := s.startAssignedBoxTaskRuntime(ctx, p, prov, assignment, task, message)
 	if execErr != nil {
 		_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "ambiguous", execErr.Error())
-		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", "initial prompt delivery is ambiguous; inspect the terminal before retrying")
+		// A lost worker connection can happen after the native client consumed
+		// the first prompt. Keep the task eligible for an exact receipt probe.
+		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "active", "")
+		s.watchAgentReply(accountID, task, message)
 		return execErr
 	}
 	if result.ExitCode != 0 {
@@ -106,7 +109,7 @@ func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.B
 		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", detail)
 		return fmt.Errorf("start tmux task exited with status %d: %s", result.ExitCode, detail)
 	}
-	if err := s.Store.SetBoxMessageState(ctx, accountID, message.ID, "delivered", ""); err != nil {
+	if err := s.Store.SetBoxMessageState(ctx, accountID, message.ID, confirmedMessageState(task.Agent, true), ""); err != nil {
 		return err
 	}
 	if err := s.Store.SetBoxTaskState(ctx, accountID, task.ID, "active", ""); err != nil {
@@ -286,7 +289,7 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 		}
 		return fmt.Errorf("message delivery exited with status %d: %s", result.ExitCode, detail)
 	}
-	if err := settle("delivered", ""); err != nil {
+	if err := settle(confirmedMessageState(task.Agent, submit), ""); err != nil {
 		return err
 	}
 	s.watchAgentReply(p.AccountID, task, message)
@@ -311,6 +314,15 @@ func codexThreadNotFound(result provider.ExecResult) bool {
 
 func codexDesktopMCPPolicyUnavailable(result provider.ExecResult) bool {
 	return result.ExitCode != 0 && strings.Contains(result.Stderr, "codex desktop MCP policy unavailable")
+}
+
+// Each native receipt is bound to the exact message ID in the agent's visible
+// conversation. A successful receipt proves the client consumed that message.
+func confirmedMessageState(agent string, submit bool) string {
+	if submit && (agent == "claude" || agent == "codex" || agent == "opencode") {
+		return "read"
+	}
+	return "delivered"
 }
 
 func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {
@@ -400,7 +412,7 @@ func (s *Server) reconcileNativeMessageReceipts(ctx context.Context) error {
 		if json.Unmarshal([]byte(result.Stdout), &receipt) != nil || !receipt.Accepted {
 			continue
 		}
-		if err := s.Store.SetBoxMessageState(ctx, value.AccountID, value.Message.ID, "delivered", ""); err != nil {
+		if err := s.Store.SetBoxMessageState(ctx, value.AccountID, value.Message.ID, confirmedMessageState(value.Task.Agent, value.Submit), ""); err != nil {
 			failures = append(failures, fmt.Errorf("confirm native receipt for %s: %w", value.Message.ID, err))
 			continue
 		}

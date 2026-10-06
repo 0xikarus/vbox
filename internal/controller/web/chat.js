@@ -1560,8 +1560,9 @@
 
  /* ---------- messages ---------- */
  const dayLabel=value=>{const d=new Date(value),now=new Date();if(d.toDateString()===now.toDateString())return 'Today';const y=new Date(now);y.setDate(now.getDate()-1);if(d.toDateString()===y.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'numeric',month:'long',year:'numeric'})};
- const stateTicks={queued:'queued',delivering:'sent',delivered:'delivered',failed:'failed',ambiguous:'Delivery unconfirmed. The worker connection ended before confirmation; check TMUX before resending.'};
- const stateIconName={queued:'clock',delivering:'check',delivered:'check-check',failed:'alert',ambiguous:'help'};
+ const stateTicks={queued:'Sent',delivering:'Sent',delivered:'Delivered to agent',read:'Read by agent',failed:'Delivery failed; retry available',ambiguous:'Delivery could not be confirmed. Check the agent before retrying.'};
+ function tickState(message){return message.state==='ambiguous'&&Date.now()-new Date(message.updatedAt||message.createdAt).getTime()<120000?'delivering':message.state}
+ const stateIconName={queued:'check',delivering:'check',delivered:'check-check',read:'check-check',failed:'alert',ambiguous:'help'};
  // Inline Lucide icons (24x24, currentColor stroke) so delivery state reads as
  // iconography instead of emoji glyphs.
  const lucideShapes={
@@ -1772,11 +1773,14 @@
   if(message.threadId&&threadSize>1&&!message.parentMessageId){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread msg-thread-line '+(mine?'user':'agent');thread.textContent='↳ '+(threadSize-1)+' '+(threadSize===2?'reply':'replies');thread.onclick=()=>void openThread(message.threadId);row._threadLink=thread}
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
   if(mine&&!readOnly&&message.state!=='silent'){
-   const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
-   ticks.title=stateTicks[message.state]||'';
-   const icon=stateIconName[message.state];
+   const state=tickState(message);
+   const ticks=document.createElement('span');ticks.className='ticks'+(state==='failed'?' failed':state==='read'?' read':state==='ambiguous'?' uncertain':'');
+   ticks.title=stateTicks[state]||'';
+   ticks.setAttribute('role','img');
+   ticks.setAttribute('aria-label',stateTicks[state]||'');
+   const icon=stateIconName[state];
    if(icon)ticks.append(lucide(icon));
-   if(message.state==='failed'||message.state==='ambiguous')ticks.append(document.createTextNode(message.state==='failed'?'failed':'unconfirmed'));
+   if(state==='failed')ticks.append(document.createTextNode('failed'));
    meta.append(ticks);
   }
   // Keep direct reply and the menu available on touch at the message's top right.
@@ -1792,6 +1796,11 @@
   forward.onclick=()=>{closeAllMsgActions();openForwardMenu(toggle,message)};
   const reply=document.createElement('button');reply.type='button';reply.append(lucide('reply'),Object.assign(document.createElement('span'),{textContent:'Reply'}));reply.onclick=()=>{closeAllMsgActions();setReply(message)};
   menu.append(reply,copy,forward);
+  if(mine&&message.state==='failed'){
+   const retry=document.createElement('button');retry.type='button';retry.append(lucide('refresh-cw'),Object.assign(document.createElement('span'),{textContent:'Retry message'}));
+   retry.onclick=()=>{closeAllMsgActions();if(inputEl.value.trim()){statusEl.textContent='Clear your draft before retrying.';inputEl.focus();return}if(message.parentMessageId){const parent=message.parentPreview||(box.messages||[]).find(value=>value.id===message.parentMessageId)||replyParents.get(replyParentKey(box,message.parentMessageId));if(parent)setReply(parent)}inputEl.value=message.text;grow();updateSendState();inputEl.focus();statusEl.textContent=message.images?.length?'Reattach files before sending again.':'Review and send again.'};
+   menu.append(retry);
+  }
   if(mine&&message.state==='ambiguous'){
    const inspect=document.createElement('button');inspect.type='button';inspect.append(lucide('help'),Object.assign(document.createElement('span'),{textContent:'Check delivery in TMUX'}));
    inspect.onclick=()=>{closeAllMsgActions();void openTakeover('tmux',box.id)};
@@ -2371,7 +2380,7 @@
   // The processing bubble must use the state of this response, not the
   // previous poll's state (which can leave it beneath an agent reply).
   applySeen(selected);
-  const signature=box.messages.map(m=>m.id+m.updatedAt+m.state+(m.control?.actions??'')).join('|')+'|'+box.processing+'|'+box.streaming;
+  const signature=box.messages.map(m=>m.id+m.updatedAt+m.state+tickState(m)+(m.control?.actions??'')).join('|')+'|'+box.processing+'|'+box.streaming;
   renderHeader();
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
   if(hasNewReply&&!stickToBottom)newMessagesBtn.hidden=false;
@@ -2644,7 +2653,7 @@ function pairTileStatus(tile,mode,label){
   closeForwardMenu();
   closeTakeover();
   renderInspect();
-  renderMessages(box);lastSignature=box.messages.map(m=>m.id+m.updatedAt+m.state+(m.control?.actions??'')).join('|')+'|'+box.processing+'|'+box.streaming;doodle('');
+  renderMessages(box);lastSignature=box.messages.map(m=>m.id+m.updatedAt+m.state+tickState(m)+(m.control?.actions??'')).join('|')+'|'+box.processing+'|'+box.streaming;doodle('');
   const loadingKey='#box='+encodeURIComponent(id);historyLoadingFor=loadingKey;
   void refreshMessages().catch(e=>{if(selected===id)statusEl.textContent=e.message}).finally(()=>{if(historyLoadingFor===loadingKey)historyLoadingFor=''});
   const finish=()=>{

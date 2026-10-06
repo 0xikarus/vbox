@@ -17,6 +17,9 @@ func TestAgentBusyHandlerUpdatesOnlyTheBoundBoxSession(t *testing.T) {
 	mock.ExpectExec(`UPDATE box_tasks SET agent_busy`).
 		WithArgs("account-a", "box-a", "codex-chat", true).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`(?s)UPDATE box_messages m SET state='read'.*t.session_name=\$3.*m.state IN \('delivering','delivered','ambiguous'\)`).
+		WithArgs("account-a", "box-a", "codex-chat").
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	server := chatTestServer(store)
 	request := httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/busy", bytes.NewBufferString(`{"session":"codex-chat","busy":true}`))
 	request.SetPathValue("id", "box-a")
@@ -27,6 +30,49 @@ func TestAgentBusyHandlerUpdatesOnlyTheBoundBoxSession(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestIdleEventDoesNotMarkMessagesRead(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectExec(`UPDATE box_tasks SET agent_busy`).WithArgs("account-a", "box-a", "codex-chat", false).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SetBoxSessionBusy(context.Background(), "account-a", "box-a", "codex-chat", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReplyMarksItsParentReadIncludingAmbiguousDelivery(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectExec(`(?s)WITH target AS.*UPDATE box_messages parent SET state='read'.*parent.direction IN \('user','box'\).*parent.state<>'read'`).
+		WithArgs(sqlmock.AnyArg(), "account-a", "task-a", "reply", "delivered", "agent-reply:message-a", "message-a").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	changed, err := store.UpsertAgentBoxMessage(context.Background(), "account-a", "task-a", "message-a", "reply", "delivered")
+	if err != nil || !changed {
+		t.Fatalf("changed=%t err=%v", changed, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNativeChannelReceiptMarksReadOnlyAfterConsumption(t *testing.T) {
+	for _, value := range []struct {
+		agent  string
+		submit bool
+		want   string
+	}{
+		{"claude", true, "read"},
+		{"claude", false, "delivered"},
+		{"codex", true, "read"},
+		{"opencode", true, "read"},
+	} {
+		if got := confirmedMessageState(value.agent, value.submit); got != value.want {
+			t.Errorf("%s submit=%t: got %s, want %s", value.agent, value.submit, got, value.want)
+		}
 	}
 }
 
@@ -62,7 +108,7 @@ func TestBoxAgentBusyDistinguishesExplicitAndLegacyState(t *testing.T) {
 
 func TestDeliveredUserMessageMarksItsAgentBusy(t *testing.T) {
 	store, mock := testStore(t)
-	mock.ExpectExec(`(?s)WITH message AS.*RETURNING id,task_id,direction,submit.*agent_busy_message_id=message.id`).WithArgs("account-a", "message-a", "delivered", "").
+	mock.ExpectExec(`(?s)WITH message AS.*state<>'read'.*RETURNING id,task_id,direction,submit.*agent_busy_message_id=message.id`).WithArgs("account-a", "message-a", "delivered", "").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	if err := store.SetBoxMessageState(context.Background(), "account-a", "message-a", "delivered", ""); err != nil {
 		t.Fatal(err)
