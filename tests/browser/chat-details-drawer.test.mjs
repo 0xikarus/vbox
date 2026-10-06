@@ -54,7 +54,9 @@ test('Details drawer uses grouped rows, subpages and credential slots',async()=>
    await page.$eval('#chat-info',button=>button.click());
    await page.waitForFunction(()=>document.querySelector('[data-ip-row="power"] .ip-row-value').textContent.includes('3h idle'));
    await page.waitForFunction(()=>/^(Working|Running) · \d+h/.test(document.querySelector('#ip-overview .ip-overview-cell:nth-child(2) .ip-cell-value').textContent));
-   assert.equal(await page.$$eval('#ip-settings .ip-row',rows=>rows.length),7);
+   assert.equal(await page.$$eval('#ip-settings .ip-row',rows=>rows.length),8);
+   assert.equal(await page.$eval('[data-ip-row="compact"]',row=>row.classList.contains('ip-row-danger')),false,'Compact context is a non-danger settings row');
+   assert.ok(await page.$eval('[data-ip-row="compact"]',row=>!!row.querySelector('.ip-row-chevron')));
    assert.deepEqual(await page.$$eval('#ip-overview .ip-cell-label',labels=>labels.map(label=>label.textContent)),['Model','Status','Worker','Profile']);
    assert.equal(await page.$$eval('#ip-danger .ip-row',rows=>rows.length),3);
    assert.ok(await page.$$eval('#ip-danger .ip-row',rows=>rows.every(row=>!row.querySelector('.ip-row-chevron'))));

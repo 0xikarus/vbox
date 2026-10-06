@@ -1596,6 +1596,7 @@
   settings:[['circle',{cx:'12',cy:'12',r:'3'}],['path',{d:'M19.4 15a1.7 1.7 0 0 0 .3 1.8l-1.9 1.9a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21h-2v-1.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-1.9-1.9a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H5v-2h1.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l1.9-1.9a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h2v1.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l1.9 1.9a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21v2h-1.1a1.7 1.7 0 0 0-1.5 1Z'}]],
   'trash-2':[['path',{d:'M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7'}]],
   'image-off':[['rect',{x:'3',y:'3',width:'18',height:'18',rx:'2'}],['path',{d:'m3 15 5-5 4 4 3-3 6 6M2 2l20 20'}]],
+  'minimize-2':[['polyline',{points:'4 14 10 14 10 20'}],['polyline',{points:'20 10 14 10 14 4'}],['line',{x1:'14',y1:'10',x2:'21',y2:'3'}],['line',{x1:'3',y1:'21',x2:'10',y2:'14'}]],
  };
  function lucide(name){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -2305,6 +2306,8 @@
   $('#chat-wake').hidden=!canWakeBox(box);
   $('#chat-wake').disabled=wakingBoxes.has(box.id);
   const clearContext=$('[data-ip-row="context"]');if(clearContext)clearContext.disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
+  if(compactChipFor&&compactChipFor!==selected)hideCompactChip();
+  setCompactRow(box);
   updateThreadSendState();
   updateSendState();
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
@@ -2706,7 +2709,10 @@ function pairTileStatus(tile,mode,label){
   const token=composerToken(),boxID=selected,request=++pickerRequest;
   if(!owner||!boxID||!token){hideComposerPicker();return}
   if(token.kind==='/'){
-   renderComposerPicker(chatCommands.filter(command=>command.name.startsWith(token.query)).map(command=>({kind:'/',name:command.name,detail:command.prompt})),token);
+   const items=[];
+   if(compactEligible(boxes.get(boxID))&&'compact'.startsWith(token.query))items.push({kind:'/',name:'compact',detail:'Summarize older context',command:'compact'});
+   items.push(...chatCommands.filter(command=>command.name.startsWith(token.query)).map(command=>({kind:'/',name:command.name,detail:command.prompt})));
+   renderComposerPicker(items,token);
    return;
   }
   try{
@@ -2717,6 +2723,10 @@ function pairTileStatus(tile,mode,label){
  }
  function chooseComposerSuggestion(index){
   const item=pickerItems[index],range=pickerRange;if(!item||!range)return;
+  if(item.command==='compact'){
+   inputEl.value=inputEl.value.slice(0,range.start)+inputEl.value.slice(range.end);grow();updateSendState();hideComposerPicker();showCompactChip();inputEl.focus();
+   return;
+  }
   const insertion=item.kind==='/'?'/'+item.name:'@'+item.name+' ';
   inputEl.value=inputEl.value.slice(0,range.start)+insertion+inputEl.value.slice(range.end);
   const caret=range.start+insertion.length;hideComposerPicker();inputEl.focus();inputEl.setSelectionRange(caret,caret);
@@ -2847,6 +2857,11 @@ function pairTileStatus(tile,mode,label){
   const boxID=selected,box=boxes.get(boxID);
   if(box?.resumeCheckPending){statusEl.textContent='Checking for a saved conversation…';updateSendState();return}
   if(box?.resumeCandidate){statusEl.textContent='Choose whether to restore the saved '+agentLabel(box)+' session first.';updateSendState();return}
+  if(/^\/compact\s*$/i.test(inputEl.value.trim())){
+   const blocked=box?compactBlockedReason(box):'Open a box chat first.';
+   if(blocked){statusEl.textContent=blocked;return}
+   inputEl.value='';grow();updateSendState();showCompactChip();return;
+  }
   // #send-blocked-reason already explains why; a second status line duplicated it.
   if(box?.state!=='running'){if(statusEl.textContent==='Wait for this box to be running before sending.')statusEl.textContent='';updateSendState();return}
   const drafts=attachmentDrafts.get(boxID)||[];
@@ -3135,6 +3150,77 @@ function pairTileStatus(tile,mode,label){
   finally{renderHeader()}
  }
 
+ /* ---------- compact agent context (Details row and /compact) ---------- */
+ // One shared path for both entry points. Compact asks the running agent to
+ // summarize earlier messages so the conversation keeps its thread with less
+ // context. The controller enforces the same rules and writes a
+ // "context compaction requested · <agent>" system marker on success.
+ const compactBusy=new Set(),compactStatus=new Map();
+ let compactChipFor='';
+ const compactAgent=box=>['claude','codex','opencode'].includes(box?.defaultAgent||'');
+ function compactBlockedReason(box){
+  if(!owner)return 'Only the owner can compact context.';
+  if(!box)return 'Open a box chat first.';
+  if(box.state!=='running')return box.name+' is '+box.state+'; resume it before compacting context.';
+  if(!compactAgent(box))return box.name+' uses a shell session; there is no agent context to compact.';
+  if(box.activityState==='working')return box.name+' is busy; compact after its current work finishes.';
+  return '';
+ }
+ function compactEligible(box){return !!box&&!compactBlockedReason(box)}
+ function setCompactRow(box){
+  const row=$('[data-ip-row="compact"]');if(!row)return;
+  const status=box?compactStatus.get(box.id):null,kind=status?.kind||'idle',reason=compactBlockedReason(box);
+  row.disabled=kind==='busy'||kind==='success'||!!reason;
+  row.title=reason||(kind==='error'?status.error:'Summarize older messages; chat history stays visible.');
+  const value=row.querySelector('.ip-row-value');if(!value)return;
+  value.textContent=kind==='busy'?'Compacting…':kind==='success'?'Context compacted':kind==='error'?'Compact failed · Retry':reason||'Summarize older context';
+ }
+ function setCompactChip(kind,error){
+  const chip=$('#compact-chip');if(!chip)return;
+  chip.dataset.state=kind;
+  if(kind==='busy'||kind==='success'){
+   const label=document.createElement('span');label.className='compact-chip-label';label.textContent=kind==='busy'?'Compacting…':'Context compacted';
+   chip.replaceChildren(label);chip.hidden=false;return;
+  }
+  if(kind==='error'){
+   const label=document.createElement('span');label.className='compact-chip-label';label.textContent=error||'Compaction failed';
+   const actions=document.createElement('span');actions.className='compact-chip-actions';
+   const retry=mk('button','Retry');retry.type='button';retry.onclick=()=>void compactChatContext({source:'chip'});
+   const cancel=mk('button','Cancel');cancel.type='button';cancel.onclick=()=>hideCompactChip();
+   actions.append(retry,cancel);chip.replaceChildren(label,actions);chip.hidden=false;return;
+  }
+  const label=mk('span','Compact context?');label.className='compact-chip-label';
+  const note=mk('span','Summarize older messages to free context.');note.className='compact-chip-note';
+  const actions=mk('span');actions.className='compact-chip-actions';
+  const confirm=mk('button','Compact');confirm.type='button';confirm.id='compact-chip-confirm';confirm.onclick=()=>void compactChatContext({source:'chip'});
+  const cancel=mk('button','Cancel');cancel.type='button';cancel.id='compact-chip-cancel';cancel.onclick=()=>hideCompactChip();
+  actions.append(confirm,cancel);chip.replaceChildren(label,note,actions);chip.hidden=false;
+ }
+ function showCompactChip(){compactChipFor=selected;setCompactChip('idle')}
+ function hideCompactChip(){const chip=$('#compact-chip');if(chip)chip.hidden=true;compactChipFor=''}
+ async function compactChatContext({source='details'}={}){
+  const box=boxes.get(selected);if(!box||!owner)return;
+  const blocked=compactBlockedReason(box);
+  if(blocked){statusEl.textContent=blocked;if(source==='chip'&&compactChipFor===box.id)setCompactChip('error',blocked);return}
+  if(compactBusy.has(box.id))return;
+  compactBusy.add(box.id);compactStatus.set(box.id,{kind:'busy'});
+  setCompactRow(box);if(source==='chip')setCompactChip('busy');
+  statusEl.textContent='Compacting agent context…';
+  try{
+   const result=await api(boxPath(box.id)+'/messages/compact','POST',{'Idempotency-Key':crypto.randomUUID()},{},45000);
+   compactStatus.set(box.id,{kind:'success'});
+   setCompactRow(box);if(source==='chip')setCompactChip('success');
+   statusEl.textContent='Compaction requested. The next message continues in the same conversation with a summarized context.';
+   toast('Context compaction requested for '+(result?.agent||box.defaultAgent)+'.');
+   if(selected===box.id)try{await refreshMessages(true)}catch(e){statusEl.textContent='Compaction requested; chat refresh failed: '+e.message}
+   setTimeout(()=>{if(compactStatus.get(box.id)?.kind==='success'){compactStatus.delete(box.id);if(selected===box.id){setCompactRow(box);hideCompactChip()}}},3500);
+  }catch(e){
+   compactStatus.set(box.id,{kind:'error',error:e.message});
+   setCompactRow(box);if(source==='chip')setCompactChip('error',e.message);
+   statusEl.textContent=e.message;
+  }finally{compactBusy.delete(box.id)}
+ }
+
  /* ---------- inspect drawer: ping / activity per box ---------- */
  const inspect=$('#inspect');
  let inspectOpen=false,inspectTimer,controllerPing=null;
@@ -3399,6 +3485,17 @@ function pairTileStatus(tile,mode,label){
    ['clear-attachments','image-off','Clear attachments',()=>$('#inspect-clear-attachments').click()],
   ];
   for(const [key,icon,title,action] of dangerous)$('#ip-danger').append(inspectPrototypeRow(key,icon,title,'',action,true));
+  {
+   const compactRow=inspectPrototypeRow('compact','minimize-2','Compact context','Summarize older context',()=>{},false);
+   $('#ip-settings').append(compactRow);
+   const panel=mk('div');panel.id='compact-confirm';panel.className='ip-compact-confirm';panel.hidden=true;
+   const copy=mk('p','Compact summarizes earlier messages so the agent keeps this conversation with less context. Clear context instead discards all prior context and starts fresh. Chat history stays visible either way.');copy.className='ip-compact-confirm-text';
+   const actions=mk('div');actions.className='ip-compact-confirm-actions';
+   const yes=mk('button','Compact context');yes.type='button';yes.id='compact-confirm-yes';yes.onclick=()=>{panel.hidden=true;void compactChatContext({source:'details'})};
+   const no=mk('button','Cancel');no.type='button';no.id='compact-confirm-no';no.onclick=()=>{panel.hidden=true;compactRow.focus()};
+   actions.append(yes,no);panel.append(copy,actions);compactRow.after(panel);
+   compactRow.onclick=()=>{const box=boxes.get(selected);if(!box)return;const reason=compactBlockedReason(box);if(reason){statusEl.textContent=reason;return}panel.hidden=false;yes.focus()};
+  }
   $('#inspect-prototype-back').onclick=()=>showInspectPrototypePage(inspectMail?.backTarget(inspectPrototypePage)||'');
   $('#inspect-resources-adjust').onclick=()=>showInspectPrototypePage('resources');
  }
@@ -3446,10 +3543,12 @@ function pairTileStatus(tile,mode,label){
   setValue('technical','IDs & activity');
   inspectMail?.onBox(box);
   for(const key of ['power','credentials','contacts','access','attachments'])$('[data-ip-row="'+key+'"]').hidden=!owner;
+  $('[data-ip-row="compact"]').hidden=!owner;
   $('#ip-instructions-summary').textContent='Last synced · '+instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null);
   $('#ip-danger').closest('.ip-group').hidden=!owner;
   $('#ip-resync-instructions').hidden=!owner||box.state!=='running';$('[data-ip-row="restart"]').hidden=box.state!=='running';
   $('[data-ip-row="context"]').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
+  setCompactRow(box);
   $('[data-ip-row="clear-attachments"]').disabled=$('#inspect-clear-attachments').disabled;
   if(inspectPrototypePage==='technical')renderInspectPrototypeTechnical(box);
  }
