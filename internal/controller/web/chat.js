@@ -1209,11 +1209,12 @@
   gestureClickPending=false;event.preventDefault();event.stopImmediatePropagation();
  },true);
  // A touch-friendly context menu: hold a chat row instead of right-clicking.
- function bindLongPress(element,handler,delay=500){
+ function bindLongPress(element,handler,delay=500,skip=null){
   let timer=0,startX=0,startY=0,fired=false;
   const cancel=()=>{clearTimeout(timer);timer=0};
   element.addEventListener('touchstart',event=>{
    if(event.touches.length!==1)return;
+   if(skip&&skip(event))return;
    const touch=event.touches[0];startX=touch.clientX;startY=touch.clientY;fired=false;
    cancel();timer=setTimeout(()=>{fired=true;if(element._chatTap)element._chatTap.invalid=true;suppressGestureClick();handler(touch.clientX,touch.clientY)},delay);
   },{passive:true});
@@ -1222,6 +1223,15 @@
   element.addEventListener('touchcancel',cancel,{passive:true});
  }
  const coarsePointer=()=>matchMedia('(hover:none) and (pointer:coarse)').matches;
+ // A non-empty selection anchored inside a message bubble means the owner is
+ // selecting text, so our menus and swipe gestures must stand down.
+ function messageSelectionActive(){
+  const selection=getSelection();
+  if(!selection||selection.isCollapsed||!selection.rangeCount)return false;
+  const node=selection.getRangeAt(0).commonAncestorContainer;
+  const element=node.nodeType===1?node:node.parentElement;
+  return !!(element&&element.closest('.msg'));
+ }
 
  /* ---------- chat list ---------- */
  const fmtTime=value=>{const d=new Date(value),now=new Date(),sameDay=d.toDateString()===now.toDateString();if(sameDay)return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const yesterday=new Date(now);yesterday.setDate(now.getDate()-1);if(d.toDateString()===yesterday.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'2-digit',month:'2-digit',year:'numeric'})};
@@ -1808,9 +1818,9 @@
    menu.append(inspect);
   }
   toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen)openMsgActions(menu,toggle)};
-  row.oncontextmenu=event=>{if(row._swipeUntil>Date.now()){event.preventDefault();return}if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();openMsgActions(menu,toggle,{x:event.clientX,y:event.clientY})};
+  row.oncontextmenu=event=>{if(row._swipeUntil>Date.now()){event.preventDefault();return}if(event.target.closest('a,button,input,textarea,video,audio'))return;if(messageSelectionActive()||event.pointerType==='touch'&&event.target.closest('.text'))return;event.preventDefault();closeAllMsgActions();openMsgActions(menu,toggle,{x:event.clientX,y:event.clientY})};
   actions.append(replyShortcut,toggle,menu);row.append(meta,actions);
-  bindLongPress(row,(x,y)=>{if(row._swipeUntil>Date.now())return;closeAllMsgActions();openMsgActions(menu,toggle,{x,y})});
+  bindLongPress(row,(x,y)=>{if(row._swipeUntil>Date.now())return;closeAllMsgActions();openMsgActions(menu,toggle,{x,y})},500,event=>messageSelectionActive()||!!event.target.closest('.text'));
   bindSwipeReply(row,message);
   return row;
  }
@@ -1844,6 +1854,7 @@
   },{passive:true});
   row.addEventListener('pointermove',event=>{
   if(!gesture||event.pointerId!==gesture.id)return;
+   if(messageSelectionActive()){const active=gesture.axis==='reply';gesture=null;if(active){settle();endHorizontalGesture()}return}
    const dx=event.clientX-gesture.x,dy=event.clientY-gesture.y;
    if(!gesture.axis){
     if(Math.abs(dx)<=10&&Math.abs(dy)<=10)return;
@@ -1990,7 +2001,7 @@
   menu.style.left=Math.round(targetX-origin.left)+'px';
   menu.style.top=Math.round(targetY-origin.top)+'px';
  }
- document.addEventListener('click',event=>{if(!event.target.closest('.msg-actions'))closeAllMsgActions()});
+ document.addEventListener('click',event=>{if(messageSelectionActive())return;if(!event.target.closest('.msg-actions'))closeAllMsgActions()});
  function repositionMsgActions(){for(const menu of document.querySelectorAll('.msg-actions-menu:not([hidden])'))placeMsgActions(menu,menu.parentElement.querySelector('.msg-more'))}
  document.addEventListener('scroll',repositionMsgActions,true);
  addEventListener('resize',repositionMsgActions);
@@ -3012,7 +3023,7 @@ function pairTileStatus(tile,mode,label){
  }
  function startNavSwipe(event,direction){
   const root=direction==='back'?messagesEl:navList;
-  if(event.touches.length!==1||innerWidth>600||direction==='back'&&!appEl.classList.contains('in-chat')||direction==='forward'&&(appEl.classList.contains('in-chat')||!selectedChatHash())||!canStartNavSwipe(event.target,root,direction))return;
+  if(event.touches.length!==1||innerWidth>600||direction==='back'&&!appEl.classList.contains('in-chat')||direction==='forward'&&(appEl.classList.contains('in-chat')||!selectedChatHash())||!canStartNavSwipe(event.target,root,direction)||messageSelectionActive())return;
   const touch=event.touches[0];
   navSettleEnd?.();appEl.classList.remove('nav-returning','nav-completing');navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
   navSwipe={direction,x:touch.clientX,y:touch.clientY,width:appEl.clientWidth,travel:0,reduced:reducedMotion(),axis:'',started:performance.now()};
@@ -3022,6 +3033,7 @@ function pairTileStatus(tile,mode,label){
   const touch=event.touches[0],dx=(touch.clientX-navSwipe.x)*(direction==='back'?1:-1),dy=touch.clientY-navSwipe.y;
   if(!navSwipe.axis){
    if(document.querySelector('.msg-actions-menu:not([hidden]),#row-menu:not([hidden])')){navSwipe=null;return}
+   if(messageSelectionActive()){navSwipe=null;return}
    if(dx>10&&dx>1.5*Math.abs(dy)){
     navSwipe.axis='navigate';
     suppressGestureClick();

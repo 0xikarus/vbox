@@ -100,11 +100,9 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.$eval('#refresh',button=>button.click());
   await p.waitForFunction(()=>!document.querySelector('.msg.processing'),{timeout:5000});
 
-  // Touch hides the hover action pill; a long press opens message actions.
-  const morePoint=await p.$eval('.msg.user',el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
-  await p.touchscreen.touchStart(morePoint.x,morePoint.y);
-  await new Promise(resolve=>setTimeout(resolve,550));
-  await p.touchscreen.touchEnd();
+  // Touch hides the hover action pill; the chevron at the message's top right
+  // opens message actions on a phone (long-press on text now selects it).
+  await p.$eval('.msg.user .msg-more',button=>button.click());
   await p.waitForFunction(()=>!document.querySelector('.msg-actions-menu').hidden);
   assert.equal(await p.$eval('.msg-actions-menu',el=>['Copy','Forward…'].every(label=>el.textContent.includes(label))),true,'message actions expose Copy and Forward');
   await p.screenshot({path:screenshotDir+'/mobile-chat-message-actions.png'});
