@@ -19,7 +19,7 @@ type boxAttachmentStorage struct {
 func (s *Store) boxAttachmentStorage(ctx context.Context, accountID, boxID string) (boxAttachmentStorage, error) {
 	value := boxAttachmentStorage{LimitBytes: maxAccountAttachmentBytes}
 	err := s.DB.QueryRowContext(ctx, `SELECT count(*),COALESCE(sum(bytes),0),count(*) FILTER (WHERE clearable) FROM (
-		SELECT i.id,octet_length(i.data) AS bytes,bool_or(m.state='delivered') AS clearable
+		SELECT i.id,octet_length(i.data) AS bytes,bool_or(m.state IN ('delivered','read')) AS clearable
 		FROM box_message_images j
 		JOIN box_messages m ON m.id=j.message_id AND m.account_id=j.account_id
 		JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id
@@ -69,7 +69,7 @@ func (s *Server) boxAttachmentStorageHandler(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]int64{"freedBytes": freed, "removedReferences": removed})
 }
 
-// clearBoxAttachments removes media only from delivered messages. An in-flight
+// clearBoxAttachments removes media only from delivered or read messages. An in-flight
 // message can still need its original attachment for native agent delivery.
 func (s *Store) clearBoxAttachments(ctx context.Context, p Principal, boxID string) (int64, int64, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
@@ -85,7 +85,7 @@ func (s *Store) clearBoxAttachments(ctx context.Context, p Principal, boxID stri
 		USING box_messages m,box_tasks t
 		WHERE j.account_id=$1 AND m.id=j.message_id AND m.account_id=j.account_id
 		AND t.id=m.task_id AND t.account_id=m.account_id
-		AND t.logical_box_id=$2 AND m.state='delivered'
+		AND t.logical_box_id=$2 AND m.state IN ('delivered','read')
 		RETURNING j.image_id::text`, accountID, boxID)
 	if err != nil {
 		return 0, 0, err

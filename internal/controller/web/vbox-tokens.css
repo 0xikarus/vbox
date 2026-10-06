@@ -39,6 +39,9 @@
   --vb-bubble-out:#111114;
   --vb-bubble-out-ink:#ffffff;
   --vb-bubble-in:#f2f2f3;
+  --vb-tick-read:#44caff;
+  --vb-tick-read-on-bubble:#78ddff;
+  --vb-tick-failed-on-bubble:#ffd0d0;
 
   --vb-radius-10:10px;--r-control:var(--vb-radius-10);
   --vb-radius-16:16px;--r-surface:var(--vb-radius-16);--r-md:var(--vb-radius-16);
@@ -87,6 +90,9 @@
     --vb-bubble-out:#f3f3f5;
     --vb-bubble-out-ink:#111114;
     --vb-bubble-in:#1d1e24;
+    --vb-tick-read:#44caff;
+    --vb-tick-read-on-bubble:#006fa4;
+    --vb-tick-failed-on-bubble:#a91d35;
 
     --vb-shadow:0 1px 2px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);
     --vb-shadow-md:0 8px 24px rgba(0,0,0,.5);

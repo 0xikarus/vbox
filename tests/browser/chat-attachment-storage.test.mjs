@@ -7,9 +7,9 @@ import puppeteer from 'puppeteer-core';
 const assetNames=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','run-budget-policy.js','idle-policy.css'];
 const assets=Object.fromEntries(await Promise.all(assetNames.map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 
-test('box details reports attachment use and clears delivered media after confirmation',async()=>{
+test('box details reports attachment use and clears read media after confirmation',async()=>{
  const box={id:'builder',name:'Builder',state:'hibernated',defaultAgent:'codex'};
- const message={id:'message-1',taskId:'task-1',direction:'user',text:'Keep this text',state:'delivered',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),images:[{id:'image-1',number:1,mediaType:'image/png'}]};
+ const message={id:'message-1',taskId:'task-1',direction:'user',text:'Keep this text',state:'read',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),images:[{id:'image-1',number:1,mediaType:'image/png'}]};
  let cleared=false,incomplete=false,deleteBody=null;
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0];

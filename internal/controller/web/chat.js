@@ -1243,7 +1243,7 @@
   const pending=pendingSends.get(id);
   const replyDuringSend=pending&&ms.slice(pending.messageCount).some(m=>m.direction==='agent');
   const pendingBusy=pending&&!replyDuringSend;
-  const inferredBusy=last&&last.direction==='user'&&last.state==='delivered'&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000;
+  const inferredBusy=last&&last.direction==='user'&&['delivered','read'].includes(last.state)&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000;
   // A controller value from the previous poll must not suppress a send that is
   // currently in flight in this page. Persisted state takes over after it lands.
   const observed=Date.parse(box.mascotObservedAt||'');
@@ -3561,7 +3561,7 @@ function pairTileStatus(tile,mode,label){
   const button=$('#inspect-clear-attachments'),storageStatus=$('#inspect-attachment-status');button.disabled=true;storageStatus.textContent='Clearing attachments…';
   try{
    const result=await api(boxPath(box.id)+'/attachment-storage','DELETE',{}, {confirmation:box.name});
-   for(const message of box.messages||[])if(message.state==='delivered')message.images=[];
+   for(const message of box.messages||[])if(['delivered','read'].includes(message.state))message.images=[];
    if(selected===box.id)await refreshMessages(true);
    if(inspectOpen&&selected===box.id){await loadInspectAttachmentStorage(box);storageStatus.textContent='Removed '+result.removedReferences+' attachment references; freed '+storageSize(result.freedBytes)+'.'}
   }catch(e){storageStatus.textContent=e.message;button.disabled=false}

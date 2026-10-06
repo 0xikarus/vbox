@@ -70,7 +70,7 @@ func TestBoxAttachmentStoragePostgres(t *testing.T) {
 		}
 		return message
 	}
-	firstMessage := addMessage(first, "delivered", shared, private)
+	firstMessage := addMessage(first, "read", shared, private)
 	addMessage(first, "queued", pending)
 	addMessage(second, "delivered", shared)
 	server := NewServer(store, nil)

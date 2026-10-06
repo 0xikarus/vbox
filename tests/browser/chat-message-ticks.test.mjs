@@ -71,6 +71,9 @@ test('message ticks show sent, delivered, read, uncertain, failed, and live read
   await page.$eval('[data-message-id="failed"] .msg-more',button=>button.click());
   await page.$eval('[data-message-id="failed"] .msg-actions-menu button:last-child',button=>button.click());
   assert.equal(await page.$eval('#chat-input',input=>input.value),'Failed delivery');
+  assert.equal(await page.$('#chat-messages .msg.processing'),null);
+  messages.splice(0,messages.length,{id:'latest-read',direction:'user',state:'read',text:'Agent picked this up',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+  await page.waitForFunction(()=>!!document.querySelector('#chat-messages .msg.processing'),{timeout:10000});
   await page.close();
  }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve))}
 });
