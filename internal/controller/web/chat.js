@@ -1595,6 +1595,7 @@
   settings:[['circle',{cx:'12',cy:'12',r:'3'}],['path',{d:'M19.4 15a1.7 1.7 0 0 0 .3 1.8l-1.9 1.9a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21h-2v-1.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-1.9-1.9a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H5v-2h1.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l1.9-1.9a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h2v1.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l1.9 1.9a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21v2h-1.1a1.7 1.7 0 0 0-1.5 1Z'}]],
   'trash-2':[['path',{d:'M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7'}]],
   'image-off':[['rect',{x:'3',y:'3',width:'18',height:'18',rx:'2'}],['path',{d:'m3 15 5-5 4 4 3-3 6 6M2 2l20 20'}]],
+  'minimize-2':[['polyline',{points:'4 14 10 14 10 20'}],['polyline',{points:'20 10 14 10 14 4'}],['line',{x1:'14',y1:'10',x2:'21',y2:'3'}],['line',{x1:'3',y1:'21',x2:'10',y2:'14'}]],
  };
  function lucide(name){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -2301,6 +2302,7 @@
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
   renderResourceCard();
   updateBanner();
+  renderCompactHint();
  }
  matchMedia('(max-width:600px)').addEventListener('change',()=>{if(selected)renderHeader()});
  // A busy flag says the agent has a task, not whether it is making progress.
@@ -3124,6 +3126,71 @@ function pairTileStatus(tile,mode,label){
    if(selected===box.id)try{await refreshMessages(true)}catch(e){statusEl.textContent='Context cleared; chat refresh failed: '+e.message}
   }catch(e){statusEl.textContent=e.message}
   finally{renderHeader()}
+ }
+
+ /* ---------- compact agent context hint ---------- */
+ // The controller exposes no live per-conversation token signal to this page, so
+ // "long" is measured by the agent/user turns since the last context clear or
+ // compaction marker. A local floor keeps the hint hidden again right after a
+ // successful compact until the conversation has grown back.
+ const COMPACT_HINT_MESSAGES=20;
+ const compactHintStatus=new Map(),compactHintAfter=new Map();
+ const compactAgent=box=>['claude','codex','opencode'].includes(box?.defaultAgent||'');
+ function contextMarker(message){return message.direction==='system'&&/^context (cleared|compaction)/i.test(String(message.text||''))}
+ function compactConversationLong(box){
+  const messages=box.messages||[];
+  let baseline=-1;
+  for(let i=messages.length-1;i>=0;i--){if(contextMarker(messages[i])){baseline=i;break}}
+  if(compactHintAfter.has(box.id))baseline=Math.max(baseline,compactHintAfter.get(box.id)-1);
+  return messages.length-1-baseline>COMPACT_HINT_MESSAGES;
+ }
+ function compactBlocked(box){
+  if(!owner)return 'Only the owner can compact context.';
+  if(box.state!=='running')return box.name+' is '+box.state+'; resume it before compacting context.';
+  if(!compactAgent(box))return box.name+' uses a shell session; there is no agent context to compact.';
+  if(box.activityState==='working')return box.name+' is busy; compact after its current work finishes.';
+  return '';
+ }
+ function compactHintEligible(box){
+  if(!owner||!box)return false;
+  if(box.state!=='running'||!compactAgent(box))return false;
+  if(box.activityState!=='idle')return false;
+  return compactConversationLong(box);
+ }
+ function compactHintNodes(element,state,text,strong){
+  element.dataset.state=state;
+  const marker=document.createElement('span');marker.className='compact-hint-marker';
+  if(state==='busy'){marker.classList.add('compact-hint-spinner');marker.setAttribute('aria-hidden','true')}
+  else marker.append(lucide(state==='success'?'check':state==='error'?'alert':'minimize-2'));
+  const copy=document.createElement('span');copy.className='compact-hint-text';copy.textContent=text;
+  element.replaceChildren(marker,copy);
+  if(strong){const separator=document.createElement('span');separator.className='compact-hint-sep';separator.setAttribute('aria-hidden','true');separator.textContent='·';const cta=document.createElement('strong');cta.textContent=strong;element.append(separator,cta)}
+ }
+ function renderCompactHint(){
+  const element=$('#compact-hint');if(!element)return;
+  const box=boxes.get(selected);
+  const status=selected?compactHintStatus.get(selected):null;
+  if(!owner||!box||box.state!=='running'||box.activityState==='working'){element.hidden=true;return}
+  if(status?.kind==='busy'){element.disabled=true;compactHintNodes(element,'busy','Compacting…');element.hidden=false;return}
+  if(status?.kind==='success'){element.disabled=true;compactHintNodes(element,'success','Context compacted');element.hidden=false;return}
+  if(status?.kind==='error'){element.disabled=false;compactHintNodes(element,'error',status.error||'Compaction failed', 'Retry');element.hidden=false;return}
+  if(!compactHintEligible(box)){element.hidden=true;return}
+  element.disabled=false;compactHintNodes(element,'idle','Context is getting long','Compact');element.hidden=false;
+ }
+ async function compactChatContext(){
+  const box=boxes.get(selected);if(!box||!owner)return;
+  if(compactHintStatus.get(box.id)?.kind==='busy')return;
+  const blocked=compactBlocked(box);
+  if(blocked){compactHintStatus.set(box.id,{kind:'error',error:blocked});renderCompactHint();return}
+  compactHintStatus.set(box.id,{kind:'busy'});renderCompactHint();
+  try{
+   const result=await api(boxPath(box.id)+'/messages/compact','POST',{'Idempotency-Key':crypto.randomUUID()},{},45000);
+   compactHintAfter.set(box.id,(box.messages||[]).length);
+   compactHintStatus.set(box.id,{kind:'success'});renderCompactHint();
+   toast('Context compaction requested for '+(result?.agent||box.defaultAgent)+'.');
+   if(selected===box.id)try{await refreshMessages(true)}catch{}
+   setTimeout(()=>{if(compactHintStatus.get(box.id)?.kind==='success'){compactHintStatus.delete(box.id);renderCompactHint()}},3500);
+  }catch(e){compactHintStatus.set(box.id,{kind:'error',error:e.message});renderCompactHint()}
  }
 
  /* ---------- inspect drawer: ping / activity per box ---------- */
@@ -4988,6 +5055,7 @@ let usagePending=null,usageGeneration=0;
  /* ---------- fixed vbox look ---------- */
  $('#chat-menu').onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
  $('#logout').addEventListener('click',()=>{$('#chat-menu-sheet').hidden=true},{capture:true});
+ $('#compact-hint').onclick=()=>void compactChatContext();
  applyVariant();
 
  void enter(true);
