@@ -227,6 +227,19 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize;user-select:none}
 #reply-preview strong{color:var(--accent-text)}
 #reply-preview-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-soft)}
 #reply-cancel{border:0;background:none;color:var(--ink-soft);font:inherit;font-size:var(--vb-type-rem-1-25);cursor:pointer}
+/* Compact context: confirmation chip above the composer for the /compact command. */
+#compact-chip{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.5rem .7rem;background:var(--accent-soft);border-top:1px solid var(--line);border-left:3px solid var(--accent)}
+#compact-chip[hidden]{display:none}
+.compact-chip-label{font-weight:700;color:var(--accent-text)}
+.compact-chip-note{flex:1;min-width:7rem;color:var(--ink-soft);font-size:var(--vb-type-rem-0-75)}
+.compact-chip-actions{display:flex;gap:.4rem;margin-left:auto}
+.compact-chip-actions button{border:1px solid var(--line);background:var(--surface2);color:var(--ink);border-radius:var(--radius-sm);min-height:2rem;padding:.3rem .75rem;font:inherit;font-weight:700;font-size:var(--vb-type-rem-0-76);cursor:pointer}
+.compact-chip-actions #compact-chip-confirm{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.compact-chip-actions button:hover{filter:brightness(1.04)}
+#compact-chip[data-state="success"]{border-left-color:var(--ok)}
+#compact-chip[data-state="success"] .compact-chip-label{color:var(--ok-text)}
+#compact-chip[data-state="error"]{border-left-color:var(--warn)}
+#compact-chip[data-state="error"] .compact-chip-label{color:var(--warn-text)}
 #chat-composer{display:flex;align-items:flex-end;gap:.35rem;background:var(--surface);
   padding:.4rem .5rem calc(env(safe-area-inset-bottom) + .4rem);flex:none;margin:0;border-top:1px solid var(--line)}
 #chat-composer button{flex:none;border:0;border-radius:var(--radius);width:2.8rem;height:2.8rem;font-size:var(--vb-type-rem-1-25);
