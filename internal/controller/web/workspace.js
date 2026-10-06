@@ -243,10 +243,10 @@ function applyBoxState(b){
  $('.workspace-top-chat').href='/chat#box='+encodeURIComponent(b.id);
  if(workspaceMascot){const mood=b.state==='hibernated'?'sleeping':b.state==='failed'?'angry':['reserved','attaching'].includes(b.state)?'waking':'idle';workspaceMascot.jump(mood)}
  $('#name').textContent=b.name;document.title='vbox / workspace / '+b.name;
- const phase=boxPhase(b.state),owner=workspaceRole==='owner',connectable=phase==='running'||phase==='stopped'||phase==='failed';
+ const phase=boxPhase(b.state),owner=workspaceRole==='owner',retryable=phase==='failed'&&b.restorationState==='attach-timed-out'&&!b.volumeId?.startsWith('pending:'),connectable=phase==='running'||phase==='stopped'||retryable;
  $('#status').textContent=statusLine(b);
  $('#connect').hidden=!connectable;
- $('#connect').textContent=phase==='running'?'Reconnect viewers':'Resume box';
+ $('#connect').textContent=phase==='running'?'Reconnect viewers':retryable?'Retry wake':'Resume box';
  $('#hibernate').hidden=!(phase==='running'&&owner);
  $('#box-settings').hidden=!(phase==='running'&&owner);
  $('#box-contacts').hidden=!owner;
@@ -261,7 +261,7 @@ function applyBoxState(b){
  $('#lifecycle-note').textContent={
   running:'Closing this page leaves the box running. Hibernate stops its processes and retains workspace files.',
   stopped:'This page does not start the box. Resume box explicitly requests compute; workspace files remain saved.',
-  failed:'This box failed to start. Read the reason above, then resume to retry or delete the box and its workspace.',
+  failed:retryable?'The timed-out wake can be retried on its original worker slot. Your workspace files are retained.':'This box failed to start. Read the reason above before deleting the box and its workspace.',
   creating:'This box is being created. This page updates automatically; connecting becomes available when it is running.',
   transitioning:'This box is transitioning. This page updates automatically.',
   deleting:'This box is being deleted. Its workspace volume will be removed.'
@@ -280,7 +280,7 @@ async function observeBox(box,version){
   const phase=boxPhase(box.state);
   if(phase==='running'){startStats();await openPreferredView(box,version);return}
   if(phase==='stopped'){showSleepingWorkspace();return}
-  if(phase==='failed'){showSleepingWorkspace(box.failureReason?('Box failed: '+box.failureReason):'Box failed to start. Resume to retry or delete it.');return}
+  if(phase==='failed'){showSleepingWorkspace(box.failureReason?('Box failed: '+box.failureReason):'Box failed to start.');return}
   $('#status').textContent=statusLine(box);
   if(Date.now()>deadline)throw Error('Still '+box.state+'. This page stopped watching; reload to check again.');
   await new Promise(r=>setTimeout(r,2000));if(version!==epoch)return;
@@ -296,6 +296,7 @@ async function connect(resume=false){
   if(phase==='running'){startStats();await openPreferredView(box,version);return}
   if(phase==='stopped'||phase==='failed'){
    if(!resume){showSleepingWorkspace();return}
+   if(phase==='failed')allocation=null;
    if(!allocation)allocation=await api(bp+'/allocate','POST',{leaseOwner:'web'},{'Idempotency-Key':allocationKey});
    const deadline=Date.now()+180000;
    while(allocation.state!=='ready'){

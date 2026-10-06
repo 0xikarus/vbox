@@ -23,9 +23,6 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	if err := s.Store.RenewAssignmentLease(ctx, accountID, allocation, 2*time.Minute); err != nil {
 		return fail("renewing-lease", err)
 	}
-	if err := s.Store.MarkAssignmentAttaching(ctx, allocation); err != nil {
-		return fail("reserving-slot", err)
-	}
 	assignment, err := s.Store.assignment(ctx, accountID, allocation.LogicalBoxID)
 	if err != nil {
 		return fail("loading-assignment", err)
@@ -36,6 +33,22 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	prov, err := s.provider(ctx, accountID, assignment.Box.Provider, assignment.Box.ProviderCredential)
 	if err != nil {
 		return fail("resolving-provider", err)
+	}
+	if assignment.Box.Provider == "shared-worker" {
+		if reader, ok := prov.(provider.HostResourcesProvider); ok {
+			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			resources, probeErr := reader.HostResources(probeCtx)
+			cancel()
+			if probeErr != nil {
+				s.Logger.Warn("shared worker load probe failed", "allocation", allocation.RequestID, "error", probeErr)
+			} else if sharedHostOverloaded(resources) {
+				_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "waiting-for-host-load", "shared worker is overloaded; wake will retry automatically", false)
+				return nil
+			}
+		}
+	}
+	if err := s.Store.MarkAssignmentAttaching(ctx, allocation); err != nil {
+		return fail("reserving-slot", err)
 	}
 	desired := provider.Storage{ID: assignment.Box.VolumeID, Name: assignment.Box.VolumeName, MountPath: "/data"}
 	if inspector, ok := prov.(provider.AttachedStorageProvider); ok {
@@ -171,6 +184,17 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 		s.applyPendingWakeSessionChoice(ctx, accountID, allocation.RequestID)
 	}
 	return nil
+}
+
+func sharedHostOverloaded(resources provider.HostResources) bool {
+	if resources.CPUCores <= 0 {
+		return false
+	}
+	threshold := resources.CPUCores * 4
+	if threshold < 8 {
+		threshold = 8
+	}
+	return resources.CPULoad1 >= threshold
 }
 
 func logicalBoxWelcome(assignment fleetAssignment, actual provider.Box) []byte {
