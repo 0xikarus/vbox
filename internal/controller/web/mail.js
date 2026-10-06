@@ -107,14 +107,16 @@
   }catch(error){if(epoch===requestEpoch&&boxId===state.boxId){state.addressError=shortError(error);state.addressStatus=''}}
   finally{if(epoch===requestEpoch&&boxId===state.boxId){state.addressSaving=false;renderMail()}}
  }
+ // The controller's mail domain is deployment config; derive it from known addresses.
+ const mailDomain=()=>(state.settings?.address||state.addresses.find(item=>item.address)?.address||'').split('@')[1]||'';
  const mailLocalPart=value=>/^(?:[a-z0-9]|[a-z0-9][a-z0-9._+-]{0,62}[a-z0-9])$/.test(value)&&!value.includes('..');
  function addressChoices(){
-  const domain=state.settings?.address?.split('@')[1]||'example.test',query=state.addressQuery.trim().toLowerCase();
+  const domain=mailDomain(),query=state.addressQuery.trim().toLowerCase();
   const available=state.addresses.filter(item=>item.owningBoxId!==state.boxId&&!(item.boxIds||[]).includes(state.boxId));
   const matches=available.filter(item=>!query||[item.address,item.label,item.localPart].some(value=>String(value||'').toLowerCase().includes(query))).slice(0,5).map(item=>({kind:'grant',item,label:item.address,detail:item.owningBoxId?'Another box’s address':item.label||'Shared address'}));
   const local=query.endsWith('@'+domain)?query.slice(0,-domain.length-1):query;
   const exact=state.addresses.some(item=>item.address.toLowerCase()===local+'@'+domain);
-  if(query&&!exact&&mailLocalPart(local))matches.push({kind:'create',local,label:'Create and add '+local+'@'+domain,detail:'New shared address'});
+  if(domain&&query&&!exact&&mailLocalPart(local))matches.push({kind:'create',local,label:'Create and add '+local+'@'+domain,detail:'New shared address'});
   return matches;
  }
  function renderAddressOptions(){
@@ -214,9 +216,9 @@
  function renderAddresses(){
   const own=state.addresses.find(item=>item.owningBoxId===state.boxId),ownAddress=own?.address||state.settings?.address||'Assigned when enabled';
   const granted=state.addresses.filter(item=>item.owningBoxId!==state.boxId&&(item.boxIds||[]).includes(state.boxId));
-  const domain=state.settings?.address?.split('@')[1]||'example.test';
+  const domain=mailDomain();
   const suggested=state.addresses.filter(item=>item.owningBoxId!==state.boxId&&!(item.boxIds||[]).includes(state.boxId)).slice(0,4).map(item=>({address:item.address,id:item.id}));
-  for(const local of ['team','support','contact','billing']){
+  for(const local of domain?['team','support','contact','billing']:[]){
    if(suggested.length>=4)break;
    const address=local+'@'+domain;
    if(!state.addresses.some(item=>item.address.toLowerCase()===address))suggested.push({address,local});

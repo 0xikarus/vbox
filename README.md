@@ -66,3 +66,7 @@ The controller serves the browser UI and API, stores account and box metadata in
 ## Documentation
 
 Start with the [documentation index](docs/README.md). See [controller operations](docs/CONTROLLER.md), [worker isolation](docs/SHARED-WORKERS.md), the [agent desktop guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md), and the [API contract](docs/openapi.yaml).
+
+## License
+
+vbox is licensed under the [Apache License 2.0](LICENSE). Bundled third-party components and their licenses are listed in [NOTICE](NOTICE). The vbox name and logo are not covered by the license. To report a vulnerability, see [SECURITY.md](SECURITY.md); to contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
