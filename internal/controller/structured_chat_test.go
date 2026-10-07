@@ -349,11 +349,12 @@ func TestApplyChatEventRetriesImageAfterDeliveredReply(t *testing.T) {
 	}
 }
 
-func TestAttachAgentChatImagesBoundsOverflow(t *testing.T) {
+func TestAttachAgentChatImagesSkipsInvalidAndBoundsOverflow(t *testing.T) {
 	store, mock := testStore(t)
 	image := boxruntime.ChatEventImage{MediaType: "image/png", Data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"}
-	images := make([]boxruntime.ChatEventImage, 9)
-	for i := range images {
+	images := make([]boxruntime.ChatEventImage, 10)
+	images[0] = boxruntime.ChatEventImage{MediaType: "image/png", Data: "invalid-base64"}
+	for i := 1; i < len(images); i++ {
 		images[i] = image
 	}
 	mock.ExpectExec(`DELETE FROM run_once_images i`).WithArgs("account-a").WillReturnResult(sqlmock.NewResult(0, 0))
@@ -366,7 +367,7 @@ func TestAttachAgentChatImagesBoundsOverflow(t *testing.T) {
 	}
 	mock.ExpectCommit()
 	if err := store.attachAgentChatImages(context.Background(), "account-a", "message-1", images); err != nil {
-		t.Fatalf("overflow must not stall the outbox: %v", err)
+		t.Fatalf("invalid image or overflow must not stall the outbox: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

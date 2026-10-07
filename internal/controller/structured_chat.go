@@ -99,7 +99,7 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 		}
 		data, err := base64.StdEncoding.DecodeString(image.Data)
 		if err != nil {
-			// Permanently invalid content: skip this image; the text stays.
+			// Permanently invalid content must not block the reply text.
 			continue
 		}
 		media, err := validateRunOnceImage(data)
