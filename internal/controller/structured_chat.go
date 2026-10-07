@@ -108,12 +108,10 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 		}
 		data, media, err = optimizeStoredImage(ctx, data, media)
 		if err != nil {
-			// Transient processing failure: retry the whole event later.
 			return err
 		}
 		used += int64(len(data))
 		if used > maxAccountAttachmentBytes {
-			// Quota is transient state too; a later retry may fit.
 			return errAccountAttachmentQuota
 		}
 		ordinal++
@@ -272,8 +270,6 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 			return "", false, err
 		}
 		if err := s.Store.attachAgentChatImages(ctx, accountID, message.ID, event.Images); err != nil {
-			// Storage or quota failures leave the event retryable; invalid
-			// content never reaches this path (it is skipped in the store).
 			return "", false, err
 		}
 		var busyErr error
