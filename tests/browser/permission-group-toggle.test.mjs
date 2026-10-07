@@ -77,6 +77,9 @@ test('Details and Manage show one master and visible tool checkboxes with exact 
    await page.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#role-editor-status').textContent==='');
    await page.waitForFunction(()=>!document.querySelector('[data-permission-group="mail"]').hidden);
    const root='#role-editor-form',limit=view==='chat'?'#inspect-create-limit':'#role-create-limit';
+   const computerTools=await page.$$eval('[data-permission-group="computer-use"] input[name=mcpTools]',nodes=>nodes.map(node=>node.value));
+   assert.equal(computerTools.length,11,view+' lists all computer-use tools');
+   for(const tool of ['detect_captcha','show_captcha','solve_captcha'])assert.ok(computerTools.includes(tool),view+' lists '+tool);
    assert.equal(await page.$eval(root,form=>form.querySelectorAll('.inline-permission-quick,.inline-permission-tools,.mcp-tool-group-toggle,input[name=mailRead],input[name=mailCompose],input[name=controlOtherDesktops],input[name=createAgentBoxEnabled]').length),0,view+' has no extra toggles or Tools disclosures');
    assert.equal(await page.$eval(limit,node=>node.querySelectorAll('input[type=checkbox]').length),0,view+' limit has no switch');
    assert.deepEqual(await page.$$eval('[data-permission-group="manage-boxes"] .inline-permission-tool-list > *',nodes=>nodes.map(node=>node.matches('label')?node.querySelector('input[name=mcpTools]')?.value:node.id==='inspect-create-limit'||node.id==='role-create-limit'?'limit':node.classList.contains('role-capability-options')?'advanced':'').filter(Boolean).slice(3,7)),['remote_control_box','create_agent_box','limit','advanced'],view+' places limit under create_agent_box');
