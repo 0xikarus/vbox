@@ -29,6 +29,18 @@ binary once with the `bootstrap` argument and the same `DATABASE_URL` to create
 the first owner. Capture the token privately. A reverse proxy should terminate
 HTTPS at the public `VMBOX_CONTROLLER_URL`.
 
+Optional settings:
+
+| Variable | Effect |
+| --- | --- |
+| `VMBOX_DEFAULT_RUN_BUDGET` | Default run time before a box hibernates, as a Go duration such as `8h` (the default) |
+| `VMBOX_DIRECT_WORKERS` | `1` lets agent-backed workers connect to the controller directly |
+| `VMBOX_INITIAL_COMPUTE_BOX_SLOTS` | Seeds initial capacity; later owner changes win |
+| `VMBOX_BOOTSTRAP_TOKEN_HASH` | Creates the first owner from a base64url token hash when the database has no accounts |
+| `VMBOX_CHAT_INSTRUCTION` | Replaces the reply reminder appended to chat prompts; `off` disables it |
+| `VMBOX_CHAT_INSTRUCTION_EVERY` | Repeats a custom instruction only every N prompts |
+| `VMBOX_MAIL_DOMAIN`, `VMBOX_INBOUND_MAIL_SECRET`, `VMBOX_RESEND_API_KEY` | Box mail; see [mail setup](MAIL.md) |
+
 Choose a worker path before allocating boxes:
 
 | Worker path | Setup |

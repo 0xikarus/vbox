@@ -97,7 +97,7 @@ func installBlenderMCPBinary(ctx context.Context, home, blender string, progress
 			return err
 		}
 		fmt.Fprintf(progress, "Installing pinned third-party Blender MCP %s…\n", blenderMCPVersion)
-		imageServer := "/opt/vmbox/blender-mcp-" + blenderMCPVersion + "/bin/blender-mcp"
+		imageServer := pinnedBlenderMCPImage
 		if _, err := os.Stat(imageServer); err == nil && os.IsNotExist(serverErr) {
 			if err := os.Symlink(imageServer, server); err != nil {
 				return err

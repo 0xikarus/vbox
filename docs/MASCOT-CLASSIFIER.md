@@ -38,4 +38,4 @@ fixtures now use only the synthetic corpus. Previous quality judgments on a
 real-transcript held-out set, including the reported 84% good rate, are no
 longer reproducible from this repository. The synthetic evaluation measures
 agreement with synthetic labels only. See [the activity model README](../scripts/activity-model/README.md)
-and [the private training guide](TRAIN-ACTIVITY-MOOD.md).
+and [the training guide](TRAIN-ACTIVITY-MOOD.md).

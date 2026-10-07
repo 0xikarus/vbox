@@ -12,9 +12,7 @@ import (
 )
 
 func TestSharedBlenderRequiresBundledImageWithoutSudo(t *testing.T) {
-	if _, err := os.Stat("/opt/vmbox/blender-" + blenderVersion + "/blender"); err == nil {
-		t.Skip("requires a host without bundled Blender")
-	}
+	withoutImageBlender(t)
 	t.Setenv("VMBOX_WORKSPACE_ROOT", t.TempDir())
 	err := installPinnedBlender(context.Background(), t.TempDir(), io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "shared worker image must include") {

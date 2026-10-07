@@ -57,6 +57,8 @@ func TestOpenCodeBlenderRegistrationRespectsDesktopLock(t *testing.T) {
 }
 
 func TestBlenderRejectsUnverifiedArchive(t *testing.T) {
+	isolateRuntimeEnv(t)
+	withoutImageBlender(t)
 	bin, home := t.TempDir(), t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
 		t.Fatal(err)

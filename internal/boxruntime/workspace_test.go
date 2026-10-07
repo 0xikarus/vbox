@@ -10,6 +10,7 @@ import (
 )
 
 func TestSharedWorkspacePaths(t *testing.T) {
+	isolateRuntimeEnv(t)
 	root := t.TempDir()
 	t.Setenv("VMBOX_WORKSPACE_ROOT", root)
 	t.Setenv("VMBOX_DESKTOP_DISPLAY", ":102")
