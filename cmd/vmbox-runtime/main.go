@@ -160,6 +160,22 @@ func run() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return boxruntime.DesktopInput(ctx, args[1], action)
+	case "captcha-answer":
+		if len(args) != 2 {
+			return fmt.Errorf("captcha-answer requires ASSIGNMENT")
+		}
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, 32769))
+		if err != nil {
+			return err
+		}
+		defer clear(data)
+		answer, err := boxruntime.DecodeCaptchaAnswer(data)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return boxruntime.SubmitCaptchaAnswer(ctx, args[1], answer)
 	case "desktop-enable", "desktop-start", "desktop-run", "desktop-folders", "desktop-stream", "desktop-status", "desktop-screenshot", "desktop-thumbnail":
 		if len(args) != 2 && !(args[0] == "desktop-start" && len(args) == 3) {
 			return fmt.Errorf("desktop command requires ASSIGNMENT")

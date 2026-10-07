@@ -5,6 +5,7 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -24,6 +25,8 @@ type Client struct {
 	conn *websocket.Conn
 	next uint64
 }
+
+var errBrowserOperationRejected = errors.New("browser operation rejected")
 
 // Endpoint reads Chromium's private discovery file. Never trust a host or URL
 // from that file: Chromium is reachable only over this box's loopback interface.
@@ -114,7 +117,7 @@ func (c *Client) Call(ctx context.Context, session, method string, params, resul
 		defer clear(response.Result)
 		defer clear(response.Error)
 		if len(response.Error) > 0 {
-			return fmt.Errorf("browser operation rejected")
+			return errBrowserOperationRejected
 		}
 		if result != nil && json.Unmarshal(response.Result, result) != nil {
 			return fmt.Errorf("invalid browser operation result")
