@@ -49,7 +49,9 @@ func captchaTaskName(kind string) string {
 	return ""
 }
 
-// captchaSubmitValues builds the in.php parameters for one challenge.
+// captchaSubmitValues builds the in.php parameters for one challenge. Widget
+// tasks always carry the page URL: 2captcha requires it for reCAPTCHA,
+// hCaptcha, and Turnstile.
 func captchaSubmitValues(kind, siteKey, pageURL string, png []byte) (url.Values, error) {
 	values := url.Values{}
 	switch kind {
@@ -59,24 +61,30 @@ func captchaSubmitValues(kind, siteKey, pageURL string, png []byte) (url.Values,
 		}
 		values.Set("method", "userrecaptcha")
 		values.Set("googlekey", siteKey)
+		values.Set("pageurl", pageURL)
 	case "hcaptcha":
 		if siteKey == "" || pageURL == "" {
 			return nil, fmt.Errorf("hCaptcha site key or page URL unavailable")
 		}
 		values.Set("method", "hcaptcha")
 		values.Set("sitekey", siteKey)
+		values.Set("pageurl", pageURL)
 	case "turnstile":
 		if siteKey == "" || pageURL == "" {
 			return nil, fmt.Errorf("Turnstile site key or page URL unavailable")
 		}
 		values.Set("method", "turnstile")
 		values.Set("sitekey", siteKey)
+		values.Set("pageurl", pageURL)
 	case "image":
 		if len(png) == 0 || len(png) > 3<<20 {
 			return nil, fmt.Errorf("no usable challenge capture for the image solver")
 		}
 		values.Set("method", "base64")
 		values.Set("body", base64.StdEncoding.EncodeToString(png))
+		if pageURL != "" {
+			values.Set("pageurl", pageURL)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported captcha type %q", kind)
 	}

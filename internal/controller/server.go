@@ -1252,7 +1252,9 @@ func securityHeaders(next http.Handler) http.Handler {
 			// so the owner can solve a detected challenge directly. Only those
 			// provider origins may run scripts or provide frames here; frames
 			// use path-scoped reCAPTCHA origins, everything else stays locked.
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://js.hcaptcha.com; style-src 'self' 'unsafe-inline'; frame-src https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://js.hcaptcha.com https://newassets.hcaptcha.com https://api.hcaptcha.com; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+			// The widget SDKs need their documented connect/style origins and
+			// Google's dedicated widget host for the frames they open.
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://api.hcaptcha.com https://imgs.hcaptcha.com; img-src 'self' data: blob: https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://imgs.hcaptcha.com https://newassets.hcaptcha.com; media-src 'self' blob:; script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://js.hcaptcha.com https://newassets.hcaptcha.com; style-src 'self' 'unsafe-inline' https://www.gstatic.com/recaptcha/ https://newassets.hcaptcha.com; frame-src https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://recaptcha.google.com https://js.hcaptcha.com https://newassets.hcaptcha.com https://api.hcaptcha.com; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 		}
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")

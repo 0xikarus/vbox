@@ -1807,11 +1807,17 @@
      solve.disabled=true;
      loadCaptchaApi(kind).then(api=>{
       widget.hidden=false;setStatus('');
-      api.render(widget,{sitekey:captcha.siteKey,callback:token=>void submit({type:kind,token})});
+      api.render(widget,{sitekey:captcha.siteKey,callback:token=>void submit({type:kind,token,pageUrl:captcha.url})});
       solve.remove();
      }).catch(error=>{solve.disabled=false;setStatus(error.message+' — use Open full desktop instead.',true)});
     };
     actions.append(solve);
+    // Site keys are usually domain-restricted to the target site. Rendering
+    // here can be rejected by the provider; surface that clearly with the
+    // manual route as the reliable fallback.
+    const note=document.createElement('p');note.className='captcha-card-note';
+    note.textContent=kind==='recaptcha'?'This widget renders on the controller\'s host. If the site\'s key is domain-restricted, use Open full desktop.':'';
+    if(note.textContent)card.append(note);
    }else{
     setStatus('The widget site key was unavailable — use Open full desktop to solve it there.',true);
    }
@@ -1819,7 +1825,7 @@
    const field=document.createElement('input');field.type='text';field.maxLength=200;field.placeholder='Type the captcha answer';field.setAttribute('aria-label','Captcha answer');
    const send=document.createElement('button');send.type='submit';send.textContent='Submit answer';
    answerForm.append(field,send);
-   answerForm.onsubmit=event=>{event.preventDefault();const text=field.value.trim();if(text)void submit({type:'image',text})};
+   answerForm.onsubmit=event=>{event.preventDefault();const text=field.value.trim();if(text)void submit({type:'image',text,pageUrl:captcha.url})};
    setStatus('Type what the capture shows; the agent\'s browser is showing the same challenge.');
   }else if(kind==='turnstile'){
    setStatus('Cloudflare Turnstile is domain-locked and cannot be embedded here.');
@@ -4833,7 +4839,6 @@ let usagePending=null,usageGeneration=0;
  $('#captcha-solver-form').onsubmit=async event=>{
   event.preventDefault();
   const enabled=$('#captcha-solver-enabled').checked,apiKey=$('#captcha-solver-key').value.trim();
-  if(!enabled&&!apiKey){captchaSolverStatus.textContent='Enter a key to enable automatic solving, or uncheck it to solve captchas yourself.';return}
   if(enabled&&!apiKey&&!captchaSolverState?.configured){captchaSolverStatus.textContent='An API key is required to enable automatic solving.';return}
   captchaSolverStatus.textContent='Saving…';
   try{

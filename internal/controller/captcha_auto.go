@@ -51,9 +51,9 @@ func (s *Server) autoSolveCaptcha(accountID string, task v1.BoxTask, prov provid
 		s.postAutoSolveOutcome(ctx, accountID, task, messageID, fmt.Sprintf("Automatic captcha solving failed: %v. Please solve it in chat.", err))
 		return
 	}
-	answerPayload := browser.CaptchaAnswer{Type: captcha.Type, Token: answer}
+	answerPayload := browser.CaptchaAnswer{Type: captcha.Type, Token: answer, PageURL: captcha.URL}
 	if captcha.Type == "image" {
-		answerPayload = browser.CaptchaAnswer{Type: "image", Text: answer}
+		answerPayload = browser.CaptchaAnswer{Type: "image", Text: answer, PageURL: captcha.URL}
 	}
 	if err := s.applyCaptchaAnswer(ctx, accountID, prov, task.LogicalBoxID, answerPayload); err != nil {
 		s.postAutoSolveOutcome(ctx, accountID, task, messageID, fmt.Sprintf("Automatic captcha solving failed: %v. Please solve it in chat.", err))

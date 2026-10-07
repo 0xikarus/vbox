@@ -25,6 +25,10 @@ func TestTwoCaptchaSolveWidgetsAndImages(t *testing.T) {
 		if r.PostForm.Get("key") != "testkey12345" {
 			t.Fatalf("unexpected key %q", r.PostForm.Get("key"))
 		}
+		// Widget solving requires the challenge's page URL.
+		if r.PostForm.Get("method") != "base64" && r.PostForm.Get("pageurl") != "https://example.test/login" {
+			t.Fatalf("method %q missing pageurl: %v", r.PostForm.Get("method"), r.PostForm)
+		}
 		_, _ = w.Write([]byte(`{"status":1,"request":"task-1"}`))
 	})
 	mux.HandleFunc("POST /res.php", func(w http.ResponseWriter, r *http.Request) {

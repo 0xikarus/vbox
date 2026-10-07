@@ -76,7 +76,7 @@
       const src = frame && frame.src;
       if (src) {
         const parsed = new URL(src);
-        return parsed.searchParams.get("sitekey") || parsed.searchParams.get("key") || "";
+        return parsed.searchParams.get("sitekey") || parsed.searchParams.get("k") || parsed.searchParams.get("key") || "";
       }
     } catch (_) {}
     return "";

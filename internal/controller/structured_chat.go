@@ -263,7 +263,9 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 			return "", false, err
 		}
 		if err := s.Store.attachAgentChatImages(ctx, accountID, message.ID, event.Images); err != nil {
-			return "", false, err
+			// A bad attachment must not stall the outbox head-of-line: keep the
+			// message and acknowledge the event without its images.
+			s.Logger.Warn("agent chat images rejected", "account", accountID, "task", task.ID, "error", err)
 		}
 		var busyErr error
 		if activityMessageID != "" {
@@ -291,7 +293,8 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		return "", false, err
 	}
 	if err := s.Store.attachAgentChatImages(ctx, accountID, reply.ID, event.Images); err != nil {
-		return "", false, err
+		// Same outbox rule: keep the reply, drop the bad attachments.
+		s.Logger.Warn("agent chat images rejected", "account", accountID, "task", task.ID, "error", err)
 	}
 	if err := s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, activityMessageID); err != nil {
 		return "", false, err

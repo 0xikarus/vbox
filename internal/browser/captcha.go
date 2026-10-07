@@ -61,6 +61,13 @@ const captchaProbe = `(() => {
    try { if (document.querySelector(selector)) return type; } catch (e) { return ""; }
   }
  }
+ // No widget in this document: a captcha inside an embedded login iframe is
+ // reported by the vmbox-captcha-guard add-on in the child frame, which marks
+ // the top document through its postMessage channel.
+ try {
+  const marker = JSON.parse(document.documentElement.getAttribute("data-vmbox-captcha") || "null");
+  if (marker && marker.type) return marker.type;
+ } catch (e) {}
  return "";
 })()`
 
@@ -108,7 +115,7 @@ const captchaDetailProbe = `(() => {
     const src = frame && frame.src;
     if (src) {
      const parsed = new URL(src);
-     sitekey = parsed.searchParams.get("sitekey") || parsed.searchParams.get("key") || "";
+     sitekey = parsed.searchParams.get("sitekey") || parsed.searchParams.get("k") || parsed.searchParams.get("key") || "";
     }
    }
   } catch (e) {}
@@ -328,13 +335,15 @@ func (c *Client) CaptchaChallenges(ctx context.Context) ([]CaptchaChallenge, err
 }
 
 // CaptchaAnswer carries the owner's solution from the chat UI to the managed
-// browser. Widget challenges (reCAPTCHA, hCaptcha) bring a response token the
-// chat's embedded widget produced; image challenges bring the typed answer.
-// Token-like secrets exist only inside this box and are never returned.
+// browser. Widget challenges (reCAPTCHA, hCaptcha, Turnstile) bring a response
+// token the chat's embedded widget produced; image challenges bring the typed
+// answer. PageURL pins the injection to the captured tab. Token-like secrets
+// exist only inside this box and are never returned.
 type CaptchaAnswer struct {
-	Type  string `json:"type"`
-	Token string `json:"token,omitempty"`
-	Text  string `json:"text,omitempty"`
+	Type    string `json:"type"`
+	Token   string `json:"token,omitempty"`
+	Text    string `json:"text,omitempty"`
+	PageURL string `json:"pageUrl,omitempty"`
 }
 
 // Validate enforces the same rules as DecodeCaptchaAnswer for direct callers.
@@ -385,6 +394,11 @@ func (c *Client) SubmitCaptchaAnswer(ctx context.Context, answer CaptchaAnswer) 
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 			continue
 		}
+		// Only inject into the page the card was captured from, so a token can
+		// never land on an unrelated tab that happens to show the same type.
+		if answer.PageURL != "" && !sameCaptchaPage(answer.PageURL, target.URL) {
+			continue
+		}
 		if applied {
 			continue
 		}
@@ -423,20 +437,49 @@ func (c *Client) SubmitCaptchaAnswer(ctx context.Context, answer CaptchaAnswer) 
 	return nil
 }
 
-// captchaProviderFrame classifies one frame URL for the answer routing.
+// sameCaptchaPage compares the card's captured URL with an open target. Scheme
+// and host must match, and the path must not have moved to another document.
+// An unpinned answer (no card URL) may target any open page.
+func sameCaptchaPage(cardURL, targetURL string) bool {
+	card, err := url.Parse(cardURL)
+	if err != nil || card.Host == "" {
+		return true
+	}
+	target, err := url.Parse(targetURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(card.Scheme, target.Scheme) && strings.EqualFold(card.Host, target.Host) && card.Path == target.Path
+}
+
+// captchaProviderFrame classifies one frame URL for the answer routing. Only
+// the provider's real origins match: a substring anywhere in the URL would let
+// an attacker page like https://evil.test/?x=google.com/recaptcha pose as a
+// widget frame and read a valid token.
 func captchaProviderFrame(kind, frameURL string) string {
-	lower := strings.ToLower(frameURL)
+	parsed, err := url.Parse(frameURL)
+	if err != nil {
+		return "page"
+	}
+	host := strings.ToLower(parsed.Host)
+	path := strings.ToLower(parsed.Path)
 	switch kind {
 	case "recaptcha":
-		if strings.Contains(lower, "google.com/recaptcha") || strings.Contains(lower, "recaptcha/api2") || strings.Contains(lower, "recaptcha/enterprise") {
+		if host == "www.google.com" && (strings.HasPrefix(path, "/recaptcha/") || strings.HasPrefix(path, "/recaptcha")) {
+			return "widget"
+		}
+		if host == "recaptcha.google.com" {
+			return "widget"
+		}
+		if host == "www.gstatic.com" && strings.HasPrefix(path, "/recaptcha/") {
 			return "widget"
 		}
 	case "hcaptcha":
-		if strings.Contains(lower, "hcaptcha.com") {
+		if host == "js.hcaptcha.com" || host == "newassets.hcaptcha.com" || host == "api.hcaptcha.com" || host == "accounts.hcaptcha.com" {
 			return "widget"
 		}
 	case "turnstile":
-		if strings.Contains(lower, "challenges.cloudflare.com") {
+		if host == "challenges.cloudflare.com" {
 			return "widget"
 		}
 	}
