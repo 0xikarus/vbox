@@ -1812,7 +1812,7 @@
      solve.disabled=true;
      loadCaptchaApi(kind).then(api=>{
       widget.hidden=false;setStatus('');
-      api.render(widget,{sitekey:captcha.siteKey,callback:token=>void submit({type:kind,token,pageUrl:captcha.url})});
+      api.render(widget,{sitekey:captcha.siteKey,callback:token=>void submit({type:kind,token,pageUrl:captcha.url,targetId:captcha.targetId})});
       solve.remove();
      }).catch(error=>{solve.disabled=false;setStatus(error.message+' — use Open full desktop instead.',true)});
     };
@@ -1824,7 +1824,7 @@
    const field=document.createElement('input');field.type='text';field.maxLength=200;field.placeholder='Type the captcha answer';field.setAttribute('aria-label','Captcha answer');
    const send=document.createElement('button');send.type='submit';send.textContent='Submit answer';
    answerForm.append(field,send);
-   answerForm.onsubmit=event=>{event.preventDefault();const text=field.value.trim();if(text)void submit({type:'image',text,pageUrl:captcha.url})};
+   answerForm.onsubmit=event=>{event.preventDefault();const text=field.value.trim();if(text)void submit({type:'image',text,pageUrl:captcha.url,targetId:captcha.targetId})};
    setStatus('Type what the capture shows; the agent\'s browser is showing the same challenge.');
   }else if(kind==='turnstile'){
    setStatus('Cloudflare Turnstile is domain-locked and cannot be embedded here.');

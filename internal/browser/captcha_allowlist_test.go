@@ -52,7 +52,8 @@ func TestSameCaptchaPage(t *testing.T) {
 		want   bool
 	}{
 		{"https://site.test/login", "https://site.test/login", true},
-		{"https://site.test/login?x=1", "https://site.test/login", true},
+		{"https://site.test/login?x=1", "https://site.test/login", false},
+		{"https://site.test/login?x=1", "https://site.test/login?x=2", false},
 		{"https://site.test/login", "https://site.test/signup", false},
 		{"https://site.test/login", "https://other.test/login", false},
 		{"https://site.test/login", "http://site.test/login", false},

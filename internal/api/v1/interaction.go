@@ -62,13 +62,13 @@ type BoxMessageQuestion struct {
 	Multiple bool     `json:"multiple,omitempty"`
 }
 
-// BoxMessageCaptcha carries the captcha add-on's extracted challenge data so
-// the chat UI can embed the same widget for the owner to solve. SiteKey is the
-// widget's public configuration. It never carries solver inputs or tokens.
+// BoxMessageCaptcha carries verified challenge data for the owner's chat card.
+// SiteKey is public configuration; this message never carries solver inputs.
 type BoxMessageCaptcha struct {
-	Type    string `json:"type"`
-	URL     string `json:"url,omitempty"`
-	SiteKey string `json:"siteKey,omitempty"`
+	Type     string `json:"type"`
+	URL      string `json:"url,omitempty"`
+	SiteKey  string `json:"siteKey,omitempty"`
+	TargetID string `json:"targetId,omitempty"`
 }
 
 type BoxMessageMailItem struct {

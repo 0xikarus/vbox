@@ -67,34 +67,35 @@ func callShowCaptcha(ctx context.Context, assignment string) (map[string]any, er
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "No CAPTCHA challenge detected in the managed browser's open pages; nothing was sent to chat."}}}, nil
 	}
 	var images []ChatEventImage
+	var shown []browser.CaptchaCapture
 	var lines []string
 	// The card describes the same challenge its image shows: pick the first
 	// capture that actually has pixels, and keep the data/image pairs aligned.
 	cardSource := captures[0].Challenge
+	solverPNG := captures[0].SolverPNG
 	for index, capture := range captures {
 		lines = append(lines, "- "+capture.Challenge.Type+" at "+capture.Challenge.URL)
 		// A hidden or zero-size widget has no pixels to show; the card still
 		// carries its data, but an empty attachment would be rejected by the
 		// controller and stall the outbox.
-		if len(capture.PNG) == 0 {
+		if len(capture.PNG) == 0 || len(images) == 8 {
 			continue
 		}
 		if len(images) == 0 {
 			cardSource = capture.Challenge
+			solverPNG = capture.SolverPNG
 		}
 		name := fmt.Sprintf("captcha-%s-%d.png", capture.Challenge.Type, index+1)
 		images = append(images, ChatEventImage{Name: name, MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(capture.PNG)})
+		shown = append(shown, capture)
 	}
 	text := "CAPTCHA challenge detected in the managed browser (" + strings.Join(lines, "; ") + "). Please solve it from the captcha card in chat; this agent continues once the challenge is gone."
-	card := &ChatEventCaptcha{Type: cardSource.Type, URL: cardSource.URL, SiteKey: cardSource.SiteKey}
+	card := &ChatEventCaptcha{Type: cardSource.Type, URL: cardSource.URL, SiteKey: cardSource.SiteKey, TargetID: cardSource.TargetID, SolverImage: base64.StdEncoding.EncodeToString(solverPNG)}
 	if err := writeDesktopChatEvent(ctx, assignment, ChatEvent{Kind: "reply", Text: text, Images: images, Captcha: card}); err != nil {
 		return nil, err
 	}
-	content := []map[string]any{{"type": "text", "text": fmt.Sprintf("Captured %d CAPTCHA challenge(s) using the add-on's extracted data and posted a captcha card to the owner's chat:\n%s\n\nThe owner was tasked with solving it. Do not attempt to solve it. Wait for the answer to arrive, then continue once the challenge is gone.", len(captures), strings.Join(lines, "\n"))}}
-	for _, capture := range captures {
-		if len(capture.PNG) == 0 {
-			continue
-		}
+	content := []map[string]any{{"type": "text", "text": fmt.Sprintf("Captured %d CAPTCHA challenge(s) from verified browser frames and posted a captcha card to the owner's chat:\n%s\n\nThe owner was tasked with solving it. Do not attempt to solve it. Wait for the answer to arrive, then continue once the challenge is gone.", len(captures), strings.Join(lines, "\n"))}}
+	for _, capture := range shown {
 		content = append(content, map[string]any{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(capture.PNG)})
 	}
 	return map[string]any{"content": content}, nil

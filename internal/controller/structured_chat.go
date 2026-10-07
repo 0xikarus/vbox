@@ -73,9 +73,6 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 	if len(images) == 0 {
 		return nil
 	}
-	if len(images) > 8 {
-		return fmt.Errorf("agent attached too many images")
-	}
 	if err := s.pruneStaleUnusedAttachments(ctx, accountID); err != nil {
 		return err
 	}
@@ -97,6 +94,9 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 	}
 	ordinal := 0
 	for _, image := range images {
+		if ordinal == 8 {
+			break
+		}
 		data, err := base64.StdEncoding.DecodeString(image.Data)
 		if err != nil {
 			// Permanently invalid content: skip this image; the text stays.
@@ -221,7 +221,7 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 			return "", false, fmt.Errorf("empty structured chat reply")
 		}
 		if event.Captcha != nil {
-			text = encodeBoxMessageCaptcha(text, v1.BoxMessageCaptcha{Type: event.Captcha.Type, URL: event.Captcha.URL, SiteKey: event.Captcha.SiteKey})
+			text = encodeBoxMessageCaptcha(text, v1.BoxMessageCaptcha{Type: event.Captcha.Type, URL: event.Captcha.URL, SiteKey: event.Captcha.SiteKey, TargetID: event.Captcha.TargetID})
 		}
 	case "question":
 		if event.Question == nil || strings.TrimSpace(event.Question.Text) == "" || len(event.Question.Choices) == 0 {
@@ -253,6 +253,10 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 			// Two drains (or two client retries) may enqueue the same structured
 			// reply with different event IDs. Treat an identical answer to the same
 			// message as idempotent instead of displaying a second root bubble.
+			// A retry after attachment storage failed still needs to store its images.
+			if err := s.Store.attachAgentChatImages(ctx, accountID, existing.ID, event.Images); err != nil {
+				return "", false, err
+			}
 			if err := s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, target.ID); err != nil {
 				return "", false, err
 			}
@@ -283,7 +287,11 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		}
 		s.pushAgentReply(ctx, accountID, task, text)
 		if message.Captcha != nil {
-			go s.autoSolveCaptcha(accountID, task, prov, message.ID, *message.Captcha, firstChatEventPNG(event.Images))
+			var solverPNG []byte
+			if event.Captcha != nil && event.Captcha.Type == "image" {
+				solverPNG, _ = base64.StdEncoding.DecodeString(event.Captcha.SolverImage)
+			}
+			go s.autoSolveCaptcha(accountID, task, prov, message.ID, *message.Captcha, solverPNG)
 		}
 		return message.ID, false, nil
 	}

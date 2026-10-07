@@ -3,31 +3,15 @@ package controller
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
-	"github.com/0xikarus/vmbox-service/internal/boxruntime"
 	"github.com/0xikarus/vmbox-service/internal/browser"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
-
-// firstChatEventPNG returns the first PNG attachment's bytes; image captchas
-// are solved from their capture.
-func firstChatEventPNG(images []boxruntime.ChatEventImage) []byte {
-	for _, image := range images {
-		if image.MediaType != "image/png" {
-			continue
-		}
-		if png, err := base64.StdEncoding.DecodeString(image.Data); err == nil && len(png) > 0 {
-			return png
-		}
-	}
-	return nil
-}
 
 // autoSolveCaptcha solves a freshly posted captcha message with the account's
 // 2captcha credential when the owner enabled that. It runs after the captcha
@@ -51,9 +35,9 @@ func (s *Server) autoSolveCaptcha(accountID string, task v1.BoxTask, prov provid
 		s.postAutoSolveOutcome(ctx, accountID, task, messageID, fmt.Sprintf("Automatic captcha solving failed: %v. Please solve it in chat.", err))
 		return
 	}
-	answerPayload := browser.CaptchaAnswer{Type: captcha.Type, Token: answer, PageURL: captcha.URL}
+	answerPayload := browser.CaptchaAnswer{Type: captcha.Type, Token: answer, PageURL: captcha.URL, TargetID: captcha.TargetID}
 	if captcha.Type == "image" {
-		answerPayload = browser.CaptchaAnswer{Type: "image", Text: answer, PageURL: captcha.URL}
+		answerPayload = browser.CaptchaAnswer{Type: "image", Text: answer, PageURL: captcha.URL, TargetID: captcha.TargetID}
 	}
 	if err := s.applyCaptchaAnswer(ctx, accountID, prov, task.LogicalBoxID, answerPayload); err != nil {
 		s.postAutoSolveOutcome(ctx, accountID, task, messageID, fmt.Sprintf("Automatic captcha solving failed: %v. Please solve it in chat.", err))

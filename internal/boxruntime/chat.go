@@ -51,13 +51,15 @@ type ChatQuestion struct {
 	Multiple bool     `json:"multiple,omitempty"`
 }
 
-// ChatEventCaptcha carries the captcha add-on's extracted challenge data so the
-// controller chat UI can embed the same widget for the owner to solve. SiteKey
-// is public widget configuration. It never carries solver tokens or inputs.
+// ChatEventCaptcha carries verified challenge data to the controller. SiteKey
+// is public configuration. SolverImage contains decoded image pixels only for
+// the optional automatic solver; it is not stored in the chat card.
 type ChatEventCaptcha struct {
-	Type    string `json:"type"`
-	URL     string `json:"url,omitempty"`
-	SiteKey string `json:"siteKey,omitempty"`
+	Type        string `json:"type"`
+	URL         string `json:"url,omitempty"`
+	SiteKey     string `json:"siteKey,omitempty"`
+	TargetID    string `json:"targetId,omitempty"`
+	SolverImage string `json:"solverImage,omitempty"`
 }
 
 type ChatInbound struct {
