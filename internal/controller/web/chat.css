@@ -160,22 +160,6 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize;user-select:none}
 .codex-resume-actions{display:flex;gap:.5rem;flex-wrap:wrap}
 .codex-resume-actions button{padding:.45rem .7rem;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--ink);cursor:pointer}
 .codex-resume-actions button:disabled{opacity:.5;cursor:wait}
-.captcha-card{align-self:center;display:flex;flex-direction:column;gap:.55rem;width:min(100%,34rem);padding:.9rem;border:1px solid var(--warn);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow)}
-.captcha-card-head{display:flex;align-items:center;gap:.45rem;color:var(--warn)}
-.captcha-card-head strong{font-size:var(--vb-type-rem-0-9)}
-.captcha-card-host{font-size:var(--vb-type-rem-0-83);color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.captcha-card-note{margin:0;font-size:var(--vb-type-rem-0-83);color:var(--ink-soft)}
-.captcha-card-actions{display:flex;gap:.5rem;flex-wrap:wrap}
-.captcha-card-actions button{padding:.45rem .7rem;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--ink);cursor:pointer}
-.captcha-card-status{margin:0;font-size:var(--vb-type-rem-0-83);color:var(--ink-soft)}
-.captcha-card-status-failed{color:var(--warn)}
-.captcha-widget{display:flex;justify-content:center;min-height:4rem;padding:.5rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface2)}
-.captcha-answer{display:flex;gap:.5rem}
-.captcha-answer input{flex:1;min-width:0;padding:.45rem .6rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink)}
-.captcha-answer button{padding:.45rem .7rem;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--ink);cursor:pointer}
-.captcha-card-shot{width:100%;border-radius:var(--radius-sm);border:1px solid var(--line)}
-.captcha-solver-intro{font-size:var(--vb-type-rem-0-83);color:var(--ink-soft);margin:.2rem 0 .6rem}
-.captcha-solver-enable{display:flex;align-items:center;gap:.5rem;margin:.6rem 0}
 .msg .note-label{display:block;font-size:var(--vb-type-rem-0-68);text-transform:uppercase;letter-spacing:.04em;color:var(--warn);margin-bottom:.1rem}
 .msg.streaming .text::after{content:" ▌";animation:chat-blink 1s steps(2) infinite;color:var(--accent)}
 @keyframes chat-blink{50%{opacity:0}}

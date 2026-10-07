@@ -1602,7 +1602,6 @@
   pencil:[['path',{d:'M12 20h9'}],['path',{d:'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'}]],
   timer:[['circle',{cx:'12',cy:'13',r:'8'}],['path',{d:'M12 9v4l3 2M9 2h6M19 5l2-2'}]],
   'shield-check':[['path',{d:'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z'}],['path',{d:'m9 12 2 2 4-4'}]],
-  'shield-alert':[['path',{d:'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z'}],['path',{d:'M12 8v4'}],['path',{d:'M12 16h.01'}]],
   paperclip:[['path',{d:'m20 11.5-7.8 7.8a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 1 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8'}]],
   settings:[['circle',{cx:'12',cy:'12',r:'3'}],['path',{d:'M19.4 15a1.7 1.7 0 0 0 .3 1.8l-1.9 1.9a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21h-2v-1.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-1.9-1.9a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H5v-2h1.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l1.9-1.9a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h2v1.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l1.9 1.9a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21v2h-1.1a1.7 1.7 0 0 0-1.5 1Z'}]],
   'trash-2':[['path',{d:'M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7'}]],
@@ -1731,112 +1730,6 @@
   if(last<text.length)fragment.append(text.slice(last));
   return fragment;
  }
- /* ---------- captcha card: solve the embedded challenge in chat ---------- */
- // Agent messages that carry the captcha add-on's extracted data render a
- // captcha card. Like solver add-ons, it re-renders the REAL widget (reCAPTCHA
- // and hCaptcha) from its public site key inside the chat; the owner solves it
- // here and the controller injects the token into the box's browser. Image
- // challenges become a capture plus a text field. Turnstile is domain-locked
- // and stays in the full desktop view. Tokens never pass through the agent.
- const captchaWidgetSpecs={
-  recaptcha:{script:'https://www.google.com/recaptcha/api.js?render=explicit&onload=__vmboxCaptchaOnload',api:'grecaptcha'},
-  hcaptcha:{script:'https://js.hcaptcha.com/1/api.js?render=explicit&onload=__vmboxCaptchaOnload',api:'hcaptcha'}
- };
- const captchaApiPromises={};
- function loadCaptchaApi(kind){
-  const spec=captchaWidgetSpecs[kind];
-  if(!spec)return Promise.reject(new Error('unsupported widget'));
-  if(window[spec.api]&&window[spec.api].render)return Promise.resolve(window[spec.api]);
-  if(captchaApiPromises[kind])return captchaApiPromises[kind];
-  captchaApiPromises[kind]=new Promise((resolve,reject)=>{
-   const hook='__vmboxCaptchaOnload_'+kind;
-   window[hook]=()=>resolve(window[spec.api]);
-   const script=document.createElement('script');
-   script.src=spec.script.replace('onload=__vmboxCaptchaOnload','onload='+hook);
-   script.async=true;script.referrerPolicy='no-referrer-when-downgrade';
-   script.onerror=()=>reject(new Error('widget SDK unavailable'));
-   document.head.append(script);
-   setTimeout(()=>reject(new Error('widget SDK load timeout')),15000);
-  }).then(api=>{
-   if(!api||!api.render)throw new Error('widget SDK unavailable');
-   return api;
-  }).catch(error=>{delete captchaApiPromises[kind];throw error});
-  return captchaApiPromises[kind];
- }
- async function submitCaptchaAnswer(box,payload){
-  const response=await fetch(boxPath(box.id)+'/captcha/answer',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(60000)});
-  if(!response.ok){
-   let message='Answer rejected ('+response.status+')';
-   try{const detail=await response.json();if(detail?.error)message=detail.error}catch{}
-   throw new Error(message);
-  }
-  return response.blob();
- }
- function captchaCard(box,message){
-  const captcha=message.captcha;
-  const card=document.createElement('div');card.className='captcha-card';
-  const head=document.createElement('div');head.className='captcha-card-head';
-  head.append(lucide('shield-alert'));
-  const title=document.createElement('strong');title.textContent='CAPTCHA detected'+(captcha?.type?' · '+captcha.type:'');head.append(title);
-  if(captcha?.url){let host='';try{host=new URL(captcha.url).host||''}catch{}
-   if(host){const hostEl=document.createElement('span');hostEl.className='captcha-card-host';hostEl.textContent=host;hostEl.title=captcha.url;head.append(hostEl)}}
-  card.append(head);
-  const actions=document.createElement('div');actions.className='captcha-card-actions';
-  const status=document.createElement('p');status.className='captcha-card-status';status.setAttribute('role','status');
-  const setStatus=(text,failed=false)=>{status.textContent=text;status.classList.toggle('captcha-card-status-failed',failed)};
-  let done=false;
-  const submit=async payload=>{
-   if(done)return;
-   setStatus('Submitting answer…');
-   try{
-    const blob=await submitCaptchaAnswer(box,payload);
-    done=true;widget.hidden=true;answerForm.hidden=true;
-    const shot=document.createElement('img');shot.className='captcha-card-shot';shot.alt='Desktop after captcha answer';
-    shot.src=URL.createObjectURL(blob);
-    card.append(shot);
-    setStatus('Answer submitted — the agent continues once the page clears.');
-   }catch(error){setStatus(error.message||'Answer could not be submitted.',true)}
-  };
-  const kind=captcha?.type;
-  const widget=document.createElement('div');widget.className='captcha-widget';widget.hidden=true;
-  const answerForm=document.createElement('form');answerForm.className='captcha-answer';answerForm.hidden=true;
-  if(kind==='recaptcha'){
-   // reCAPTCHA site keys are domain-restricted: the widget only renders on
-   // the site's own host, never on the controller's, so in-chat rendering
-   // would fail for most sites. Route straight to the desktop handoff.
-   setStatus('reCAPTCHA keys are tied to the site\'s own domain — solve it in the box\'s desktop. It was captured here for reference.');
-  }else if(kind==='hcaptcha'){
-   if(captcha.siteKey){
-    const solve=document.createElement('button');solve.type='button';solve.textContent='Solve captcha here';
-    solve.onclick=()=>{
-     solve.disabled=true;
-     loadCaptchaApi(kind).then(api=>{
-      widget.hidden=false;setStatus('');
-      api.render(widget,{sitekey:captcha.siteKey,callback:token=>void submit({type:kind,token,pageUrl:captcha.url,targetId:captcha.targetId})});
-      solve.remove();
-     }).catch(error=>{solve.disabled=false;setStatus(error.message+' — use Open full desktop instead.',true)});
-    };
-    actions.append(solve);
-   }else{
-    setStatus('The widget site key was unavailable — use Open full desktop to solve it there.',true);
-   }
-  }else if(kind==='image'){
-   const field=document.createElement('input');field.type='text';field.maxLength=200;field.placeholder='Type the captcha answer';field.setAttribute('aria-label','Captcha answer');
-   const send=document.createElement('button');send.type='submit';send.textContent='Submit answer';
-   answerForm.append(field,send);
-   answerForm.onsubmit=event=>{event.preventDefault();const text=field.value.trim();if(text)void submit({type:'image',text,pageUrl:captcha.url,targetId:captcha.targetId})};
-   setStatus('Type what the capture shows; the agent\'s browser is showing the same challenge.');
-  }else if(kind==='turnstile'){
-   setStatus('Cloudflare Turnstile is domain-locked and cannot be embedded here.');
-  }else{
-   setStatus('Solve it in the box\'s browser.');
-  }
-  const open=document.createElement('button');open.type='button';open.textContent='Open full desktop';
-  open.onclick=()=>void openBoxControl(box,'desktop');
-  actions.append(open);
-  card.append(actions,widget,answerForm,status);
-  return card;
- }
  function bubble(box,message,readOnly=false){
   if(message.direction==='system'&&message.control?.kind==='remote_control'){
    const control=message.control,actions=Math.max(0,Number(control.actions)||0),actor=control.actorName||boxes.get(control.actorBoxId)?.name||'manager';
@@ -1886,7 +1779,6 @@
    imageURL(message.id,image.id,true).then(url=>{if(!btn.isConnected)return;const frame=btn.querySelector('.media-preview'),img=frame?.querySelector('img'),placeholder=frame?.querySelector('.media-preview-placeholder');if(url&&img)img.src=url;else if(placeholder){placeholder.textContent='Preview unavailable';frame.classList.add('failed')}});
   }
   const form=readOnly?null:questionForm(box,message);if(form)row.append(form);
-  if(!readOnly&&message.captcha)row.append(captchaCard(box,message));
   const meta=document.createElement('span');meta.className='meta';
   const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;
   if(message.threadId&&threadSize>1&&!message.parentMessageId){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread msg-thread-line '+(mine?'user':'agent');thread.textContent='↳ '+(threadSize-1)+' '+(threadSize===2?'reply':'replies');thread.onclick=()=>void openThread(message.threadId);row._threadLink=thread}
@@ -4816,41 +4708,6 @@ let usagePending=null,usageGeneration=0;
   try{await loadChatCommands();selectChatCommand(chatCommands.find(command=>command.name===selectedCommandName)||chatCommands[0]||null);(chatCommands.length?$('#command-filter'):$('#command-form input[name="name"]')).focus()}catch(e){$('#command-status').textContent=e.message}
  };
  $('#ai-settings-toggle').onclick=()=>{closeSheets();window.VMBoxAIHelper.openSettings()};
-
- /* ---------- captcha solver settings (owner) ---------- */
- const captchaSolverStatus=$('#captcha-solver-status');
- let captchaSolverState=null;
- function renderCaptchaSolverState(setting){
-  captchaSolverState=setting||null;
-  $('#captcha-solver-enabled').checked=!!setting?.enabled;
-  const key=$('#captcha-solver-key');
-  key.value='';key.disabled=false;
-  key.placeholder=setting?.configured?'Leave empty to keep the saved key':'2captcha API key';
-  $('#captcha-solver-delete').hidden=!setting?.configured;
-  if(!setting)captchaSolverStatus.textContent='';
- }
- async function openCaptchaSolver(){
-  closeSheets();$('#captcha-solver-modal').hidden=false;captchaSolverStatus.textContent='';
-  try{renderCaptchaSolverState(await api('/v1/captcha-solver'))}catch(e){renderCaptchaSolverState(null);captchaSolverStatus.textContent=e.message}
-  $('#captcha-solver-key').focus();
- }
- $('#captcha-solver-toggle').onclick=()=>void openCaptchaSolver();
- $('#captcha-solver-form').onsubmit=async event=>{
-  event.preventDefault();
-  const enabled=$('#captcha-solver-enabled').checked,apiKey=$('#captcha-solver-key').value.trim();
-  if(enabled&&!apiKey&&!captchaSolverState?.configured){captchaSolverStatus.textContent='An API key is required to enable automatic solving.';return}
-  captchaSolverStatus.textContent='Saving…';
-  try{
-   const setting=await api('/v1/captcha-solver','PUT',{},{apiKey,enabled});
-   renderCaptchaSolverState(setting);
-   captchaSolverStatus.textContent=setting.enabled?'Automatic captcha solving is on.':'Saved; automatic solving is off.';
-  }catch(e){captchaSolverStatus.textContent=e.message}
- };
- $('#captcha-solver-delete').onclick=async()=>{
-  if(!confirm('Remove the saved 2captcha key? Automatic solving stops immediately.'))return;
-  try{await api('/v1/captcha-solver','DELETE');renderCaptchaSolverState(null);captchaSolverStatus.textContent='Key removed.'}
-  catch(e){captchaSolverStatus.textContent=e.message}
- };
  $('#command-filter').addEventListener('input',renderChatCommands);
  $('#command-new').onclick=()=>{selectChatCommand(null);$('#command-form input[name="name"]').focus()};
  $('#command-use').onclick=()=>{

@@ -329,7 +329,6 @@ func scanBoxMessage(scanner interface{ Scan(...any) error }) (v1.BoxMessage, err
 	var message v1.BoxMessage
 	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey, &message.SenderBoxID, &message.ParentMessageID, &message.ThreadID)
 	decodeBoxMessageQuestion(&message)
-	decodeBoxMessageCaptcha(&message)
 	decodeBoxMessageMail(&message)
 	decodeBoxMessageControl(&message)
 	return message, err
@@ -618,7 +617,6 @@ func scanBoxMessageWithSubmit(scanner interface{ Scan(...any) error }, submit *b
 	var message v1.BoxMessage
 	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey, &message.SenderBoxID, &message.ParentMessageID, &message.ThreadID, submit)
 	decodeBoxMessageQuestion(&message)
-	decodeBoxMessageCaptcha(&message)
 	decodeBoxMessageMail(&message)
 	decodeBoxMessageControl(&message)
 	return message, err

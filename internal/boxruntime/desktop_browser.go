@@ -23,11 +23,7 @@ func RunDesktopBrowser(ctx context.Context) error {
 	if err = os.MkdirAll(profile, 0700); err != nil {
 		return err
 	}
-	extension, err := InstallCaptchaExtension(home)
-	if err != nil {
-		return err
-	}
-	args := desktopChromiumArgsWithExtensions(profile, chromiumNoSandbox(os.Getenv("VMBOX_CHROMIUM_NO_SANDBOX"), containerBoundaryPresent()), extension)
+	args := desktopChromiumArgs(profile, chromiumNoSandbox(os.Getenv("VMBOX_CHROMIUM_NO_SANDBOX"), containerBoundaryPresent()))
 	cmd := exec.CommandContext(ctx, "chromium", args...)
 	cmd.Env = append(os.Environ(), "DISPLAY="+DesktopDisplay())
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
@@ -35,21 +31,12 @@ func RunDesktopBrowser(ctx context.Context) error {
 }
 
 func desktopChromiumArgs(profile string, noSandbox bool) []string {
-	return desktopChromiumArgsWithExtensions(profile, noSandbox)
-}
-
-func desktopChromiumArgsWithExtensions(profile string, noSandbox bool, extensions ...string) []string {
 	args := []string{"--user-data-dir=" + profile, "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check", "--window-size=960,600", "--disable-gpu"}
 	// Dedicated worker containers can use their container boundary when their
 	// host disallows Chromium's nested user/PID namespaces. An explicit false
 	// keeps Chromium's sandbox enabled for hosts that support it.
 	if noSandbox {
 		args = append(args, "--no-sandbox")
-	}
-	for _, extension := range extensions {
-		if extension != "" {
-			args = append(args, "--load-extension="+extension)
-		}
 	}
 	return args
 }

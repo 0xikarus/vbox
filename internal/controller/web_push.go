@@ -332,7 +332,6 @@ func (s *Server) pushAgentReply(ctx context.Context, accountID string, task v1.B
 	}
 	probe := v1.BoxMessage{Text: text}
 	decodeBoxMessageQuestion(&probe)
-	decodeBoxMessageCaptcha(&probe)
 	decodeBoxMessageMail(&probe)
 	decodeBoxMessageControl(&probe)
 	s.pushAccountNotification(accountID, map[string]string{"title": task.BoxName, "body": probe.Text, "box": task.LogicalBoxID, "url": "/chat#box=" + task.LogicalBoxID})

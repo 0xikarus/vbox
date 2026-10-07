@@ -29,14 +29,13 @@ import (
 const maxChatImageBytes = 25 << 20
 
 type ChatEvent struct {
-	ID       string            `json:"id"`
-	Kind     string            `json:"kind"`
-	ReplyTo  string            `json:"replyTo"`
-	Contact  string            `json:"contact,omitempty"`
-	Text     string            `json:"text"`
-	Images   []ChatEventImage  `json:"images,omitempty"`
-	Question *ChatQuestion     `json:"question,omitempty"`
-	Captcha  *ChatEventCaptcha `json:"captcha,omitempty"`
+	ID       string           `json:"id"`
+	Kind     string           `json:"kind"`
+	ReplyTo  string           `json:"replyTo"`
+	Contact  string           `json:"contact,omitempty"`
+	Text     string           `json:"text"`
+	Images   []ChatEventImage `json:"images,omitempty"`
+	Question *ChatQuestion    `json:"question,omitempty"`
 }
 
 type ChatEventImage struct {
@@ -49,17 +48,6 @@ type ChatQuestion struct {
 	Text     string   `json:"text"`
 	Choices  []string `json:"choices"`
 	Multiple bool     `json:"multiple,omitempty"`
-}
-
-// ChatEventCaptcha carries verified challenge data to the controller. SiteKey
-// is public configuration. SolverImage contains decoded image pixels only for
-// the optional automatic solver; it is not stored in the chat card.
-type ChatEventCaptcha struct {
-	Type        string `json:"type"`
-	URL         string `json:"url,omitempty"`
-	SiteKey     string `json:"siteKey,omitempty"`
-	TargetID    string `json:"targetId,omitempty"`
-	SolverImage string `json:"solverImage,omitempty"`
 }
 
 type ChatInbound struct {

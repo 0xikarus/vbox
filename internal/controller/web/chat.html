@@ -290,22 +290,6 @@
   <p id="preset-status" role="status"></p>
  </section></div>
 
-<div id="captcha-solver-modal" class="sheet" hidden>
- <div class="sheet-backdrop" data-close="captcha-solver-modal"></div>
- <section class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="captcha-solver-title">
-  <header><strong id="captcha-solver-title">Captcha solver</strong><span class="spacer"></span><button type="button" data-close="captcha-solver-modal" aria-label="Close">×</button></header>
-  <p class="captcha-solver-intro">When enabled, detected captchas are sent to your 2captcha account for automatic human solving. Without a key, you solve them yourself in the captcha card. The key is stored encrypted and never shown or shared with agents.</p>
-  <form id="captcha-solver-form" class="vb-sheet-form">
-   <label for="captcha-solver-key">2captcha API key <input id="captcha-solver-key" name="apiKey" type="password" maxlength="128" autocomplete="off" placeholder="Leave empty to keep the saved key"></label>
-   <label class="captcha-solver-enable"><input id="captcha-solver-enabled" name="enabled" type="checkbox"> Automatically solve detected captchas with 2captcha</label>
-   <div class="chat-group-form-actions vb-sheet-footer">
-    <button type="button" id="captcha-solver-delete" class="linkbtn danger">Remove key</button>
-    <button type="submit" class="primary">Save</button>
-   </div>
-  </form>
-  <p id="captcha-solver-status" role="status"></p>
- </section>
-</div>
 <div id="commands-modal" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="commands-modal"></div>
  <section class="sheet-card commands-card" role="dialog" aria-modal="true" aria-labelledby="commands-title">
@@ -410,7 +394,6 @@
    <button id="presets-toggle" type="button" hidden title="Instruction presets"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12h5M9.5 15h5"/></svg>Instructions</button>
    <button id="commands-toggle" type="button" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 8 5 12l4 4"/><path d="m15 8 4 4-4 4"/></svg>Commands</button>
    <button id="ai-settings-toggle" type="button" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="m6 6 2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>AI writing helper</button>
-   <button id="captcha-solver-toggle" type="button" hidden data-owner-nav><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M9 11l2 2 4-4"/></svg>Captcha solver</button>
    <p class="menu-group-label">Appearance</p>
    <div class="menu-row text-size-row"><span class="text-size-icon" aria-hidden="true">Aa</span><span class="menu-row-text"><span class="menu-row-title">Text size</span><small class="menu-row-sub">This device</small></span><span id="text-size-controls" role="group" aria-label="Text size"><button type="button" data-size="small" aria-label="Small text" title="Small">S</button><button type="button" data-size="medium" aria-label="Medium text" title="Medium">M</button><button type="button" data-size="large" aria-label="Large text" title="Large">L</button><button type="button" data-size="xl" aria-label="Extra large text" title="Extra large">XL</button></span></div>
    <p class="menu-group-label">Notifications</p>

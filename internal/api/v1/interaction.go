@@ -62,15 +62,6 @@ type BoxMessageQuestion struct {
 	Multiple bool     `json:"multiple,omitempty"`
 }
 
-// BoxMessageCaptcha carries verified challenge data for the owner's chat card.
-// SiteKey is public configuration; this message never carries solver inputs.
-type BoxMessageCaptcha struct {
-	Type     string `json:"type"`
-	URL      string `json:"url,omitempty"`
-	SiteKey  string `json:"siteKey,omitempty"`
-	TargetID string `json:"targetId,omitempty"`
-}
-
 type BoxMessageMailItem struct {
 	ID          string `json:"id"`
 	From        string `json:"from"`
@@ -121,7 +112,6 @@ type BoxMessage struct {
 	UpdatedAt       time.Time           `json:"updatedAt"`
 	Images          []BoxMessageImage   `json:"images,omitempty"`
 	Question        *BoxMessageQuestion `json:"question,omitempty"`
-	Captcha         *BoxMessageCaptcha  `json:"captcha,omitempty"`
 	Mail            *BoxMessageMail     `json:"mail,omitempty"`
 	Control         *BoxMessageControl  `json:"control,omitempty"`
 }

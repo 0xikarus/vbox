@@ -161,10 +161,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop", s.owner(s.startDesktop))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop", s.owner(s.desktopStatus))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop/enable", s.owner(s.enableDesktop))
-	mux.HandleFunc("POST /v1/logical-boxes/{id}/captcha/answer", s.owner(s.captchaAnswer))
-	mux.HandleFunc("GET /v1/captcha-solver", s.owner(s.getCaptchaSolver))
-	mux.HandleFunc("PUT /v1/captcha-solver", s.owner(s.putCaptchaSolver))
-	mux.HandleFunc("DELETE /v1/captcha-solver", s.owner(s.deleteCaptchaSolver))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/secrets", s.owner(s.desktopSecrets))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/secrets", s.owner(s.desktopSecrets))
 	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/secrets/{key}", s.owner(s.deleteDesktopSecret))
@@ -1246,15 +1242,6 @@ func securityHeaders(next http.Handler) http.Handler {
 			// generate styles at runtime. Script execution remains restricted
 			// to locally bundled assets.
 			w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
-		}
-		if r.URL.Path == "/chat" {
-			// The chat's captcha card embeds the challenge provider's own widget
-			// so the owner can solve a detected challenge directly. Only those
-			// provider origins may run scripts or provide frames here; frames
-			// use path-scoped reCAPTCHA origins, everything else stays locked.
-			// The widget SDKs need their documented connect/style origins and
-			// Google's dedicated widget host for the frames they open.
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://api.hcaptcha.com https://imgs.hcaptcha.com; img-src 'self' data: blob: https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://imgs.hcaptcha.com https://newassets.hcaptcha.com; media-src 'self' blob:; script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://js.hcaptcha.com https://newassets.hcaptcha.com; style-src 'self' 'unsafe-inline' https://www.gstatic.com/recaptcha/ https://newassets.hcaptcha.com; frame-src https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://recaptcha.google.com https://js.hcaptcha.com https://newassets.hcaptcha.com https://api.hcaptcha.com; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 		}
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")

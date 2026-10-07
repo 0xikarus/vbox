@@ -88,9 +88,6 @@ func desktopMCPTools() []map[string]any {
 		makeTool("generate_password", "Generate and securely store a password for a new account on the focused HTTPS password field's origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
 		makeTool("type_secret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("take_screenshot", "Capture this box's current desktop as a PNG image. Use output=file for a private PNG path that can be passed to chat_message files. Does not start or wake the desktop.", map[string]any{"output": map[string]any{"type": "string", "enum": []string{"image", "file"}, "default": "image"}}),
-		makeTool("detect_captcha", "Inspect the managed browser's open pages for CAPTCHA challenge widgets (reCAPTCHA, hCaptcha, Cloudflare Turnstile, or image CAPTCHAs). Read-only and coarse: it never returns solver inputs, tokens, or image data, and never solves anything. When a challenge is found, call solve_captcha.", map[string]any{}),
-		makeTool("show_captcha", "Capture the detected CAPTCHA using the add-on's extracted data (type, geometry, public site key) and post a captcha card to the owner's chat, where they solve it themselves. The card embeds the real widget (reCAPTCHA/hCaptcha) or an answer field (image CAPTCHAs); the owner's answer is injected into the managed browser directly and the token never passes through you. Does not solve anything itself.", map[string]any{}),
-		makeTool("solve_captcha", "Task the owner with solving the detected CAPTCHA: post a captcha card with the add-on's extracted data to the owner's chat and wait. The owner solves it there (or it is handled for them automatically); either way the answer reaches the managed browser directly and the token never passes through you. Call it after detect_captcha reports a challenge, then continue once it is gone.", map[string]any{}),
 		makeTool("capture_window", "Capture the visible screen area of an X11 window as PNG. Defaults to the active window; optionally supply window_id (decimal or 0x hexadecimal). Does not focus or raise windows. Overlapping windows appear in the capture; minimized windows are not supported. Returned x/y offsets map image coordinates to desktop coordinates.", map[string]any{"window_id": map[string]any{"type": "string", "minLength": 1, "maxLength": 10}}),
 		makeTool("move_mouse", "Move the cursor smoothly to a screen coordinate.", point, "x", "y"),
 		makeTool("click_mouse", "Move to a coordinate and click. Button: 1 left, 2 middle, 3 right. Count 2 sends a double-click with a brief inter-click delay.", map[string]any{"x": integer, "y": integer, "button": map[string]any{"type": "integer", "minimum": 1, "maximum": 3}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 2}}, "x", "y"),
@@ -664,12 +661,6 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 	}
 	if isDesktopMailTool(name) {
 		return callDesktopMailTool(ctx, assignment, name, args)
-	}
-	if name == "detect_captcha" {
-		return callDetectCaptcha(ctx, assignment)
-	}
-	if name == "show_captcha" || name == "solve_captcha" {
-		return callShowCaptcha(ctx, assignment)
 	}
 	if name == "heartbeat" {
 		var request struct {
