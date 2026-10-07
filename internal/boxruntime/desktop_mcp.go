@@ -132,9 +132,16 @@ func desktopContactActivity(activity *v1.AgentActivity) string {
 		}
 		return text
 	case v1.AgentActivityStalled:
-		return "stalled" + activityAge(activity.LastAgentMessageAt) + " (no output)"
+		return "stalled" + activityAge(stalledSince(activity)) + " (no output)"
 	case v1.AgentActivityIdle:
-		return "idle" + activityAge(activity.Since)
+		text := "idle" + activityAge(activity.Since)
+		if activity.Unanswered > 0 {
+			text += " · " + strconv.Itoa(activity.Unanswered) + " unanswered message"
+			if activity.Unanswered != 1 {
+				text += "s"
+			}
+		}
+		return text
 	case v1.AgentActivityWaiting:
 		return "waiting for reply"
 	case v1.AgentActivityHibernated:
@@ -144,6 +151,14 @@ func desktopContactActivity(activity *v1.AgentActivity) string {
 	default:
 		return "unknown"
 	}
+}
+
+// stalledSince prefers the moment output stopped over the work start.
+func stalledSince(activity *v1.AgentActivity) *time.Time {
+	if activity.LastOutputAt != nil {
+		return activity.LastOutputAt
+	}
+	return activity.Since
 }
 
 func activityAge(since *time.Time) string {
@@ -314,7 +329,7 @@ func writeDesktopMCPGuide(home string) error {
 	guide.WriteString("Read `~/.local/share/vmbox/mcp-http.json` inside the box. Its `promptUrl` is a local `http://127.0.0.1:<port>/prompt` address and its `token` authorizes the request. POST one JSON object with non-empty `text`, for example `{\"text\":\"Check the latest build result\"}`, and send `Authorization: Bearer <token>` and `Content-Type: application/json` headers. The token also authorizes HTTP MCP tools, so keep it private.\n\n")
 	guide.WriteString("A `202` response contains `accepted`, `session`, and `messageId`; the agent's reply goes through its normal conversation, not the HTTP response. `/prompt` requires a running managed agent and never starts or wakes one. If several conversations are running, include `session` in the JSON body or use an `X-Vmbox-Session` header. For a retryable local job, set one stable `messageId` in the JSON body and reuse it on retries; a `409` may still mean delivery is uncertain.\n\n")
 	guide.WriteString("## Is another agent actually working?\n\n")
-	guide.WriteString("`list_agent_boxes`, `get_agent_box` and `get_contacts` each include an `activity` summary so you can tell a running box from a working, idle, waiting or stalled agent. Read that first instead of taking a screenshot: `working` (with `since` and optional `phrase`), `idle`, `waiting` (the agent asked a question or has an unanswered inbound message), `stalled` (no output for ten minutes), `hibernated` or `stopped`. `unanswered` counts inbound messages the agent has not replied to, and `lastDelivery` reports the newest inbound delivery state.\n\n")
+	guide.WriteString("`list_agent_boxes`, `get_agent_box` and `get_contacts` each include an `activity` summary so you can tell a running box from a working, idle, waiting or stalled agent. Read that first instead of taking a screenshot: `working` (with `since`, `phrase` and `lastOutputAt`), `idle` (with `since`; `unanswered` above zero means the agent dropped inbound messages and needs a nudge), `waiting` (the agent asked a question and is blocked on a human), `stalled` (no output since `lastOutputAt`, ten minutes), `hibernated` or `stopped`. `lastDelivery` reports the newest inbound delivery state.\n\n")
 	for _, tool := range desktopMCPTools() {
 		name := tool["name"].(string)
 		description := tool["description"].(string)

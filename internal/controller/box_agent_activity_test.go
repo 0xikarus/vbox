@@ -31,15 +31,15 @@ func TestDeriveAgentActivityStates(t *testing.T) {
 		{name: "shell agent is idle", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "shell", Busy: boolPtr(true)}, want: v1.AgentActivityIdle},
 		{name: "working", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "claude", Busy: boolPtr(true), BusyAt: minutes(2), LastAgentAt: minutes(1), Phrase: "Running tests"}, want: v1.AgentActivityWorking, wantSince: minutes(2)},
 		{name: "working while streaming", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "claude", Busy: boolPtr(true), BusyAt: minutes(30), LastAgentAt: minutes(30), Streaming: true}, want: v1.AgentActivityWorking, wantSince: minutes(30)},
-		{name: "stalled at ten minutes without output", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "codex", Busy: boolPtr(true), BusyAt: minutes(30), LastAgentAt: minutes(10)}, want: v1.AgentActivityStalled, wantSince: minutes(30)},
-		{name: "stalled after twenty-five minutes", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "opencode", Busy: boolPtr(true), BusyAt: minutes(40), LastAgentAt: minutes(25)}, want: v1.AgentActivityStalled, wantSince: minutes(40)},
+		{name: "stalled at ten minutes without output", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "codex", Busy: boolPtr(true), BusyAt: minutes(30), LastAgentAt: minutes(10)}, want: v1.AgentActivityStalled, wantSince: minutes(10)},
+		{name: "stalled after twenty-five minutes", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "opencode", Busy: boolPtr(true), BusyAt: minutes(40), LastAgentAt: minutes(25)}, want: v1.AgentActivityStalled, wantSince: minutes(25)},
 		{name: "idle managed agent", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "claude", Busy: boolPtr(false), LastAgentAt: minutes(180)}, want: v1.AgentActivityIdle, wantSince: minutes(180)},
-		{name: "waiting on unanswered inbound", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "claude", Busy: boolPtr(false), Unanswered: 1, LastInboundAt: minutes(5), LastDelivery: "delivered"}, want: v1.AgentActivityWaiting, wantSince: minutes(5)},
+		{name: "idle with an unanswered inbound is not waiting", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "claude", Busy: boolPtr(false), Unanswered: 1, LastInboundAt: minutes(5), LastDelivery: "delivered"}, want: v1.AgentActivityIdle, wantSince: minutes(5)},
 		{name: "waiting on an open question", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "claude", Busy: boolPtr(false), PendingQuestion: true, LastAgentAt: minutes(3)}, want: v1.AgentActivityWaiting, wantSince: minutes(3)},
 		{name: "waiting from the mascot classifier", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "claude", Busy: boolPtr(true), MascotActivity: "waiting", MascotObservedAt: minutes(0)}, want: v1.AgentActivityWaiting, wantSince: minutes(0)},
 		{name: "stale classifier observation is ignored", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "claude", Busy: boolPtr(false), MascotActivity: "waiting", MascotObservedAt: minutes(5)}, want: v1.AgentActivityIdle},
 		{name: "inferred busy for a legacy task", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "codex", Busy: nil, Unanswered: 1, LastInboundAt: minutes(1), LastDelivery: "delivered"}, want: v1.AgentActivityWorking, wantSince: minutes(1)},
-		{name: "legacy idle task with an old unanswered prompt is waiting", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "codex", Busy: nil, Unanswered: 1, LastInboundAt: minutes(30), LastDelivery: "delivered"}, want: v1.AgentActivityWaiting, wantSince: minutes(30)},
+		{name: "legacy idle task with an old unanswered prompt stays idle", state: v1.LogicalBoxRunning, signals: agentActivitySignals{HasTask: true, Agent: "codex", Busy: nil, Unanswered: 1, LastInboundAt: minutes(30), LastDelivery: "delivered"}, want: v1.AgentActivityIdle, wantSince: minutes(30)},
 	}
 	for _, item := range cases {
 		t.Run(item.name, func(t *testing.T) {
@@ -74,6 +74,25 @@ func TestDeriveAgentActivityReportsPhraseAndDelivery(t *testing.T) {
 	}
 	if got.LastInboundAt == nil || got.LastAgentMessageAt == nil {
 		t.Fatalf("missing message timestamps: %+v", got)
+	}
+}
+
+func TestDeriveAgentActivityStallUsesLastOutput(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	busy := true
+	got := deriveAgentActivity(now, v1.LogicalBoxRunning, agentActivitySignals{
+		HasTask: true, Agent: "claude", Busy: &busy,
+		BusyAt: tp(now.Add(-40 * time.Minute)), LastAgentAt: tp(now.Add(-25 * time.Minute)),
+	})
+	if got.State != v1.AgentActivityStalled {
+		t.Fatalf("state=%q", got.State)
+	}
+	wantStopped := now.Add(-25 * time.Minute)
+	if got.LastOutputAt == nil || !got.LastOutputAt.Equal(wantStopped) {
+		t.Fatalf("lastOutputAt=%v want %v", got.LastOutputAt, wantStopped)
+	}
+	if got.Since == nil || !got.Since.Equal(wantStopped) {
+		t.Fatalf("since=%v should equal when output stopped %v", got.Since, wantStopped)
 	}
 }
 
@@ -128,7 +147,8 @@ func TestBoxAgentActivitySignalsWithoutActiveTask(t *testing.T) {
 func TestAgentManagedBoxJSONIncludesActivity(t *testing.T) {
 	box := safeAgentManagedBox(v1.LogicalBox{ID: "box-a", Name: "Builder", State: v1.LogicalBoxRunning, DefaultAgent: "claude"})
 	since := time.Date(2026, 10, 1, 11, 48, 0, 0, time.UTC)
-	box.Activity = &v1.AgentActivity{State: v1.AgentActivityWorking, Since: &since, Phrase: "Running tests", Unanswered: 1, LastDelivery: v1.DeliveryDelivered}
+	output := time.Date(2026, 10, 1, 11, 57, 0, 0, time.UTC)
+	box.Activity = &v1.AgentActivity{State: v1.AgentActivityWorking, Since: &since, Phrase: "Running tests", LastOutputAt: &output, Unanswered: 1, LastDelivery: v1.DeliveryDelivered}
 	encoded, err := json.Marshal(box)
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +164,7 @@ func TestAgentManagedBoxJSONIncludesActivity(t *testing.T) {
 	if activity["state"] != "working" || activity["phrase"] != "Running tests" || activity["unanswered"] != float64(1) || activity["lastDelivery"] != "delivered" {
 		t.Fatalf("activity=%v", activity)
 	}
-	if !strings.Contains(string(encoded), `"since":"2026-10-01T11:48:00Z"`) {
-		t.Fatalf("since missing from %s", encoded)
+	if !strings.Contains(string(encoded), `"since":"2026-10-01T11:48:00Z"`) || !strings.Contains(string(encoded), `"lastOutputAt":"2026-10-01T11:57:00Z"`) {
+		t.Fatalf("timestamps missing from %s", encoded)
 	}
 }

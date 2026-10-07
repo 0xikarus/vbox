@@ -82,12 +82,17 @@ func TestDesktopContactLineShowsCompactAgentActivity(t *testing.T) {
 		t.Fatalf("idle contact line=%q", line)
 	}
 	line = desktopContactLine(ContactSummary{ID: "a1b2c3d4", Name: "Builder", Agent: "claude", State: "running", CanMessage: true,
+		Activity: &v1.AgentActivity{State: v1.AgentActivityIdle, Since: stamp(5 * time.Minute), Unanswered: 1}})
+	if !strings.Contains(line, "idle 5m · 1 unanswered message") {
+		t.Fatalf("idle unanswered contact line=%q", line)
+	}
+	line = desktopContactLine(ContactSummary{ID: "a1b2c3d4", Name: "Builder", Agent: "claude", State: "running", CanMessage: true,
 		Activity: &v1.AgentActivity{State: v1.AgentActivityWaiting, Unanswered: 1}})
-	if !strings.Contains(line, "waiting for reply") {
+	if !strings.Contains(line, "waiting for reply") || strings.Contains(line, "unanswered") {
 		t.Fatalf("waiting contact line=%q", line)
 	}
 	line = desktopContactLine(ContactSummary{ID: "a1b2c3d4", Name: "Builder", Agent: "claude", State: "running", CanMessage: true,
-		Activity: &v1.AgentActivity{State: v1.AgentActivityStalled, LastAgentMessageAt: stamp(25 * time.Minute)}})
+		Activity: &v1.AgentActivity{State: v1.AgentActivityStalled, Since: stamp(40 * time.Minute), LastOutputAt: stamp(25 * time.Minute)}})
 	if !strings.Contains(line, "stalled 25m (no output)") {
 		t.Fatalf("stalled contact line=%q", line)
 	}

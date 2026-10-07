@@ -132,13 +132,17 @@ func latestTime(values ...*time.Time) *time.Time {
 }
 
 // deriveAgentActivity mirrors the chat UI's activityState plus its stall hint.
-// A running box with an active managed agent is working, waiting or idle;
-// working agents become stalled after agentStallInactiveWindow with no output.
+// A running box with an active managed agent is working, stalled, waiting or
+// idle; "waiting" means the agent itself is blocked on a human (an open chat_ask
+// or the mascot classifier), while an idle agent with unanswered inbound
+// messages has dropped them and stays idle with Unanswered > 0.
 func deriveAgentActivity(now time.Time, state v1.LogicalBoxState, signals agentActivitySignals) v1.AgentActivity {
+	baseOutput := latestTime(signals.LastAgentAt, signals.LastInboundAt, signals.PhraseAt)
 	activity := v1.AgentActivity{
 		Phrase:             signals.Phrase,
 		LastAgentMessageAt: signals.LastAgentAt,
 		LastInboundAt:      signals.LastInboundAt,
+		LastOutputAt:       baseOutput,
 		Unanswered:         signals.Unanswered,
 		LastDelivery:       deliveryState(signals.LastDelivery),
 	}
@@ -152,9 +156,23 @@ func deriveAgentActivity(now time.Time, state v1.LogicalBoxState, signals agentA
 	}
 	if !signals.HasTask || !isManagedAgent(signals.Agent) {
 		activity.State = v1.AgentActivityIdle
+		activity.Since = baseOutput
 		return activity
 	}
 	freshObservation := signals.MascotObservedAt != nil && !signals.MascotObservedAt.Before(now.Add(-agentObservationFreshWindow))
+	// The same evidence the chat stall hint uses: the busiest start, agent and
+	// inbound messages, the stored phrase, a fresh mascot observation, or now
+	// while the agent is streaming.
+	busyStart := latestTime(signals.BusyAt, signals.LastInboundAt)
+	lastOutput := latestTime(busyStart, baseOutput)
+	if freshObservation {
+		lastOutput = latestTime(lastOutput, signals.MascotObservedAt)
+	}
+	if signals.Streaming {
+		lastOutput = &now
+	}
+	activity.LastOutputAt = lastOutput
+
 	if freshObservation && signals.MascotActivity == "waiting" {
 		activity.State = v1.AgentActivityWaiting
 		activity.Since = signals.MascotObservedAt
@@ -162,7 +180,7 @@ func deriveAgentActivity(now time.Time, state v1.LogicalBoxState, signals agentA
 	}
 	if signals.PendingQuestion {
 		activity.State = v1.AgentActivityWaiting
-		activity.Since = signals.LastAgentAt
+		activity.Since = latestTime(signals.LastAgentAt, lastOutput)
 		return activity
 	}
 	busy := false
@@ -173,33 +191,21 @@ func deriveAgentActivity(now time.Time, state v1.LogicalBoxState, signals agentA
 		busy = true
 	}
 	if busy {
-		started := latestTime(signals.BusyAt, signals.LastInboundAt)
-		last := latestTime(started, signals.LastAgentAt, signals.PhraseAt)
-		if freshObservation {
-			last = latestTime(last, signals.MascotObservedAt)
-		}
-		if signals.Streaming {
-			last = &now
-		}
-		if started == nil {
+		if busyStart == nil {
 			activity.State = v1.AgentActivityWorking
 			return activity
 		}
-		activity.Since = started
-		if last != nil && now.Sub(*last) >= agentStallInactiveWindow {
+		if lastOutput != nil && now.Sub(*lastOutput) >= agentStallInactiveWindow {
 			activity.State = v1.AgentActivityStalled
+			activity.Since = lastOutput
 		} else {
 			activity.State = v1.AgentActivityWorking
+			activity.Since = busyStart
 		}
 		return activity
 	}
-	if signals.Unanswered > 0 {
-		activity.State = v1.AgentActivityWaiting
-		activity.Since = signals.LastInboundAt
-		return activity
-	}
 	activity.State = v1.AgentActivityIdle
-	activity.Since = signals.LastAgentAt
+	activity.Since = latestTime(lastOutput, signals.LastAgentAt)
 	return activity
 }
 

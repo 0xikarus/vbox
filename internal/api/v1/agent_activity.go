@@ -12,6 +12,7 @@ type AgentActivity struct {
 	Phrase             string     `json:"phrase,omitempty"`
 	LastAgentMessageAt *time.Time `json:"lastAgentMessageAt,omitempty"`
 	LastInboundAt      *time.Time `json:"lastInboundAt,omitempty"`
+	LastOutputAt       *time.Time `json:"lastOutputAt,omitempty"`
 	Unanswered         int        `json:"unanswered"`
 	LastDelivery       string     `json:"lastDelivery,omitempty"`
 }
