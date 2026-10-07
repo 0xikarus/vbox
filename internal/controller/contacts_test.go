@@ -162,6 +162,7 @@ func TestContactEntriesIncludesAuthorizedSleepingContactAndExplanation(t *testin
 		WillReturnRows(sqlmock.NewRows([]string{"groups_json", "members_json"}).AddRow(
 			[]byte(`[{"id":"group-1","name":"Reviewers"},{"id":"group-2","name":"Private"}]`),
 			[]byte(`{"box:target":"group-1","box:hidden":"group-2","pair:sender/target":"group-2"}`)))
+	mock.ExpectQuery("FROM box_tasks t").WithArgs("account-a", "target").WillReturnError(sql.ErrNoRows)
 	entries, err := store.ContactEntries(context.Background(), "account-a", "sender")
 	if err != nil {
 		t.Fatal(err)
@@ -182,6 +183,7 @@ func TestContactEntriesWithoutSavedGroups(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"box_id", "box_name", "contact_box_id", "contact_name", "default_agent", "state", "protected", "can_message", "updated_at", "all_contacts", "roles"}).
 			AddRow("sender", "Sender", "target", "Target", "codex", "running", false, nil, nil, true, []byte(`[]`)))
 	mock.ExpectQuery("SELECT groups_json,members_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("FROM box_tasks t").WithArgs("account-a", "target").WillReturnError(sql.ErrNoRows)
 	entries, err := store.ContactEntries(context.Background(), "account-a", "sender")
 	if err != nil || len(entries) != 1 || entries[0].Group != "" {
 		t.Fatalf("entries=%+v err=%v", entries, err)

@@ -309,6 +309,12 @@ func (s *Store) ContactEntries(ctx context.Context, accountID, boxID string) ([]
 	}
 	for index := range values {
 		values[index].Group = groups[contactIDs[index]]
+		activity, err := s.BoxAgentActivity(ctx, accountID, v1.LogicalBoxState(values[index].State), contactIDs[index])
+		if err != nil {
+			return nil, err
+		}
+		value := activity
+		values[index].Activity = &value
 	}
 	return values, nil
 }

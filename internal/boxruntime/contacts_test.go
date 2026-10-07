@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
 
 func TestValidateContactRefAcceptsBoxIdentities(t *testing.T) {
@@ -63,5 +65,40 @@ func TestDesktopContactLineShowsCachedUsageWithObservationTime(t *testing.T) {
 	line := desktopContactLine(ContactSummary{ID: "abcd1234", Name: "Worker", Agent: "claude", State: "running", CanMessage: true, Usage: ContactUsage{Status: "available", RemainingPercent: &remaining, ObservedAt: &observed}})
 	if !strings.Contains(line, "usage 23% left (as of 2026-10-01T04:00:00Z)") {
 		t.Fatalf("contact line=%q", line)
+	}
+}
+
+func TestDesktopContactLineShowsCompactAgentActivity(t *testing.T) {
+	now := time.Now()
+	stamp := func(age time.Duration) *time.Time { value := now.Add(-age); return &value }
+	line := desktopContactLine(ContactSummary{ID: "a1b2c3d4", Name: "CodeChecker", Agent: "codex", State: "running", CanMessage: true,
+		Activity: &v1.AgentActivity{State: v1.AgentActivityWorking, Since: stamp(12 * time.Minute), Phrase: "Running tests"}})
+	if !strings.Contains(line, "agent working 12m · Running tests") {
+		t.Fatalf("working contact line=%q", line)
+	}
+	line = desktopContactLine(ContactSummary{ID: "a1b2c3d4", Name: "Builder", Agent: "claude", State: "running", CanMessage: true,
+		Activity: &v1.AgentActivity{State: v1.AgentActivityIdle, Since: stamp(3 * time.Hour)}})
+	if !strings.Contains(line, "idle 3h") {
+		t.Fatalf("idle contact line=%q", line)
+	}
+	line = desktopContactLine(ContactSummary{ID: "a1b2c3d4", Name: "Builder", Agent: "claude", State: "running", CanMessage: true,
+		Activity: &v1.AgentActivity{State: v1.AgentActivityIdle, Since: stamp(5 * time.Minute), Unanswered: 1}})
+	if !strings.Contains(line, "idle 5m · 1 unanswered message") {
+		t.Fatalf("idle unanswered contact line=%q", line)
+	}
+	line = desktopContactLine(ContactSummary{ID: "a1b2c3d4", Name: "Builder", Agent: "claude", State: "running", CanMessage: true,
+		Activity: &v1.AgentActivity{State: v1.AgentActivityWaiting, Unanswered: 1}})
+	if !strings.Contains(line, "waiting for reply") || strings.Contains(line, "unanswered") {
+		t.Fatalf("waiting contact line=%q", line)
+	}
+	line = desktopContactLine(ContactSummary{ID: "a1b2c3d4", Name: "Builder", Agent: "claude", State: "running", CanMessage: true,
+		Activity: &v1.AgentActivity{State: v1.AgentActivityStalled, Since: stamp(40 * time.Minute), LastOutputAt: stamp(25 * time.Minute)}})
+	if !strings.Contains(line, "stalled 25m (no output)") {
+		t.Fatalf("stalled contact line=%q", line)
+	}
+	line = desktopContactLine(ContactSummary{ID: "a1b2c3d4", Name: "Builder", Agent: "claude", State: "hibernated", CanMessage: true,
+		Activity: &v1.AgentActivity{State: v1.AgentActivityHibernated}})
+	if !strings.Contains(line, "| hibernated |") {
+		t.Fatalf("hibernated contact line=%q", line)
 	}
 }
