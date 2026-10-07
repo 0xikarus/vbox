@@ -8,18 +8,21 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
 
 // ContactSummary is one addressable contact as reported by the controller.
 type ContactSummary struct {
-	ID         string       `json:"id"`
-	Name       string       `json:"name"`
-	Group      string       `json:"group,omitempty"`
-	Agent      string       `json:"agent,omitempty"`
-	State      string       `json:"state,omitempty"`
-	CanMessage bool         `json:"canMessage"`
-	Reason     string       `json:"reason,omitempty"`
-	Usage      ContactUsage `json:"usage"`
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Group      string            `json:"group,omitempty"`
+	Agent      string            `json:"agent,omitempty"`
+	State      string            `json:"state,omitempty"`
+	CanMessage bool              `json:"canMessage"`
+	Reason     string            `json:"reason,omitempty"`
+	Usage      ContactUsage      `json:"usage"`
+	Activity   *v1.AgentActivity `json:"activity,omitempty"`
 }
 
 type ContactUsage struct {

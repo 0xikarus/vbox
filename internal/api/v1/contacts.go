@@ -40,6 +40,7 @@ type ContactEntry struct {
 	CanMessage bool               `json:"canMessage"`
 	Reason     string             `json:"reason,omitempty"`
 	Usage      ContactUsage       `json:"usage"`
+	Activity   *AgentActivity     `json:"activity,omitempty"`
 }
 
 // ContactUsage is a cached subscription estimate. It is never a live quota

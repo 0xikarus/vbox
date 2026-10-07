@@ -23,6 +23,7 @@ type agentManagedBox struct {
 	Roles         []v1.AgentRoleSummary `json:"roles"`
 	Tags          []string              `json:"tags"`
 	FailureReason string                `json:"failureReason,omitempty"`
+	Activity      *v1.AgentActivity     `json:"activity,omitempty"`
 	CreatedAt     time.Time             `json:"createdAt,omitempty"`
 	UpdatedAt     time.Time             `json:"updatedAt,omitempty"`
 }
@@ -153,7 +154,14 @@ func (s *Server) agentBoxesHandler(w http.ResponseWriter, r *http.Request, p Pri
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		result = append(result, safeAgentManagedBox(box, tags))
+		value := safeAgentManagedBox(box, tags)
+		activity, err := s.Store.BoxAgentActivity(r.Context(), p.AccountID, box.State, box.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("box activity unavailable"))
+			return
+		}
+		value.Activity = &activity
+		result = append(result, value)
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -178,7 +186,14 @@ func (s *Server) agentBoxHandler(w http.ResponseWriter, r *http.Request, p Princ
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, safeAgentManagedBox(box, tags))
+	value := safeAgentManagedBox(box, tags)
+	activity, err := s.Store.BoxAgentActivity(r.Context(), p.AccountID, box.State, box.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("box activity unavailable"))
+		return
+	}
+	value.Activity = &activity
+	writeJSON(w, http.StatusOK, value)
 }
 
 // agentBoxScreenshotHandler grants a current image, never a desktop connection

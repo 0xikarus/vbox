@@ -64,12 +64,12 @@ func desktopMCPTools() []map[string]any {
 		makeTool("send_email", "Submit an email draft for owner approval. from defaults to this box's own address and may name another granted address. Reuse idempotencyKey for retries.", map[string]any{"from": map[string]any{"type": "string"}, "to": map[string]any{"type": "array", "minItems": 1, "maxItems": 5, "items": map[string]any{"type": "string"}}, "subject": map[string]any{"type": "string"}, "text": map[string]any{"type": "string"}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1}}, "to", "subject", "text", "idempotencyKey"),
 		makeTool("list_outbox", "List this box's email drafts and their approval or send status.", map[string]any{"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 50}}),
 		makeTool("get_outbox_status", "Get one email draft's current approval or send status.", map[string]any{"outboxId": map[string]any{"type": "string"}}, "outboxId"),
-		makeTool("get_contacts", "List the boxes this box is permitted to message, with cached usage remaining for this box and each contact when available. Returns a compact id, exact box name, chat group, agent, state and whether messaging is allowed. Groups are owner-organized labels and do not grant access. Use either the returned id or exact name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
+		makeTool("get_contacts", "List the boxes this box is permitted to message, with cached usage remaining for this box and each contact when available. Returns a compact id, exact box name, chat group, agent, state, messaging permission, and a compact agent activity summary (working, idle, waiting, stalled, hibernated or stopped) so you can tell whether an agent is actually working without a screenshot. Groups are owner-organized labels and do not grant access. Use either the returned id or exact name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
 		makeTool("heartbeat", "Manage this box's local heartbeat. Use action=start with intervalMinutes (5–1440) and optional count (default 1) to schedule prompts; starting again replaces the timer. Use action=stop with no other arguments to stop it, even when the agent conversation has closed. A hibernated box cannot tick or wake itself; due ticks resume after an external wake. With count above 1, prompts include the ticks left after that prompt.", map[string]any{"action": map[string]any{"type": "string", "enum": []string{"start", "stop"}}, "intervalMinutes": map[string]any{"type": "integer", "minimum": 5, "maximum": 1440}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000, "default": 1}}, "action"),
 		makeTool("get_run_budget", "Get this box's durable run-time budget. The countdown advances only while the box is allocated and is separate from desktop inactivity.", map[string]any{}),
 		makeTool("get_thread_history", "Read a paginated direct or shared-chat thread this box already has access to. Pass chatId for a shared-chat thread. A thread reference alone never grants access.", map[string]any{"threadId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "before": map[string]any{"type": "string"}, "beforeId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}}, "threadId"),
-		makeTool("list_agent_boxes", "List safe lifecycle summaries for the account's agent boxes. Does not expose provider credentials, volume identifiers, terminal access, or desktop access.", map[string]any{}),
-		makeTool("get_agent_box", "Inspect one agent box's safe lifecycle details by ID or exact name. Does not grant terminal or desktop access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box"),
+		makeTool("list_agent_boxes", "List safe lifecycle summaries for the account's agent boxes. Each box includes a compact activity summary (state working, idle, waiting, stalled, hibernated or stopped, plus since, phrase and unanswered count) so you can tell what an agent is doing without a screenshot. Does not expose provider credentials, volume identifiers, terminal access, or desktop access.", map[string]any{}),
+		makeTool("get_agent_box", "Inspect one agent box's safe lifecycle details by ID or exact name, including its agent activity summary (state, since, phrase, last agent message, last inbound message, unanswered count and last delivery). Use this to check progress instead of get_agent_box_screenshot. Does not grant terminal or desktop access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box"),
 		makeTool("get_agent_box_screenshot", "Capture another running, unprotected agent box's current desktop as a PNG image by ID or exact name. Does not wake a box, start its desktop, or grant desktop control. Use take_screenshot for this box's own desktop.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "thumbnail": map[string]any{"type": "boolean", "default": false}}, "box"),
 		makeTool("remote_control_box", "Control another running, unprotected box's desktop. Every action returns a fresh screenshot (thumbnail by default). Requires an owner-granted Control permission. Does not wake boxes or type secrets.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "action": map[string]any{"type": "string", "enum": []string{"screenshot", "move", "click", "drag", "scroll", "type", "keys"}}, "x": map[string]any{"type": "integer", "minimum": 0}, "y": map[string]any{"type": "integer", "minimum": 0}, "toX": map[string]any{"type": "integer", "minimum": 0}, "toY": map[string]any{"type": "integer", "minimum": 0}, "button": map[string]any{"type": "string", "enum": []string{"left", "middle", "right"}}, "double": map[string]any{"type": "boolean"}, "dx": map[string]any{"type": "integer", "minimum": -20, "maximum": 20}, "dy": map[string]any{"type": "integer", "minimum": -20, "maximum": 20}, "text": map[string]any{"type": "string", "maxLength": 16384}, "keys": map[string]any{"type": "string"}, "thumbnail": map[string]any{"type": "boolean", "default": true}}, "box", "action"),
 		makeTool("create_agent_box", "Create an agent box in an available account worker pool within this box's agent, disk, and count permission limits. The creator and new box become mutual direct contacts automatically. Call get_agent_box_configs with mode=list for saved profiles, roles, and exact tool preset IDs; call get_available_workers for free worker slots across pools. Pass slotId to choose a specific slot and its pool, or omit it for automatic placement. Optional memoryGiB (1–8) and swapGiB (0–4) require a container-isolated shared-worker pool; omitted values use 2 GiB RAM and 1 GiB swap there. Pass tools as an array of preset IDs such as [\"blender\"] or [\"foundry\"], never as a string. Presets install before the new box becomes usable. loginProfiles imports one matching agent profile and optionally one GitHub profile; model and reasoningEffort override that saved profile. Optional instructions become managed startup instructions. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "agent": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode"}}, "diskGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000}, "memoryGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 8}, "swapGiB": map[string]any{"type": "integer", "minimum": 0, "maximum": 4}, "slotId": map[string]any{"type": "string", "minLength": 1, "description": "Exact slotId returned by get_available_workers; selects that slot and pool."}, "tools": map[string]any{"type": "array", "maxItems": 3, "uniqueItems": true, "items": map[string]any{"type": "string", "enum": []string{"foundry", "blender", "desktop"}}}, "loginProfiles": map[string]any{"type": "array", "maxItems": 2, "items": map[string]any{"type": "object", "properties": map[string]any{"application": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode", "github"}}, "name": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"type": "string"}, "reasoningEffort": map[string]any{"type": "string"}}, "required": []string{"application", "name"}, "additionalProperties": false}}, "roleIds": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string", "minLength": 1}}, "instructions": map[string]any{"type": "string", "maxLength": v1.MaxInstructionMarkdownBytes, "description": "Managed Markdown instructions given to the new agent at startup."}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "agent", "idempotencyKey"),
@@ -108,10 +108,61 @@ func desktopContactLine(contact ContactSummary) string {
 		group = strconv.Quote(contact.Group)
 	}
 	line := fmt.Sprintf("- id %s | name %s | group %s | agent %s | %s | message %t", contact.ID, contact.Name, group, contact.Agent, state, contact.CanMessage)
+	if activity := desktopContactActivity(contact.Activity); activity != "" {
+		line += " | " + activity
+	}
 	if contact.Usage.Status != "" {
 		line += " | usage " + desktopContactUsage(contact.Usage)
 	}
 	return line
+}
+
+// desktopContactActivity renders a compact activity phrase for a contact line so
+// a coordinator can tell working, idle, waiting and stalled agents apart from a
+// running box without taking a screenshot.
+func desktopContactActivity(activity *v1.AgentActivity) string {
+	if activity == nil {
+		return ""
+	}
+	switch activity.State {
+	case v1.AgentActivityWorking:
+		text := "agent working" + activityAge(activity.Since)
+		if strings.TrimSpace(activity.Phrase) != "" {
+			text += " · " + strings.TrimSpace(activity.Phrase)
+		}
+		return text
+	case v1.AgentActivityStalled:
+		return "stalled" + activityAge(activity.LastAgentMessageAt) + " (no output)"
+	case v1.AgentActivityIdle:
+		return "idle" + activityAge(activity.Since)
+	case v1.AgentActivityWaiting:
+		return "waiting for reply"
+	case v1.AgentActivityHibernated:
+		return "hibernated"
+	case v1.AgentActivityStopped:
+		return "stopped"
+	default:
+		return "unknown"
+	}
+}
+
+func activityAge(since *time.Time) string {
+	if since == nil {
+		return ""
+	}
+	age := time.Since(*since)
+	if age < time.Minute {
+		return " <1m"
+	}
+	minutes := int(age / time.Minute)
+	if minutes < 60 {
+		return " " + strconv.Itoa(minutes) + "m"
+	}
+	hours := minutes / 60
+	if hours < 24 {
+		return " " + strconv.Itoa(hours) + "h"
+	}
+	return " " + strconv.Itoa(hours/24) + "d"
 }
 
 func desktopContactUsage(usage ContactUsage) string {
@@ -262,6 +313,8 @@ func writeDesktopMCPGuide(home string) error {
 	guide.WriteString("## Send a prompt from a box-local app\n\n")
 	guide.WriteString("Read `~/.local/share/vmbox/mcp-http.json` inside the box. Its `promptUrl` is a local `http://127.0.0.1:<port>/prompt` address and its `token` authorizes the request. POST one JSON object with non-empty `text`, for example `{\"text\":\"Check the latest build result\"}`, and send `Authorization: Bearer <token>` and `Content-Type: application/json` headers. The token also authorizes HTTP MCP tools, so keep it private.\n\n")
 	guide.WriteString("A `202` response contains `accepted`, `session`, and `messageId`; the agent's reply goes through its normal conversation, not the HTTP response. `/prompt` requires a running managed agent and never starts or wakes one. If several conversations are running, include `session` in the JSON body or use an `X-Vmbox-Session` header. For a retryable local job, set one stable `messageId` in the JSON body and reuse it on retries; a `409` may still mean delivery is uncertain.\n\n")
+	guide.WriteString("## Is another agent actually working?\n\n")
+	guide.WriteString("`list_agent_boxes`, `get_agent_box` and `get_contacts` each include an `activity` summary so you can tell a running box from a working, idle, waiting or stalled agent. Read that first instead of taking a screenshot: `working` (with `since` and optional `phrase`), `idle`, `waiting` (the agent asked a question or has an unanswered inbound message), `stalled` (no output for ten minutes), `hibernated` or `stopped`. `unanswered` counts inbound messages the agent has not replied to, and `lastDelivery` reports the newest inbound delivery state.\n\n")
 	for _, tool := range desktopMCPTools() {
 		name := tool["name"].(string)
 		description := tool["description"].(string)
@@ -339,7 +392,7 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
 			}
-			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{"listChanged": true}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vbox Agent chat arrive as channel messages. Call exact snake_case MCP tool names with a JSON object: chat_message {\"replyTo\":\"message-ref\",\"text\":\"...\"} for replies and chat_ask for choices. To contact another box, call get_contacts {}, then chat_message {\"contact\":\"reviewer\",\"text\":\"...\"} using either its returned compact id or exact name. The tool list automatically refreshes when this box's owner changes its permissions. Busy state is automatic for normal replies. Incoming chat images arrive with an image_path channel attribute; read that path. Read ~/.config/vmbox/mcp-tools.md for every exact call and example. HTTP tools: read ~/.local/share/vmbox/mcp-http.json, then POST JSON to {url}/tools/{name} with its Bearer token. A script can POST {\"text\":\"...\"} to promptUrl to deliver a user message to this already-running agent conversation; it never wakes a stopped box."}
+			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{"listChanged": true}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vbox Agent chat arrive as channel messages. Call exact snake_case MCP tool names with a JSON object: chat_message {\"replyTo\":\"message-ref\",\"text\":\"...\"} for replies and chat_ask for choices. To contact another box, call get_contacts {}, then chat_message {\"contact\":\"reviewer\",\"text\":\"...\"} using either its returned compact id or exact name. To learn whether another box's agent is working, idle, waiting or stalled, read the activity summary from list_agent_boxes, get_agent_box or get_contacts instead of taking a screenshot. The tool list automatically refreshes when this box's owner changes its permissions. Busy state is automatic for normal replies. Incoming chat images arrive with an image_path channel attribute; read that path. Read ~/.config/vmbox/mcp-tools.md for every exact call and example. HTTP tools: read ~/.local/share/vmbox/mcp-http.json, then POST JSON to {url}/tools/{name} with its Bearer token. A script can POST {\"text\":\"...\"} to promptUrl to deliver a user message to this already-running agent conversation; it never wakes a stopped box."}
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":
