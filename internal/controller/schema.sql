@@ -104,6 +104,13 @@ CREATE TABLE IF NOT EXISTS notification_destinations (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(account_id, kind, name)
 );
+CREATE TABLE IF NOT EXISTS captcha_solver_settings (
+  account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  provider text NOT NULL DEFAULT '2captcha',
+  encrypted_secret text NOT NULL,
+  enabled boolean NOT NULL DEFAULT false,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS runs (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),

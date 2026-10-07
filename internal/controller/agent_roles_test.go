@@ -95,7 +95,7 @@ func TestTeamRolePresetUsesEditableExplicitCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	computerTools := []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
+	computerTools := []string{"take_screenshot", "detect_captcha", "show_captcha", "solve_captcha", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
 	if normal.Name != "Normal" || normal.Capabilities.AllContacts.Enabled || !normal.Capabilities.MCPTools.Enabled || !slices.Equal(normal.Capabilities.MCPTools.AllowedTools, computerTools) {
 		t.Fatalf("normal preset=%+v", normal)
 	}

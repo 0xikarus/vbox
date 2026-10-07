@@ -29,13 +29,14 @@ import (
 const maxChatImageBytes = 25 << 20
 
 type ChatEvent struct {
-	ID       string           `json:"id"`
-	Kind     string           `json:"kind"`
-	ReplyTo  string           `json:"replyTo"`
-	Contact  string           `json:"contact,omitempty"`
-	Text     string           `json:"text"`
-	Images   []ChatEventImage `json:"images,omitempty"`
-	Question *ChatQuestion    `json:"question,omitempty"`
+	ID       string            `json:"id"`
+	Kind     string            `json:"kind"`
+	ReplyTo  string            `json:"replyTo"`
+	Contact  string            `json:"contact,omitempty"`
+	Text     string            `json:"text"`
+	Images   []ChatEventImage  `json:"images,omitempty"`
+	Question *ChatQuestion     `json:"question,omitempty"`
+	Captcha  *ChatEventCaptcha `json:"captcha,omitempty"`
 }
 
 type ChatEventImage struct {
@@ -48,6 +49,15 @@ type ChatQuestion struct {
 	Text     string   `json:"text"`
 	Choices  []string `json:"choices"`
 	Multiple bool     `json:"multiple,omitempty"`
+}
+
+// ChatEventCaptcha carries the captcha add-on's extracted challenge data so the
+// controller chat UI can embed the same widget for the owner to solve. SiteKey
+// is public widget configuration. It never carries solver tokens or inputs.
+type ChatEventCaptcha struct {
+	Type    string `json:"type"`
+	URL     string `json:"url,omitempty"`
+	SiteKey string `json:"siteKey,omitempty"`
 }
 
 type ChatInbound struct {

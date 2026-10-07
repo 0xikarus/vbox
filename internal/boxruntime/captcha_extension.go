@@ -13,8 +13,9 @@ const captchaExtensionName = "vmbox-captcha-guard"
 
 // InstallCaptchaExtension writes the bundled challenge-detection extension to a
 // stable per-box directory and returns its path for --load-extension. The
-// extension only annotates pages with a detection marker and a visible notice;
-// it never reads solver inputs and never solves or submits a challenge.
+// extension only annotates pages with a detection marker and shows the raw
+// detected values per captcha in its toolbar popup; it never reads solver
+// inputs and never solves or submits a challenge.
 func InstallCaptchaExtension(home string) (string, error) {
 	dir := filepath.Join(home, ".config", "vmbox", "extensions", captchaExtensionName)
 	if err := os.MkdirAll(dir, 0700); err != nil {

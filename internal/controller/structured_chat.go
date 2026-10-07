@@ -215,6 +215,9 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		if text == "" {
 			return "", false, fmt.Errorf("empty structured chat reply")
 		}
+		if event.Captcha != nil {
+			text = encodeBoxMessageCaptcha(text, v1.BoxMessageCaptcha{Type: event.Captcha.Type, URL: event.Captcha.URL, SiteKey: event.Captcha.SiteKey})
+		}
 	case "question":
 		if event.Question == nil || strings.TrimSpace(event.Question.Text) == "" || len(event.Question.Choices) == 0 {
 			return "", false, fmt.Errorf("invalid structured chat question")
@@ -272,6 +275,9 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 			return "", false, busyErr
 		}
 		s.pushAgentReply(ctx, accountID, task, text)
+		if message.Captcha != nil {
+			go s.autoSolveCaptcha(accountID, task, prov, message.ID, *message.Captcha, firstChatEventPNG(event.Images))
+		}
 		return message.ID, false, nil
 	}
 	// Naming a Codex thread is cosmetic. It must not block an already queued

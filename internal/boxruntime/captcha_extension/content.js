@@ -1,9 +1,8 @@
-(() => {
+ (() => {
   "use strict";
 
   const MARK = "data-vmbox-captcha";
   const TAG = "vmbox-captcha-guard";
-  const BANNER_ID = "__vmbox_captcha_banner";
 
   const SIGNATURES = [
     ["recaptcha", [
@@ -21,16 +20,77 @@
       ".cf-turnstile"
     ]],
     ["image", [
-      'img[src*="captcha"]',
+      'form img[src*="captcha"]',
       'input[name*="captcha"]'
     ]]
   ];
 
-  const detect = () => {
+  // One widget entry per matching element, not just the first hit: the popup
+  // shows the raw data of every captcha on the page.
+  const collect = () => {
+    const found = [];
+    for (const [type, selectors] of SIGNATURES) {
+      for (const selector of selectors) {
+        let elements;
+        try {
+          elements = document.querySelectorAll(selector);
+        } catch (_) {
+          return found;
+        }
+        for (const element of elements) {
+          const box = element.getBoundingClientRect();
+          found.push({
+            type,
+            selector,
+            sitekey: sitekeyFor(type, element) || "",
+            rect: { x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height) }
+          });
+        }
+      }
+    }
+    return found;
+  };
+
+  const WIDGET_CONTAINERS = {
+    recaptcha: ".g-recaptcha",
+    hcaptcha: ".h-captcha",
+    turnstile: ".cf-turnstile"
+  };
+
+  const WIDGET_FRAMES = {
+    recaptcha: 'iframe[src*="google.com/recaptcha"],iframe[src*="recaptcha/api2"],iframe[src*="recaptcha/enterprise"]',
+    hcaptcha: 'iframe[src*="hcaptcha.com"]',
+    turnstile: 'iframe[src*="challenges.cloudflare.com"]'
+  };
+
+  // The site key is public widget configuration: it is what lets the chat UI
+  // re-render the same challenge for the owner. It is not a secret or a token.
+  const sitekeyFor = (type, element) => {
+    if (element && element.dataset && element.dataset.sitekey) return element.dataset.sitekey;
+    try {
+      const container = document.querySelector(WIDGET_CONTAINERS[type] || "");
+      if (container && container.dataset && container.dataset.sitekey) return container.dataset.sitekey;
+    } catch (_) {}
+    try {
+      const frame = document.querySelector(WIDGET_FRAMES[type] || "");
+      const src = frame && frame.src;
+      if (src) {
+        const parsed = new URL(src);
+        return parsed.searchParams.get("sitekey") || parsed.searchParams.get("key") || "";
+      }
+    } catch (_) {}
+    return "";
+  };
+
+  const detectWithRect = () => {
     for (const [type, selectors] of SIGNATURES) {
       for (const selector of selectors) {
         try {
-          if (document.querySelector(selector)) return type;
+          const element = document.querySelector(selector);
+          if (element) {
+            const box = element.getBoundingClientRect();
+            return { type, rect: { x: box.x, y: box.y, width: box.width, height: box.height } };
+          }
         } catch (_) {
           return null;
         }
@@ -41,46 +101,42 @@
 
   const clear = () => {
     document.documentElement.removeAttribute(MARK);
-    const banner = document.getElementById(BANNER_ID);
-    if (banner) banner.remove();
   };
 
-  const showBanner = (type) => {
-    if (document.getElementById(BANNER_ID)) return;
-    const banner = document.createElement("div");
-    banner.id = BANNER_ID;
-    banner.setAttribute("role", "status");
-    banner.textContent = "CAPTCHA detected (" + type + "). Your agent is waiting for you to solve it.";
-    banner.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:2147483647;max-width:320px;" +
-      "padding:10px 12px;border-radius:8px;font:13px/1.4 system-ui,sans-serif;color:#fff;" +
-      "background:rgba(17,24,39,.94);box-shadow:0 2px 10px rgba(0,0,0,.4);pointer-events:none";
-    (document.body || document.documentElement).appendChild(banner);
-  };
-
-  const apply = (type) => {
+  const apply = (type, rect, sitekey) => {
     if (!type) {
       clear();
       return;
     }
-    document.documentElement.setAttribute(MARK, JSON.stringify({ type, ts: Date.now() }));
-    showBanner(type);
+    document.documentElement.setAttribute(MARK, JSON.stringify({ type, ts: Date.now(), rect: rect || null, sitekey: sitekey || "" }));
   };
 
-  const scan = () => apply(detect());
+  const scan = () => {
+    const found = detectWithRect();
+    apply(found ? found.type : null, found ? found.rect : null, found ? sitekeyFor(found.type) : "");
+  };
+
+  // The popup asks the active tab for the raw widget list.
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((_request, _sender, respond) => {
+      respond({ url: location.href, widgets: collect() });
+    });
+  }
 
   window.addEventListener("message", (event) => {
     if (event.source !== window.top && event.data && event.data.source === TAG && typeof event.data.type === "string") {
-      apply(event.data.type);
+      apply(event.data.type, event.data.rect || null, event.data.sitekey || "");
     }
   });
 
   const report = () => {
-    const type = detect();
+    const found = detectWithRect();
+    const type = found ? found.type : "";
     if (window.top === window) {
-      apply(type);
+      apply(type, found ? found.rect : null, found ? sitekeyFor(type) : "");
     } else if (type) {
       try {
-        window.top.postMessage({ source: TAG, type }, "*");
+        window.top.postMessage({ source: TAG, type, rect: found.rect, sitekey: sitekeyFor(type) }, "*");
       } catch (_) {}
     } else {
       try {

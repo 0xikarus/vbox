@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "vmbox-captcha-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Detects CAPTCHA challenges so a browsing agent can pause and ask its owner to solve them. Never solves or submits anything.",
   "content_scripts": [
     {
@@ -10,5 +10,10 @@
       "run_at": "document_idle",
       "all_frames": true
     }
-  ]
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "vmbox captcha guard"
+  },
+  "permissions": ["tabs"]
 }
