@@ -19,8 +19,9 @@ type CaptchaChallenge struct {
 }
 
 // CaptchaRect is the challenge widget's on-page geometry in CSS pixels,
-// relative to the document origin. It comes from the add-on's extracted data
-// when available and is only ever used to aim a debug capture.
+// relative to the document origin. Top-frame geometry comes from a probe that
+// ran in the top document or a verified child frame — never from a
+// page-supplied postMessage, which a page could forge to aim a capture.
 type CaptchaRect struct {
 	X      float64 `json:"x"`
 	Y      float64 `json:"y"`
@@ -48,6 +49,15 @@ type CaptchaDetail struct {
 
 const maxCaptchaClipWidth = 1280
 const maxCaptchaClipHeight = 1280
+
+// captchaFrameNode is one node of Page.getFrameTree's frame tree.
+type captchaFrameNode struct {
+	Frame struct {
+		ID  string `json:"id"`
+		URL string `json:"url"`
+	} `json:"frame"`
+	ChildFrames []captchaFrameNode `json:"childFrames"`
+}
 
 const captchaProbe = `(() => {
  const marks = [
@@ -121,19 +131,223 @@ const captchaDetailProbe = `(() => {
   } catch (e) {}
  }
  if (!type) {
+  // Only the add-on's own marker for this document remains. A marker written
+  // from a CHILD frame's postMessage (dataUntreated=1) is untrusted: a page
+  // can forge it to aim a capture anywhere. Report the type for detection but
+  // no page-supplied geometry; the Go side verifies the widget inside the
+  // child frame over CDP and measures there.
   try {
    const marker = JSON.parse(document.documentElement.getAttribute("data-vmbox-captcha") || "null");
    if (marker && marker.type) {
     type = marker.type;
-    if (marker.rect && marker.rect.width > 0 && marker.rect.height > 0) {
+    if (!marker.dataUntreated && marker.rect && marker.rect.width > 0 && marker.rect.height > 0) {
      rect = {x: marker.rect.x + window.scrollX, y: marker.rect.y + window.scrollY, width: marker.rect.width, height: marker.rect.height};
     }
-    if (marker.sitekey) sitekey = String(marker.sitekey);
+    if (!marker.dataUntreated && marker.sitekey) sitekey = String(marker.sitekey);
    }
   } catch (e) {}
  }
  return {type, rect, sitekey};
 })()`
+
+// captchaFrameProbe verifies and measures a widget inside ONE child frame. The
+// isolated world shares the frame's DOM, so a positive match is this frame's
+// own content — not a forged postMessage. Rect is frame-local in CSS pixels.
+const captchaFrameProbe = `(() => {
+ const marks = [
+  ["recaptcha", ['.g-recaptcha','iframe[src*="google.com/recaptcha"]','iframe[src*="recaptcha/api2"]','iframe[src*="recaptcha/enterprise"]']],
+  ["hcaptcha", ['.h-captcha','iframe[src*="hcaptcha.com"]']],
+  ["turnstile", ['.cf-turnstile','iframe[src*="challenges.cloudflare.com"]']],
+  ["image", ['form img[src*="captcha"]','input[name*="captcha"]']]
+ ];
+ let type = "", rect = null, sitekey = "";
+ for (const [t, selectors] of marks) {
+  for (const selector of selectors) {
+   try {
+    const el = document.querySelector(selector);
+    if (el) {
+     type = t;
+     const box = el.getBoundingClientRect();
+     rect = {x: box.x, y: box.y, width: box.width, height: box.height};
+     try {
+      const container = document.querySelector(".g-recaptcha,.h-captcha,.cf-turnstile");
+      if (container && container.dataset && container.dataset.sitekey) sitekey = container.dataset.sitekey;
+     } catch (e) {}
+     break;
+    }
+   } catch (e) {}
+  }
+  if (type) break;
+ }
+ return {type, rect, sitekey};
+})()`
+
+// verifyCaptchaDetail resolves one page's challenge through trusted steps only:
+// the top document's own probe result, or — when only an untrusted child-frame
+// marker is present — the frame probe re-run inside the child frame over CDP,
+// with the top-page rectangle composed from the frame chain geometry.
+func (c *Client) verifyCaptchaDetail(ctx context.Context, session string, root captchaFrameNode) (*CaptchaDetail, string, error) {
+	detail, err := c.evaluateCaptchaDetailProbe(ctx, session, root.Frame.ID, captchaDetailProbe)
+	if err != nil {
+		return nil, "", err
+	}
+	if detail.Type == "" {
+		return nil, "", nil
+	}
+	if detail.Rect != nil {
+		// Direct match in this document: trusted geometry from a probe that
+		// shared this DOM.
+		return &detail, root.Frame.ID, nil
+	}
+	// A marker reported from a child frame. Find and verify it there.
+	var verified *CaptchaDetail
+	verifiedID := ""
+	var walk func(node captchaFrameNode) bool
+	walk = func(node captchaFrameNode) bool {
+		for _, child := range node.ChildFrames {
+			childDetail, err := c.evaluateCaptchaDetailProbe(ctx, session, child.Frame.ID, captchaFrameProbe)
+			if err != nil {
+				continue
+			}
+			if childDetail.Type == "" {
+				continue
+			}
+			// Confirm the marker's type against the frame's own content.
+			if detail.Type != "" && childDetail.Type != detail.Type {
+				continue
+			}
+			childDetail.Rect = c.composeFrameRect(ctx, session, childDetail.Rect, child.Frame.ID, root)
+			verified = &childDetail
+			verifiedID = child.Frame.ID
+			return true
+		}
+		for _, child := range node.ChildFrames {
+			if walk(child) {
+				return true
+			}
+		}
+		return false
+	}
+	if !walk(root) {
+		// The marker claims a widget but no child frame verifies it: treat the
+		// detection as forged noise.
+		return &CaptchaDetail{}, "", nil
+	}
+	return verified, verifiedID, nil
+}
+
+// composeFrameRect translates a frame-local widget rectangle into top-page
+// coordinates. The frame tree lists ids, not boxes, so each ancestor iframe's
+// owning element is resolved via DOM.getFrameOwner and measured inside its
+// parent frame; the offsets accumulate down the chain.
+func (c *Client) composeFrameRect(ctx context.Context, session string, rect *CaptchaRect, frameID string, root captchaFrameNode) *CaptchaRect {
+	if rect == nil {
+		return nil
+	}
+	chain := frameChain(root, frameID)
+	if len(chain) < 2 {
+		return nil
+	}
+	// Each ancestor iframe's viewport position is measured inside its parent
+	// frame (chain[0] is the top document). Composed top-to-bottom, the
+	// offsets accumulate into top-page coordinates.
+	offsetX, offsetY := 0.0, 0.0
+	for i := 0; i+1 < len(chain); i++ {
+		box, ok := c.evaluateCaptchaFrameBox(ctx, session, chain[i], chain[i+1])
+		if !ok {
+			return nil
+		}
+		offsetX += box.X
+		offsetY += box.Y
+	}
+	return &CaptchaRect{X: rect.X + offsetX, Y: rect.Y + offsetY, Width: rect.Width, Height: rect.Height}
+}
+
+// evaluateCaptchaFrameBox measures one child frame's viewport position inside
+// its parent frame by locating the iframe element the browser's frame tree
+// position implies. It matches by frame URL because the element carries no id.
+func (c *Client) evaluateCaptchaFrameBox(ctx context.Context, session, parentFrameID, childFrameID string) (CaptchaRect, bool) {
+	// The frame tree does not map ids to elements; use DOM.getFrameOwner to
+	// resolve the owning element, then measure it in the parent's world.
+	var owner struct {
+		BackendNodeID int64 `json:"backendNodeId"`
+	}
+	if err := c.Call(ctx, session, "DOM.getFrameOwner", map[string]any{"frameId": childFrameID}, &owner); err != nil || owner.BackendNodeID == 0 {
+		return CaptchaRect{}, false
+	}
+	var world struct {
+		ID int64 `json:"executionContextId"`
+	}
+	if err := c.Call(ctx, session, "Page.createIsolatedWorld", map[string]any{"frameId": parentFrameID, "worldName": "vmbox-captcha-probe"}, &world); err != nil {
+		return CaptchaRect{}, false
+	}
+	var resolved struct {
+		Object struct {
+			ObjectID string `json:"objectId"`
+		} `json:"object"`
+	}
+	if err := c.Call(ctx, session, "DOM.resolveNode", map[string]any{"backendNodeId": owner.BackendNodeID, "executionContextId": world.ID}, &resolved); err != nil || resolved.Object.ObjectID == "" {
+		return CaptchaRect{}, false
+	}
+	var box runtimeResult
+	if err := c.Call(ctx, session, "Runtime.callFunctionOn", map[string]any{
+		"objectId":            resolved.Object.ObjectID,
+		"functionDeclaration": "function(){const r=this.getBoundingClientRect();return {x:r.x+window.scrollX,y:r.y+window.scrollY,width:r.width,height:r.height};}",
+		"returnByValue":       true,
+	}, &box); err != nil {
+		return CaptchaRect{}, false
+	}
+	var result struct {
+		X      float64 `json:"x"`
+		Y      float64 `json:"y"`
+		Width  float64 `json:"width"`
+		Height float64 `json:"height"`
+	}
+	if json.Unmarshal(box.Result.Value, &result) != nil || result.Width <= 0 || result.Height <= 0 {
+		return CaptchaRect{}, false
+	}
+	return CaptchaRect(result), true
+}
+
+// frameChain lists the frame ids from the root down to the widget frame.
+func frameChain(root captchaFrameNode, frameID string) []string {
+	var walk func(node captchaFrameNode, path []string) []string
+	walk = func(node captchaFrameNode, path []string) []string {
+		path = append(path, node.Frame.ID)
+		if node.Frame.ID == frameID {
+			return path
+		}
+		for _, child := range node.ChildFrames {
+			if found := walk(child, path); found != nil {
+				return found
+			}
+		}
+		return nil
+	}
+	return walk(root, nil)
+}
+
+// evaluateCaptchaDetailProbe runs a probe expression in one frame's isolated
+// world and decodes its object result. Exception and decode failures yield an
+// empty detail instead of aborting the scan.
+func (c *Client) evaluateCaptchaDetailProbe(ctx context.Context, session, frameID, expression string) (CaptchaDetail, error) {
+	detail := CaptchaDetail{}
+	var world struct {
+		ID int64 `json:"executionContextId"`
+	}
+	if err := c.Call(ctx, session, "Page.createIsolatedWorld", map[string]any{"frameId": frameID, "worldName": "vmbox-captcha-probe"}, &world); err != nil {
+		return detail, nil
+	}
+	var result runtimeResult
+	if err := c.Call(ctx, session, "Runtime.evaluate", map[string]any{"contextId": world.ID, "expression": expression, "returnByValue": true}, &result); err != nil {
+		return detail, nil
+	}
+	if len(result.Exception) > 0 {
+		return detail, nil
+	}
+	_ = json.Unmarshal(result.Result.Value, &detail)
+	return detail, nil
+}
 
 // clipCaptchaRect validates an extracted widget geometry and caps it so one
 // oversized or off-screen widget cannot produce a huge capture.
@@ -214,30 +428,21 @@ func (c *Client) CaptchaCaptures(ctx context.Context) ([]CaptchaCapture, error) 
 
 func (c *Client) captchaCaptureForTarget(ctx context.Context, session, targetURL string) (CaptchaCapture, bool, error) {
 	var tree struct {
-		Tree struct {
-			Frame struct {
-				ID string `json:"id"`
-			} `json:"frame"`
-		} `json:"frameTree"`
+		Tree captchaFrameNode `json:"frameTree"`
 	}
 	if err := c.Call(ctx, session, "Page.getFrameTree", nil, &tree); err != nil {
 		return CaptchaCapture{}, false, err
 	}
-	var world struct {
-		ID int64 `json:"executionContextId"`
-	}
-	if err := c.Call(ctx, session, "Page.createIsolatedWorld", map[string]any{"frameId": tree.Tree.Frame.ID, "worldName": "vmbox-captcha-probe"}, &world); err != nil {
+	// The top document reports its own widget, or an UNTREATED marker written
+	// by a child frame's postMessage. Forged markers (dataUntreated=1) carry no
+	// trusted geometry: this code re-verifies the widget inside the child frame
+	// the marker claims, measures there, and composes the top-page rectangle
+	// from the frame chain — never from page-supplied coordinates.
+	detail, _, err := c.verifyCaptchaDetail(ctx, session, tree.Tree)
+	if err != nil {
 		return CaptchaCapture{}, false, err
 	}
-	var result runtimeResult
-	if err := c.Call(ctx, session, "Runtime.evaluate", map[string]any{"contextId": world.ID, "expression": captchaDetailProbe, "returnByValue": true}, &result); err != nil {
-		return CaptchaCapture{}, false, err
-	}
-	if len(result.Exception) > 0 {
-		return CaptchaCapture{}, false, nil
-	}
-	var detail CaptchaDetail
-	if json.Unmarshal(result.Result.Value, &detail) != nil || detail.Type == "" {
+	if detail == nil || detail.Type == "" {
 		return CaptchaCapture{}, false, nil
 	}
 	capture := CaptchaCapture{Challenge: CaptchaChallenge{URL: targetURL, Type: detail.Type, SiteKey: detail.Sitekey}}

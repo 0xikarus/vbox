@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,9 +67,16 @@ func TestSameCaptchaPage(t *testing.T) {
 
 // TestSubmitCaptchaAnswerRejectsAttackerFrames drives a fake CDP browser: an
 // iframe whose URL merely contains "google.com/recaptcha" must never receive
-// the token, and the answer only lands on the page the card came from.
+// the token, and the answer only lands on the page the card came from. The
+// fake browser tracks which target every Runtime.evaluate ran on, so this
+// fails if a matcher-based implementation ever attaches to the attacker frame.
 func TestSubmitCaptchaAnswerRejectsAttackerFrames(t *testing.T) {
-	var evaluations []string
+	type evaluation struct {
+		targetID   string
+		expression string
+	}
+	var mu sync.Mutex
+	var evaluations []evaluation
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
@@ -77,23 +85,25 @@ func TestSubmitCaptchaAnswerRejectsAttackerFrames(t *testing.T) {
 		defer conn.CloseNow()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		sessions := map[string]string{} // sessionId -> targetId
 		for {
 			_, data, err := conn.Read(ctx)
 			if err != nil {
 				return
 			}
 			var request struct {
-				ID     int64           `json:"id"`
-				Method string          `json:"method"`
-				Params json.RawMessage `json:"params"`
+				ID      int64           `json:"id"`
+				Session string          `json:"sessionId"`
+				Method  string          `json:"method"`
+				Params  json.RawMessage `json:"params"`
 			}
 			if json.Unmarshal(data, &request) != nil {
 				continue
 			}
 			var params struct {
 				URL        string `json:"url"`
-				Expression string `json:"expression"`
 				TargetID   string `json:"targetId"`
+				Expression string `json:"expression"`
 			}
 			_ = json.Unmarshal(request.Params, &params)
 			switch request.Method {
@@ -104,13 +114,16 @@ func TestSubmitCaptchaAnswerRejectsAttackerFrames(t *testing.T) {
 				}}})
 				_ = conn.Write(ctx, websocket.MessageText, payload)
 			case "Target.attachToTarget":
+				sessions["session-1"] = params.TargetID
 				payload, _ := json.Marshal(map[string]any{"id": request.ID, "result": map[string]any{"sessionId": "session-1"}})
 				_ = conn.Write(ctx, websocket.MessageText, payload)
 			case "Target.detachFromTarget":
 				payload, _ := json.Marshal(map[string]any{"id": request.ID, "result": map[string]any{}})
 				_ = conn.Write(ctx, websocket.MessageText, payload)
 			case "Runtime.evaluate":
-				evaluations = append(evaluations, params.Expression)
+				mu.Lock()
+				evaluations = append(evaluations, evaluation{targetID: sessions[request.Session], expression: params.Expression})
+				mu.Unlock()
 				payload, _ := json.Marshal(map[string]any{"id": request.ID, "result": map[string]any{"result": map[string]any{"value": "no-target"}}})
 				_ = conn.Write(ctx, websocket.MessageText, payload)
 			default:
@@ -138,9 +151,17 @@ func TestSubmitCaptchaAnswerRejectsAttackerFrames(t *testing.T) {
 	if err := client.SubmitCaptchaAnswer(ctx, answer); err == nil {
 		t.Fatal("submit should report no open challenge here")
 	}
-	for _, expression := range evaluations {
-		if strings.Contains(expression, "TOKEN-VALUE-123456") && strings.Contains(expression, "evil.test") {
-			t.Fatal("token snippet ran with attacker context")
+	mu.Lock()
+	defer mu.Unlock()
+	for _, evaluated := range evaluations {
+		if !strings.Contains(evaluated.expression, "TOKEN-VALUE-123456") {
+			continue
+		}
+		// A token write on any target other than the card's page is a leak —
+		// this run's fake browser exposes exactly the attacker iframe, so any
+		// token evaluation here fails.
+		if evaluated.targetID != "page-site" {
+			t.Fatalf("token evaluated on target %q (%s)", evaluated.targetID, evaluated.expression)
 		}
 	}
 }

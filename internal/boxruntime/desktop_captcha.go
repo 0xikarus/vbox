@@ -68,7 +68,9 @@ func callShowCaptcha(ctx context.Context, assignment string) (map[string]any, er
 	}
 	var images []ChatEventImage
 	var lines []string
-	var card *ChatEventCaptcha
+	// The card describes the same challenge its image shows: pick the first
+	// capture that actually has pixels, and keep the data/image pairs aligned.
+	cardSource := captures[0].Challenge
 	for index, capture := range captures {
 		lines = append(lines, "- "+capture.Challenge.Type+" at "+capture.Challenge.URL)
 		// A hidden or zero-size widget has no pixels to show; the card still
@@ -77,12 +79,14 @@ func callShowCaptcha(ctx context.Context, assignment string) (map[string]any, er
 		if len(capture.PNG) == 0 {
 			continue
 		}
+		if len(images) == 0 {
+			cardSource = capture.Challenge
+		}
 		name := fmt.Sprintf("captcha-%s-%d.png", capture.Challenge.Type, index+1)
 		images = append(images, ChatEventImage{Name: name, MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(capture.PNG)})
 	}
-	first := captures[0].Challenge
 	text := "CAPTCHA challenge detected in the managed browser (" + strings.Join(lines, "; ") + "). Please solve it from the captcha card in chat; this agent continues once the challenge is gone."
-	card = &ChatEventCaptcha{Type: first.Type, URL: first.URL, SiteKey: first.SiteKey}
+	card := &ChatEventCaptcha{Type: cardSource.Type, URL: cardSource.URL, SiteKey: cardSource.SiteKey}
 	if err := writeDesktopChatEvent(ctx, assignment, ChatEvent{Kind: "reply", Text: text, Images: images, Captcha: card}); err != nil {
 		return nil, err
 	}

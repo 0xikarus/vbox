@@ -95,28 +95,33 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(octet_length(data)),0) FROM run_once_images WHERE account_id=$1`, accountID).Scan(&used); err != nil {
 		return err
 	}
-	for index, image := range images {
+	ordinal := 0
+	for _, image := range images {
 		data, err := base64.StdEncoding.DecodeString(image.Data)
 		if err != nil {
-			return fmt.Errorf("agent returned invalid image data")
+			// Permanently invalid content: skip this image; the text stays.
+			continue
 		}
 		media, err := validateRunOnceImage(data)
 		if err != nil || media != image.MediaType {
-			return fmt.Errorf("agent returned invalid image")
+			continue
 		}
 		data, media, err = optimizeStoredImage(ctx, data, media)
 		if err != nil {
+			// Transient processing failure: retry the whole event later.
 			return err
 		}
 		used += int64(len(data))
 		if used > maxAccountAttachmentBytes {
+			// Quota is transient state too; a later retry may fit.
 			return errAccountAttachmentQuota
 		}
+		ordinal++
 		id := uuid()
 		if _, err = tx.ExecContext(ctx, `INSERT INTO run_once_images(id,account_id,media_type,data,download_token,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '7 days')`, id, accountID, media, data, rand.Text()+rand.Text()); err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,$4)`, messageID, accountID, id, index+1); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,$4)`, messageID, accountID, id, ordinal); err != nil {
 			return err
 		}
 	}
@@ -263,9 +268,9 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 			return "", false, err
 		}
 		if err := s.Store.attachAgentChatImages(ctx, accountID, message.ID, event.Images); err != nil {
-			// A bad attachment must not stall the outbox head-of-line: keep the
-			// message and acknowledge the event without its images.
-			s.Logger.Warn("agent chat images rejected", "account", accountID, "task", task.ID, "error", err)
+			// Storage or quota failures leave the event retryable; invalid
+			// content never reaches this path (it is skipped in the store).
+			return "", false, err
 		}
 		var busyErr error
 		if activityMessageID != "" {
@@ -293,8 +298,7 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		return "", false, err
 	}
 	if err := s.Store.attachAgentChatImages(ctx, accountID, reply.ID, event.Images); err != nil {
-		// Same outbox rule: keep the reply, drop the bad attachments.
-		s.Logger.Warn("agent chat images rejected", "account", accountID, "task", task.ID, "error", err)
+		return "", false, err
 	}
 	if err := s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, activityMessageID); err != nil {
 		return "", false, err

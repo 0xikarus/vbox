@@ -1800,7 +1800,12 @@
   const kind=captcha?.type;
   const widget=document.createElement('div');widget.className='captcha-widget';widget.hidden=true;
   const answerForm=document.createElement('form');answerForm.className='captcha-answer';answerForm.hidden=true;
-  if(kind==='recaptcha'||kind==='hcaptcha'){
+  if(kind==='recaptcha'){
+   // reCAPTCHA site keys are domain-restricted: the widget only renders on
+   // the site's own host, never on the controller's, so in-chat rendering
+   // would fail for most sites. Route straight to the desktop handoff.
+   setStatus('reCAPTCHA keys are tied to the site\'s own domain — solve it in the box\'s desktop. It was captured here for reference.');
+  }else if(kind==='hcaptcha'){
    if(captcha.siteKey){
     const solve=document.createElement('button');solve.type='button';solve.textContent='Solve captcha here';
     solve.onclick=()=>{
@@ -1812,12 +1817,6 @@
      }).catch(error=>{solve.disabled=false;setStatus(error.message+' — use Open full desktop instead.',true)});
     };
     actions.append(solve);
-    // Site keys are usually domain-restricted to the target site. Rendering
-    // here can be rejected by the provider; surface that clearly with the
-    // manual route as the reliable fallback.
-    const note=document.createElement('p');note.className='captcha-card-note';
-    note.textContent=kind==='recaptcha'?'This widget renders on the controller\'s host. If the site\'s key is domain-restricted, use Open full desktop.':'';
-    if(note.textContent)card.append(note);
    }else{
     setStatus('The widget site key was unavailable — use Open full desktop to solve it there.',true);
    }

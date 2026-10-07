@@ -124,8 +124,20 @@
   }
 
   window.addEventListener("message", (event) => {
+    // Child frames report their detection; the top frame only stores it as
+    // UNTREATED data (marker dataUntreated=1). The Go probe never trusts this
+    // marker for a capture: it re-verifies the widget inside the reporting
+    // child frame via CDP and computes the capture rectangle itself.
     if (event.source !== window.top && event.data && event.data.source === TAG && typeof event.data.type === "string") {
-      apply(event.data.type, event.data.rect || null, event.data.sitekey || "");
+      if (event.data.type) {
+        document.documentElement.setAttribute(MARK, JSON.stringify({
+          type: event.data.type, ts: Date.now(),
+          rect: event.data.rect || null, sitekey: event.data.sitekey || "",
+          dataUntreated: 1
+        }));
+      } else {
+        clear();
+      }
     }
   });
 
@@ -136,13 +148,37 @@
       apply(type, found ? found.rect : null, found ? sitekeyFor(type) : "");
     } else if (type) {
       try {
-        window.top.postMessage({ source: TAG, type, rect: found.rect, sitekey: sitekeyFor(type) }, "*");
+        window.top.postMessage({ source: TAG, type, rect: translateToTop(found.rect), sitekey: sitekeyFor(type) }, "*");
       } catch (_) {}
     } else {
       try {
         window.top.postMessage({ source: TAG, type: "" }, "*");
       } catch (_) {}
     }
+  };
+
+  // A child frame's rect is local to its own document. Translate it through
+  // each ancestor iframe so the top-page capture clips the right pixels.
+  const translateToTop = (rect) => {
+    if (!rect || window.top === window) return rect;
+    let offset = { x: 0, y: 0 };
+    try {
+      let frame = window;
+      while (frame !== window.top) {
+        frame = frame.parent;
+        const box = frame.frameElement ? frame.frameElement.getBoundingClientRect() : { x: 0, y: 0 };
+        offset.x += box.x;
+        offset.y += box.y;
+        // scroll of each ancestor document applies to children inside it
+        offset.x -= frame.scrollX || 0;
+        offset.y -= frame.scrollY || 0;
+      }
+    } catch (_) {
+      // Cross-origin ancestor frames hide frameElement; the Go probe
+      // re-verifies and measures inside the frame, so a null rect stays safe.
+      return rect;
+    }
+    return { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height };
   };
 
   let scheduled = false;
@@ -152,6 +188,9 @@
     setTimeout(() => {
       scheduled = false;
       scan();
+      // Child frames keep the parent's marker current, including widget
+      // insertions that happen after the initial load.
+      if (window.top !== window) report();
     }, 250);
   };
 
