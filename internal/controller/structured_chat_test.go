@@ -313,6 +313,67 @@ func TestApplyChatEventDeduplicatesIdenticalAnsweredReply(t *testing.T) {
 	}
 }
 
+func TestApplyChatEventRetriesImageAfterDeliveredReply(t *testing.T) {
+	store, mock := testStore(t)
+	image := boxruntime.ChatEventImage{MediaType: "image/png", Data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"}
+	target := boxMessageRow("message-1", "task-1", "user-a", "user", "hello", "delivered")
+	reply := boxMessageRow("reply-1", "task-1", "", "agent", "answer", "delivered")
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "task-1", "chat-key-1").WillReturnRows(target)
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").WillReturnRows(emptyBoxMessageRows())
+	mock.ExpectExec("INSERT INTO box_messages").WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1", "message-1").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").WillReturnRows(reply)
+	mock.ExpectExec(`DELETE FROM run_once_images i`).WithArgs("account-a").WillReturnError(errors.New("temporary storage failure"))
+
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "task-1", "chat-key-1").WillReturnRows(boxMessageRow("message-1", "task-1", "user-a", "user", "hello", "delivered"))
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").WillReturnRows(boxMessageRow("reply-1", "task-1", "", "agent", "answer", "delivered"))
+	mock.ExpectExec(`DELETE FROM run_once_images i`).WithArgs("account-a").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT count\(\*\) FROM box_message_images`).WithArgs("account-a", "reply-1").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT COALESCE\(sum\(octet_length\(data\)\),0\) FROM run_once_images`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"used"}).AddRow(0))
+	mock.ExpectExec(`INSERT INTO run_once_images`).WithArgs(sqlmock.AnyArg(), "account-a", "image/png", sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`INSERT INTO box_message_images`).WithArgs("reply-1", "account-a", sqlmock.AnyArg(), 1).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectExec("UPDATE box_tasks SET agent_busy=false").WithArgs("account-a", "task-1", "message-1").WillReturnResult(sqlmock.NewResult(0, 1))
+
+	server := chatTestServer(store)
+	task := v1.BoxTask{ID: "task-1", LogicalBoxID: "box-1", Agent: "claude", Session: "claude-1"}
+	event := boxruntime.ChatEvent{ID: "retry-event", Kind: "reply", ReplyTo: "chat-key-1", Text: "answer", Images: []boxruntime.ChatEventImage{image}}
+	if _, _, err := server.applyChatEvent(context.Background(), &chatDrainProvider{}, "service-1", "account-a", task, event); err == nil {
+		t.Fatal("first attachment failure must leave the event retryable")
+	}
+	if _, _, err := server.applyChatEvent(context.Background(), &chatDrainProvider{}, "service-1", "account-a", task, event); err != nil {
+		t.Fatalf("retry did not attach the image: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAttachAgentChatImagesSkipsInvalidAndBoundsOverflow(t *testing.T) {
+	store, mock := testStore(t)
+	image := boxruntime.ChatEventImage{MediaType: "image/png", Data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"}
+	images := make([]boxruntime.ChatEventImage, 10)
+	images[0] = boxruntime.ChatEventImage{MediaType: "image/png", Data: "invalid-base64"}
+	for i := 1; i < len(images); i++ {
+		images[i] = image
+	}
+	mock.ExpectExec(`DELETE FROM run_once_images i`).WithArgs("account-a").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT count\(\*\) FROM box_message_images`).WithArgs("account-a", "message-1").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT COALESCE\(sum\(octet_length\(data\)\),0\) FROM run_once_images`).WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"used"}).AddRow(0))
+	for ordinal := 1; ordinal <= 8; ordinal++ {
+		mock.ExpectExec(`INSERT INTO run_once_images`).WithArgs(sqlmock.AnyArg(), "account-a", "image/png", sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectExec(`INSERT INTO box_message_images`).WithArgs("message-1", "account-a", sqlmock.AnyArg(), ordinal).WillReturnResult(sqlmock.NewResult(1, 1))
+	}
+	mock.ExpectCommit()
+	if err := store.attachAgentChatImages(context.Background(), "account-a", "message-1", images); err != nil {
+		t.Fatalf("invalid image or overflow must not stall the outbox: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestApplyChatEventStoresUncorrelatedMessage covers chat_message without a
 // replyTo: nothing is resolved and the text lands as its own agent message.
 func TestApplyChatEventStoresUncorrelatedMessage(t *testing.T) {

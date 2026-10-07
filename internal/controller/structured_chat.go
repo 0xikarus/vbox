@@ -73,9 +73,6 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 	if len(images) == 0 {
 		return nil
 	}
-	if len(images) > 8 {
-		return fmt.Errorf("agent attached too many images")
-	}
 	if err := s.pruneStaleUnusedAttachments(ctx, accountID); err != nil {
 		return err
 	}
@@ -95,14 +92,19 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(octet_length(data)),0) FROM run_once_images WHERE account_id=$1`, accountID).Scan(&used); err != nil {
 		return err
 	}
-	for index, image := range images {
+	ordinal := 0
+	for _, image := range images {
+		if ordinal == 8 {
+			break
+		}
 		data, err := base64.StdEncoding.DecodeString(image.Data)
 		if err != nil {
-			return fmt.Errorf("agent returned invalid image data")
+			// Permanently invalid content must not block the reply text.
+			continue
 		}
 		media, err := validateRunOnceImage(data)
 		if err != nil || media != image.MediaType {
-			return fmt.Errorf("agent returned invalid image")
+			continue
 		}
 		data, media, err = optimizeStoredImage(ctx, data, media)
 		if err != nil {
@@ -112,11 +114,12 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 		if used > maxAccountAttachmentBytes {
 			return errAccountAttachmentQuota
 		}
+		ordinal++
 		id := uuid()
 		if _, err = tx.ExecContext(ctx, `INSERT INTO run_once_images(id,account_id,media_type,data,download_token,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '7 days')`, id, accountID, media, data, rand.Text()+rand.Text()); err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,$4)`, messageID, accountID, id, index+1); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,$4)`, messageID, accountID, id, ordinal); err != nil {
 			return err
 		}
 	}
@@ -245,6 +248,10 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 			// Two drains (or two client retries) may enqueue the same structured
 			// reply with different event IDs. Treat an identical answer to the same
 			// message as idempotent instead of displaying a second root bubble.
+			// A retry after attachment storage failed still needs to store its images.
+			if err := s.Store.attachAgentChatImages(ctx, accountID, existing.ID, event.Images); err != nil {
+				return "", false, err
+			}
 			if err := s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, target.ID); err != nil {
 				return "", false, err
 			}
