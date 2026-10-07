@@ -17,6 +17,14 @@ import (
 )
 
 const blenderVersion = "5.1.2"
+
+// Blender and its MCP server are bundled in worker images; tests point these
+// elsewhere so a host image does not short-circuit the download path.
+var (
+	pinnedBlenderImage    = "/opt/vmbox/blender-" + blenderVersion + "/blender"
+	pinnedBlenderMCPImage = "/opt/vmbox/blender-mcp-" + blenderMCPVersion + "/bin/blender-mcp"
+)
+
 const blenderReleaseSHA = "aaccb355f50183979b698bcce7467103a76261b5fa59f4972295842662a285fb"
 const blenderReleaseURL = "https://download.blender.org/release/Blender5.1/blender-5.1.2-linux-x64.tar.xz"
 
@@ -27,7 +35,7 @@ func installPinnedBlender(ctx context.Context, home string, progress io.Writer) 
 	if !filepath.IsAbs(home) || home == "/" {
 		return fmt.Errorf("Blender requires a persistent absolute home")
 	}
-	imageBinary := "/opt/vmbox/blender-" + blenderVersion + "/blender"
+	imageBinary := pinnedBlenderImage
 	if _, err := os.Stat(filepath.Join(home, "bin", "blender")); os.IsNotExist(err) {
 		if output, err := exec.CommandContext(ctx, imageBinary, "--version").Output(); err == nil && strings.HasPrefix(string(output), "Blender "+blenderVersion+"\n") {
 			return linkPinnedBlender(home, imageBinary)

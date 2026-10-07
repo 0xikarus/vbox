@@ -26,6 +26,7 @@ func TestChromiumNoSandboxUsesContainerBoundaryAsDefault(t *testing.T) {
 }
 
 func TestDesktopIconsPreserveCustomLaunchers(t *testing.T) {
+	isolateRuntimeEnv(t)
 	if _, err := exec.LookPath("flock"); err != nil {
 		t.Skip("flock required")
 	}

@@ -10,6 +10,8 @@ import (
 )
 
 func TestBlenderInstallsDesktopAndRestoresWithoutCustomScript(t *testing.T) {
+	isolateRuntimeEnv(t)
+	withoutImageBlender(t)
 	home := t.TempDir()
 	retainLegacyBlender(t, home)
 	bin := t.TempDir()

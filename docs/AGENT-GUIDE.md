@@ -301,7 +301,7 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   `internal/boxruntime/mascot_observation.go`, `mascot_transcript.go`,
   `internal/controller/mascot_classifier.go`, `web/chat.js`. The committed models
   use synthetic training data; see [the classifier guide](MASCOT-CLASSIFIER.md)
-  and [the private training guide](TRAIN-ACTIVITY-MOOD.md).
+  and [the training guide](TRAIN-ACTIVITY-MOOD.md).
   `chat_message` writes a message on its own; passing `replyTo` (the short chat
   key carried in the envelope) answers one specific message. The box durably
   queues each MCP event and pushes text events through its scoped chat-ready
