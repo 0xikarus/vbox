@@ -38,7 +38,13 @@ const ownerMessages = {
  ],
  [ids.reviewer]:[msg('reviewer-1','agent','Review notes are ready for builder.',4)],
  [ids.tester]:[msg('tester-1','agent','Three viewport checks passed; one label needs a second look.',4)],
- [ids.watcher]:[msg('watcher-1','user','Check the sample data labels.',-26)],
+ [ids.watcher]:[
+  msg('watcher-1','user','Please check the labels in the fictional sample dataset before handoff.',-33,{state:'read'}),
+  msg('watcher-2','agent','I’m comparing the labels with the short copy guide.',-31),
+  msg('watcher-3','system','MCP · read fixture labels',-29),
+  msg('watcher-4','agent','Two labels wrap on narrow screens. I’m checking shorter wording.',-27),
+  msg('watcher-5','user','Please check the 390 px view as well.',-26,{state:'read'}),
+ ],
  [ids.helper]:[msg('helper-1','agent','Notes saved for the next session.',-60)],
 };
 const layout={exists:true,groups:[{id:'sample',name:'Sample project',collapsed:false}],members:{['box:'+ids.builder]:'sample',['box:'+ids.reviewer]:'sample',['pair:'+pairKey]:'sample'},pins:['pair:'+pairKey,'box:'+ids.builder],mutes:{},sections:{}};
@@ -46,7 +52,7 @@ const activity=[
  {boxId:ids.builder,busy:true,busySince:at(3),mood:'focused',activity:'working',phrase:'Polishing empty state',observedAt:at(5)},
  {boxId:ids.reviewer,busy:false,mood:'happy',activity:'idle',phrase:'Review complete',observedAt:at(5)},
  {boxId:ids.tester,busy:true,busySince:at(2),mood:'focused',activity:'working',phrase:'Checking mobile layout',observedAt:at(5)},
- {boxId:ids.watcher,busy:true,busySince:at(-31),mood:'idle',activity:'working',statusSource:'stale',phrase:'Checking sample labels',observedAt:at(-21)},
+ {boxId:ids.watcher,busy:true,busySince:at(-34),mood:'idle',activity:'working',statusSource:'stale',phrase:'Checking sample labels',observedAt:at(-21)},
  {boxId:ids.helper,busy:false,mood:'idle',activity:'idle',observedAt:at(5)},
 ];
 const mailMessages=[
@@ -106,6 +112,11 @@ async function handler(req,res){
  try{res.setHeader('Content-Type',types[extname(file)]||'application/octet-stream');res.end(await readFile(resolve(web,file)))}catch{send(res,{},404)}
 }
 async function capture(page,name){
+ await page.evaluate(async()=>{
+  document.activeElement?.blur();
+  for(const element of document.querySelectorAll('input,textarea,[contenteditable]'))element.style.setProperty('caret-color','transparent','important');
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+ });
  const png=await page.screenshot({type:'png'});
  if(preview){await mkdir(preview,{recursive:true});await writeFile(resolve(preview,name+'.png'),png)}
  const encoded=spawnSync('ffmpeg',['-loglevel','error','-y','-f','image2pipe','-vcodec','png','-i','pipe:0','-frames:v','1','-c:v','libwebp','-quality','82',resolve(output,name+'.webp')],{input:png});
@@ -118,6 +129,11 @@ async function pageFor(browser,width,height,theme='light'){
  return page;
 }
 const click=async(page,selector)=>page.$eval(selector,node=>node.click());
+async function selectHandoffChoices(page){
+ await page.waitForSelector('.msg[data-message-id="'+q2+'"] .choice');
+ await page.evaluate(id=>{const choices=[...document.querySelectorAll('.msg[data-message-id="'+id+'"] .choice')];for(const choice of choices.slice(0,2))if(!choice.classList.contains('on'))choice.click()},q2);
+ await page.waitForFunction(id=>document.querySelectorAll('.msg[data-message-id="'+id+'"] .choice.on').length===2,{},q2);
+}
 const base=()=>`http://127.0.0.1:${server.address().port}`;
 async function main(){
  await mkdir(output,{recursive:true});
@@ -135,7 +151,7 @@ async function main(){
 
   page=await pageFor(browser,1440,1000);await page.goto(base()+'/chat#box='+ids.builder);
   await page.waitForFunction(()=>document.querySelectorAll('#chat-messages .question').length===2);
-  await page.evaluate(id=>{const choices=[...document.querySelectorAll('.msg[data-message-id="'+id+'"] .choice')];choices[0].click();choices[1].click()},q2);
+  await selectHandoffChoices(page);
   await page.$eval('#chat-messages',node=>node.scrollTop=0);
   await capture(page,'owner-question');await page.close();
 
@@ -155,8 +171,9 @@ async function main(){
 
   page=await pageFor(browser,1440,900);await page.goto(base()+'/chat#box='+ids.builder);
   await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
+  await selectHandoffChoices(page);
   await click(page,'#chat-info');await page.waitForSelector('[data-ip-row="access"]');await click(page,'[data-ip-row="access"]');
-  await page.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#inspect-title').textContent==='Access & permissions');
+  await page.waitForFunction(()=>!document.querySelector('#role-editor-inline').hidden&&document.querySelector('#inspect-title').textContent==='Access & permissions'&&document.querySelector('#role-editor-status').textContent===''&&[...document.querySelectorAll('#role-editor-form input[name=mcpTools]')].every(input=>!input.disabled));
   await capture(page,'details-access-overview');
   await page.$eval('[data-permission-group="mail"]',node=>node.scrollIntoView({block:'center'}));
   await capture(page,'details-access-permissions');await page.close();
