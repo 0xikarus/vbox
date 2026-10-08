@@ -14,6 +14,8 @@ import (
 // and the Go compact handler already trust: box_tasks.agent_busy* and the
 // stored mascot phrase/observation, plus the last agent reply, the last inbound
 // message and its delivery state, and whether a chat_ask is still open.
+// Unanswered counts inbound messages since the agent last wrote: channel
+// agents answer with chat_message, which leaves no per-message reply record.
 type agentActivitySignals struct {
 	HasTask          bool
 	Agent            string
@@ -74,6 +76,7 @@ func (s *Store) BoxAgentActivitySignals(ctx context.Context, accountID, boxID st
 		(SELECT max(m.created_at) FROM box_messages m WHERE m.account_id=$1 AND m.task_id=t.id AND m.direction='agent'),
 		(SELECT max(m.created_at) FROM box_messages m WHERE m.account_id=$1 AND m.task_id=t.id AND m.direction IN ('user','box') AND m.submit),
 		(SELECT count(*) FROM box_messages m WHERE m.account_id=$1 AND m.task_id=t.id AND m.direction IN ('user','box') AND m.submit AND m.state IN ('delivered','read')
+			AND m.created_at>COALESCE((SELECT max(a.created_at) FROM box_messages a WHERE a.account_id=$1 AND a.task_id=t.id AND a.direction='agent'),'-infinity'::timestamptz)
 			AND NOT EXISTS (SELECT 1 FROM box_messages r WHERE r.account_id=m.account_id AND r.idempotency_key='agent-reply:'||m.id::text AND r.state='delivered')),
 		(SELECT m.state FROM box_messages m WHERE m.account_id=$1 AND m.task_id=t.id AND m.direction IN ('user','box') AND m.submit ORDER BY m.created_at DESC,m.id DESC LIMIT 1),
 		EXISTS(SELECT 1 FROM box_messages q WHERE q.account_id=$1 AND q.task_id=t.id AND q.direction='agent' AND q.body LIKE 'vmbox-question:%'
