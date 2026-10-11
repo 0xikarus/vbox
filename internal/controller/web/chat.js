@@ -2450,11 +2450,13 @@ function pairTileStatus(tile,mode,label){
  }
  async function connectPairTile(hero,tile,box){
   if(box.state!=='running'){pairTileStatus(tile,'off','Desktop off');return}
-  pairTileStatus(tile,'checking','Connecting…');
+  pairTileStatus(tile,'checking','Starting desktop…');
   try{
    const state=await api(boxPath(box.id)+'/desktop');
    if(!pairHeroVisible(hero))return;
    if(state?.enabled!==true){fallbackPairTile(hero,tile,box);return}
+   await ensureDesktopRunning(box);
+   if(!pairHeroVisible(hero))return;
    const dispose=openWorkspaceDesktop(box.id,status=>{
     if(!pairHeroVisible(hero))return;
     if(status==='Desktop connected')pairTileStatus(tile,'desktop','Desktop live');
@@ -3256,11 +3258,13 @@ function pairTileStatus(tile,mode,label){
   clearTimeout(heroRetry);const delay=heroDelay;heroDelay=Math.min(30000,heroDelay*2);
   heroRetry=setTimeout(()=>{heroRetry=null;if(!heroVisible(box)||heroBox!==box.id)return;if(checkEnabled){heroBox='';syncInspectHero(box)}else connectInspectHero(box)},delay);
  }
- function connectInspectHero(box){
-  if(!heroVisible(box)||heroBox!==box.id||heroDispose)return;
+ async function connectInspectHero(box){
+  if(!heroVisible(box)||heroBox!==box.id||heroDispose||heroChecking)return;
   heroChecking=true;heroFailure='';heroAppearance();
   const epoch=heroEpoch;
   try{
+   await ensureDesktopRunning(box);
+   if(epoch!==heroEpoch||!heroVisible(box)||heroBox!==box.id)return;
    heroDispose=openWorkspaceDesktop(box.id,status=>{
     if(epoch!==heroEpoch||heroBox!==box.id)return;
     heroChecking=false;heroConnected=status==='Desktop connected';
@@ -3270,7 +3274,7 @@ function pairTileStatus(tile,mode,label){
     if(epoch!==heroEpoch||heroBox!==box.id)return;
     const dispose=heroDispose;heroDispose=null;dispose?.();heroLive.replaceChildren();retryInspectHero(box);
    }});
-  }catch{heroDispose=null;heroLive.replaceChildren();retryInspectHero(box)}
+  }catch{if(epoch!==heroEpoch||heroBox!==box.id)return;heroDispose=null;heroLive.replaceChildren();retryInspectHero(box)}
  }
  async function syncInspectHero(box){
   if(!heroVisible(box)){if(heroBox)stopInspectHero();return}
@@ -3281,7 +3285,7 @@ function pairTileStatus(tile,mode,label){
    const state=await api(boxPath(box.id)+'/desktop');
    if(epoch!==heroEpoch||!heroVisible(box)||heroBox!==box.id)return;
    heroChecking=false;heroEnabled=state?.enabled===true;heroAppearance();
-   if(heroEnabled)connectInspectHero(box);else renderInspectScreen(box);
+   if(heroEnabled)void connectInspectHero(box);else renderInspectScreen(box);
   }catch{
    if(epoch!==heroEpoch||heroBox!==box.id)return;
    retryInspectHero(box,true);
@@ -3756,14 +3760,22 @@ function pairTileStatus(tile,mode,label){
     reload (or any box whose desktop is not up yet) has to start it first. A
     worker without the desktop packages needs an explicit enable before start,
     which is the same ladder the workspace view uses. */
- async function ensureDesktopRunning(box){
-  try{
-   await api(boxPath(box.id)+'/desktop','POST',{});
-  }catch(e){
-   if(!/components unavailable|enable the desktop/i.test(e.message||''))throw e;
-   await api(boxPath(box.id)+'/desktop/enable','POST',{},{},190000);
-   await api(boxPath(box.id)+'/desktop','POST',{});
-  }
+ const desktopStartRequests=new Map();
+ function ensureDesktopRunning(box){
+  const pending=desktopStartRequests.get(box.id);
+  if(pending)return pending;
+  const start=(async()=>{
+   try{
+    await api(boxPath(box.id)+'/desktop','POST',{});
+   }catch(e){
+    if(!/components unavailable|enable the desktop/i.test(e.message||''))throw e;
+    await api(boxPath(box.id)+'/desktop/enable','POST',{},{},190000);
+    await api(boxPath(box.id)+'/desktop','POST',{});
+   }
+  })();
+  desktopStartRequests.set(box.id,start);
+  void start.then(()=>desktopStartRequests.delete(box.id),()=>desktopStartRequests.delete(box.id));
+  return start;
  }
   /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
   const newBoxModal=$('#new-box-modal'),createForm=$('#create-box'),previewCard=$('#create-preview-card');

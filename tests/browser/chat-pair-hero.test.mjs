@@ -31,6 +31,7 @@ window.openWorkspaceTerminal=(box,session,onStatus,options={})=>{
 
 test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the selected box',async()=>{
  let desktopA=true;
+ let desktopStarts=0;
  let activityMood='angry';
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0];
@@ -44,7 +45,10 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
    if(path==='/v1/logical-boxes'||path==='/v1/grid-boxes')return res.end(JSON.stringify(boxes));
    if(path==='/v1/chat-sidebar-layout')return res.end('{"exists":true,"groups":[],"members":{}}');
    if(path==='/v1/box-conversations')return res.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:now,lastText:'Review ready'}]));
-   if(path.endsWith('/'+b+'/desktop')||path.endsWith('/'+a+'/desktop'))return res.end(JSON.stringify({enabled:path.includes(a)?desktopA:false}));
+   if(path.endsWith('/'+b+'/desktop')||path.endsWith('/'+a+'/desktop')){
+    if(req.method==='POST'){desktopStarts++;res.statusCode=204;return res.end()}
+    return res.end(JSON.stringify({enabled:path.includes(a)?desktopA:false}));
+   }
    if(path.endsWith('/sessions'))return res.end('{"state":"live","partial":false,"sessions":[{"name":"agent"}]}');
    if(path.endsWith('/sessions/primary'))return res.end('{"session":"agent"}');
    if(path.endsWith('/sessions/interactive'))return res.end('{"session":"agent"}');
@@ -70,6 +74,7 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   try{await page.waitForFunction(()=>document.querySelectorAll('.pair-hero .pair-tile').length===2&&document.querySelectorAll('.pair-tile[data-mode="desktop"],.pair-tile[data-mode="tmux"]').length===2,{timeout:7000})}
   catch(error){console.log(await page.evaluate(()=>({text:document.querySelector('#chat-status')?.textContent,tiles:[...document.querySelectorAll('.pair-tile')].map(node=>({mode:node.dataset.mode,label:node.textContent})),desktop:window.fakeDesktop?.length,terminal:window.fakeTerminal?.length,body:document.body.textContent.slice(0,400)})));throw error}
   assert.deepEqual(await page.$$eval('.pair-tile',nodes=>nodes.map(node=>node.dataset.mode)),['desktop','tmux']);
+  assert.equal(desktopStarts,1,'pair hero starts the enabled desktop before attaching');
   assert.equal(await page.$eval('#chat-status',node=>node.textContent),'Read only · 3 messages','pair footer keeps its message count after opening');
   assert.deepEqual(await page.evaluate(()=>[window.fakeDesktop[0].viewOnly,window.fakeTerminal[0].viewOnly]),[true,true]);
   await page.waitForFunction(()=>window.terminalSockets.length===1&&window.terminalSockets[0].readyState===1);

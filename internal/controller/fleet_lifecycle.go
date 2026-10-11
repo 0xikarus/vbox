@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -180,6 +181,17 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	}
 	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "ready", "", false)
 	s.Logger.Info("logical box allocation ready", "allocation", allocation.RequestID, "box", assignment.Box.Name, "slot", assignment.Slot.Ordinal, "elapsed", time.Since(started))
+	// Agent-created boxes are often first viewed through the read-only Chat
+	// previews. Those routes attach to an existing VNC socket but do not launch
+	// one, so start the selected desktop as soon as the box is running.
+	if strings.HasPrefix(allocation.IdempotencyKey, "agent-box:") && slices.Contains(assignment.Box.Tools, "desktop") {
+		desktopCtx, cancel := context.WithTimeout(ctx, desktopStartBudget)
+		result, startErr := prov.Exec(desktopCtx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "desktop-start", nativeFence(assignment)}, provider.ExecOptions{})
+		cancel()
+		if startErr != nil || result.ExitCode != 0 {
+			s.Logger.Warn("agent-created desktop did not start automatically", "box", assignment.Box.Name, "error", startErr, "detail", desktopFailureDetail(result.Stderr))
+		}
+	}
 	if strings.HasPrefix(allocation.IdempotencyKey, "agent-wake:") {
 		s.applyPendingWakeSessionChoice(ctx, accountID, allocation.RequestID)
 	}

@@ -21,6 +21,7 @@ const shot='<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><re
 
 test('Details hero keeps one view-only desktop, tears it down, and preserves its thumbnail on failure',async()=>{
  let enabled=true;
+ let desktopStarts=0;
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0];
   if(path==='/chat'){res.setHeader('Content-Type','text/html');return res.end(await readFile(resolve(web,'chat.html')))}
@@ -32,7 +33,10 @@ test('Details hero keeps one view-only desktop, tears it down, and preserves its
    if(path==='/v1/logical-boxes'||path==='/v1/grid-boxes')return res.end(JSON.stringify(boxes));
    if(path==='/v1/chat-sidebar-layout')return res.end('{"exists":true,"groups":[],"members":{}}');
    if(path==='/v1/box-conversations'||path==='/v1/tool-presets'||path==='/v1/notifications'||path==='/v1/chat-commands')return res.end('[]');
-   if(path.endsWith('/desktop'))return res.end(JSON.stringify({enabled}));
+   if(path.endsWith('/desktop')){
+    if(req.method==='POST'){desktopStarts++;res.statusCode=204;return res.end()}
+    return res.end(JSON.stringify({enabled}));
+   }
    if(path.endsWith('/messages'))return res.end(JSON.stringify([{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:now,updatedAt:now}]));
    if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
    return res.end('{}');
@@ -51,6 +55,7 @@ test('Details hero keeps one view-only desktop, tears it down, and preserves its
   assert.equal(await page.evaluate(()=>window.fakeRFB.length),0,'closed Details does not connect');
   await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-screen .inspect-screen-frame').classList.contains('is-live'));
+  assert.equal(desktopStarts,1,'Details starts the desktop before opening a live stream');
   assert.deepEqual(await page.evaluate(()=>({count:window.fakeRFB.length,viewOnly:window.fakeRFB[0].viewOnly,scaled:window.fakeRFB[0].scaleViewport,chip:document.querySelector('#inspect-screen-live-chip').hidden,controls:document.querySelector('#inspect-screen-live button')?.length||0})),{count:1,viewOnly:true,scaled:true,chip:false,controls:0});
   assert.equal(await page.$eval('#inspect-screen-image',image=>image.hidden),false,'thumbnail remains mounted under the live view');
   await page.screenshot({path:'/tmp/vbox-hero-live-desktop.png'});
@@ -64,12 +69,14 @@ test('Details hero keeps one view-only desktop, tears it down, and preserves its
   assert.equal(await page.evaluate(()=>window.fakeRFB[2].closed),true,'hidden tabs disconnect');
   await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});document.dispatchEvent(new Event('visibilitychange'))});
   await page.waitForFunction(()=>window.fakeRFB.length===4);
+  const startsBeforeFailure=desktopStarts;
   await page.evaluate(()=>{window.fakeFailNext=true;document.querySelector('#inspect-close').click();document.querySelector('#chat-info').click()});
   await page.waitForFunction(()=>window.fakeRFB.length===5&&document.querySelector('#inspect-screen-hint').textContent.includes('unavailable'));
   assert.equal(await page.$eval('#inspect-screen-image',image=>image.hidden),false,'failed live view retains thumbnail');
   assert.equal(await page.$eval('#inspect-screen-live-chip',chip=>chip.hidden),true);
   await page.screenshot({path:'/tmp/vbox-hero-fallback-desktop.png'});
   await page.waitForFunction(()=>window.fakeRFB.length===6&&document.querySelector('#inspect-screen .inspect-screen-frame').classList.contains('is-live'),{timeout:3000});
+  assert.ok(desktopStarts>startsBeforeFailure,'reconnect restarts a stopped desktop before attaching');
   assert.equal(await page.evaluate(()=>window.fakeRFB.filter(rfb=>!rfb.closed).length),1,'backoff reconnect keeps a single live hero stream');
   await page.$eval('#inspect-close',button=>button.click());
   enabled=false;await page.$eval('#chat-info',button=>button.click());
