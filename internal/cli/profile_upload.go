@@ -10,8 +10,8 @@ import (
 )
 
 type uploadEntry struct {
-	application, path, model, choice, target *formField
-	saved                                    bool
+	application, path, choice, target *formField
+	saved                             bool
 }
 
 func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token string) error {
@@ -73,11 +73,7 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 				mark := "[ ]"
 				if entry.choice.Value == "Upload" || entry.choice.Value == "Replace" {
 					mark = "[x]"
-					name := account
-					if entry.model != nil && strings.TrimSpace(entry.model.Value) != "" {
-						name = profileNameWithModel(entry.application.Value, entry.path.Value, entry.model.Value)
-					}
-					if entry.choice.Value == "Replace" || savedIndex(entry.application.Value, name) >= 0 {
+					if entry.choice.Value == "Replace" || savedIndex(entry.application.Value, account) >= 0 {
 						mark = "[↻]"
 					}
 				}
@@ -90,24 +86,14 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			if entry.target != nil {
 				fields = append(fields, entry.target)
 			}
-			if p.app == "claude" || p.app == "codex" {
-				entry.model = &formField{Label: p.app + " model (optional)", Value: detectedProfileModel(p.app, path)}
-				entry.model.When = func() bool {
-					return (entry.choice.Value == "Upload" || entry.choice.Value == "Replace") && !entry.saved
-				}
-				fields = append(fields, entry.model)
-			}
 		}
 	}
 	add := &formField{Label: "[ Add entry ]"}
 	add.AddFields = func() []*formField {
-		entry := &uploadEntry{application: &formField{Label: "Application", Value: "claude", Choices: []string{"claude", "codex", "opencode", "github"}}, path: &formField{Label: "Path / HOST:USER"}, model: &formField{Label: "Agent model (optional)"}, choice: &formField{Label: "Upload entry", Value: "Upload", Choices: []string{"Skip", "Upload"}}}
-		entry.model.When = func() bool {
-			return (entry.application.Value == "claude" || entry.application.Value == "codex") && entry.choice.Value == "Upload" && !entry.saved
-		}
+		entry := &uploadEntry{application: &formField{Label: "Application", Value: "claude", Choices: []string{"claude", "codex", "opencode", "github"}}, path: &formField{Label: "Path / HOST:USER"}, choice: &formField{Label: "Upload entry", Value: "Upload", Choices: []string{"Skip", "Upload"}}}
 		entry.choice.Checkbox = true
 		entries = append(entries, entry)
-		return []*formField{entry.application, entry.path, entry.model, entry.choice}
+		return []*formField{entry.application, entry.path, entry.choice}
 	}
 	fields = append(fields, add)
 	providers := a.openCodeAPIProviderChoices()
@@ -154,17 +140,7 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			if strings.TrimSpace(path) == "" {
 				return fmt.Errorf("enter a path (Claude/Codex) or HOST:USER (GitHub)")
 			}
-			model := ""
-			if app == "claude" || app == "codex" {
-				if entry.model != nil {
-					model = strings.TrimSpace(entry.model.Value)
-				}
-			}
-			base := profileAccountName(app, path)
-			if model != "" {
-				base = profileNameWithModel(app, path, model)
-			}
-			name := base
+			name := profileAccountName(app, path)
 			if entry.choice.Value == "Replace" {
 				if entry.target == nil || entry.target.Value == "" {
 					return fmt.Errorf("choose a saved %s profile to replace", app)
@@ -180,7 +156,7 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 				verb = "Replacing "
 			}
 			progress(verb + app + " / " + name + "…")
-			profile, err := a.saveLocalLoginProfileWithModel(ctx, c, token, app, name, path, model, index >= 0)
+			profile, err := a.saveLocalLoginProfileWithModel(ctx, c, token, app, name, path, "", index >= 0)
 			if err != nil {
 				return err
 			}

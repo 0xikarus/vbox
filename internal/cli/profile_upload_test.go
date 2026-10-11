@@ -35,9 +35,16 @@ func TestProfileUploadDialogNeverCreatesBox(t *testing.T) {
 			switch {
 			case r.Method == "GET" && r.URL.Path == "/v1/login-profiles":
 				json.NewEncoder(w).Encode([]v1.LoginProfile{})
-			case r.Method == "PUT" && r.URL.Path == "/v1/login-profiles/claude/person@example.test (sonnet)":
+			case r.Method == "PUT" && r.URL.Path == "/v1/login-profiles/claude/person-example.test":
 				uploads++
-				json.NewEncoder(w).Encode(v1.LoginProfile{Application: "claude", Name: "person@example.test (sonnet)"})
+				var request v1.SaveLoginProfileRequest
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				if string(request.Files["settings.json"]) != `{"model":"sonnet"}` {
+					t.Error("upload changed the local Claude model")
+				}
+				json.NewEncoder(w).Encode(v1.LoginProfile{Application: "claude", Name: "person-example.test"})
 			default:
 				t.Error("unexpected operation", r.Method, r.URL.Path)
 				http.NotFound(w, r)
@@ -53,7 +60,7 @@ func TestProfileUploadDialogNeverCreatesBox(t *testing.T) {
 		if cancel {
 			keys += "\x03"
 		} else {
-			keys += strings.Repeat("\t", 4) + "\r"
+			keys += strings.Repeat("\t", 3) + "\r"
 		}
 		a.In = strings.NewReader(keys)
 		err := a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "test", []string{"upload"})
@@ -116,8 +123,8 @@ func TestProfileUploadDialogReplacesChosenSavedName(t *testing.T) {
 	var output bytes.Buffer
 	a.Out, a.Err = &output, &bytes.Buffer{}
 	// Space twice selects Replace; the saved-name field defaults to the only
-	// saved Claude profile. Tab past it, the model, and two add actions.
-	a.In = strings.NewReader("  " + strings.Repeat("\t", 5) + "\r")
+	// saved Claude profile. Tab past it and the two add actions.
+	a.In = strings.NewReader("  " + strings.Repeat("\t", 4) + "\r")
 	if err := a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "test", []string{"upload"}); err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +176,7 @@ func TestProfileUploadDialogAllowsClaudeAndCodexWithoutModel(t *testing.T) {
 			a.Runner = &procexec.FakeRunner{}
 			a.IsTerminal = func() bool { return true }
 			a.Out, a.Err = &bytes.Buffer{}, &bytes.Buffer{}
-			a.In = strings.NewReader(" \r " + strings.Repeat("\t", 4) + "\r")
+			a.In = strings.NewReader(" \r " + strings.Repeat("\t", 3) + "\r")
 			if err := a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "test", []string{"upload"}); err != nil {
 				t.Fatal(err)
 			}
@@ -235,7 +242,7 @@ func TestProfileUploadDialogShowsSeparateOpenCodeKeyCheck(t *testing.T) {
 	}
 }
 
-func TestProfileUploadDialogOffersClaudeAndCodexModelFields(t *testing.T) {
+func TestProfileUploadDialogOmitsClaudeAndCodexModelFields(t *testing.T) {
 	for _, tc := range []struct {
 		application, directory, authFile, configFile, config string
 	}{
@@ -267,8 +274,8 @@ func TestProfileUploadDialogOffersClaudeAndCodexModelFields(t *testing.T) {
 			a.Out, a.Err = &bytes.Buffer{}, &screen
 			a.In = strings.NewReader(" \x03")
 			_ = a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "test", []string{"upload"})
-			if !strings.Contains(screen.String(), tc.application+" model") {
-				t.Fatalf("%s model field missing after selecting profile: %q", tc.application, screen.String())
+			if strings.Contains(screen.String(), tc.application+" model") || strings.Contains(screen.String(), "Agent model (optional)") {
+				t.Fatalf("%s upload still offers a model field: %q", tc.application, screen.String())
 			}
 		})
 	}
