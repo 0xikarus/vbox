@@ -62,10 +62,107 @@ func restoreWARP(ctx context.Context, home string, progress io.Writer) error {
 	} else if err != nil {
 		return err
 	}
-	if warpInstalled() {
+	if !warpInstalled() {
+		if err := installWARPPackage(ctx, progress); err != nil {
+			return err
+		}
+	}
+	statusPath := filepath.Join(home, ".config", "vmbox", "warp-status")
+	if !warpConnected(ctx) {
+		if info, err := os.Stat(statusPath); err == nil && time.Since(info.ModTime()) < 10*time.Minute {
+			previous, _ := os.ReadFile(statusPath)
+			if strings.HasPrefix(string(previous), "unavailable:") && exec.CommandContext(ctx, "warp-cli", "status").Run() == nil {
+				// A failed edge handshake should not delay every later task.
+				return nil
+			}
+		}
+	}
+	connectionErr := connectWARP(ctx, home, progress)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	status := "connected\n"
+	if connectionErr != nil {
+		status = "unavailable: " + connectionErr.Error() + "\n"
+		fmt.Fprintln(progress, "Cloudflare WARP proxy unavailable: "+connectionErr.Error()+"; the box can still use its direct connection. Check warp-cli status.")
+	}
+	if err := os.MkdirAll(filepath.Dir(statusPath), 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(statusPath, []byte(status), 0600)
+}
+
+func connectWARP(ctx context.Context, home string, progress io.Writer) error {
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	if warpConnected(ctx) {
 		return nil
 	}
-	return installWARPPackage(ctx, progress)
+	// Proxy mode avoids a device-wide route and NET_ADMIN, which worker
+	// containers intentionally do not have.
+	status := exec.CommandContext(ctx, "warp-cli", "status")
+	if err := status.Run(); err != nil {
+		logPath := filepath.Join(home, ".config", "vmbox", "warp-svc.log")
+		if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
+			return err
+		}
+		log, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		cmd := exec.Command("sudo", "-n", "warp-svc")
+		cmd.Stdout, cmd.Stderr = log, log
+		if err := cmd.Start(); err != nil {
+			log.Close()
+			return fmt.Errorf("start WARP service: %w", err)
+		}
+		cmd.Process.Release()
+		log.Close()
+		for i := 0; i < 30; i++ {
+			if exec.CommandContext(ctx, "warp-cli", "status").Run() == nil {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("WARP service unavailable: %w", ctx.Err())
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+	}
+	run := func(args ...string) error {
+		cmd := exec.CommandContext(ctx, "warp-cli", args...)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("warp-cli %s: %w", strings.Join(args, " "), err)
+		}
+		return nil
+	}
+	if err := exec.CommandContext(ctx, "warp-cli", "registration", "show").Run(); err != nil {
+		if err := run("--accept-tos", "registration", "new"); err != nil {
+			return err
+		}
+	}
+	for _, args := range [][]string{{"tunnel", "protocol", "set", "MASQUE"}, {"mode", "proxy"}, {"proxy", "port", "40000"}, {"connect"}} {
+		if err := run(args...); err != nil {
+			return err
+		}
+	}
+	for i := 0; i < 30; i++ {
+		if warpConnected(ctx) {
+			fmt.Fprintln(progress, "Cloudflare WARP SOCKS5 connected at 127.0.0.1:40000; applications must opt in")
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("Cloudflare WARP could not connect: %w", ctx.Err())
+		case <-time.After(time.Second):
+		}
+	}
+	return fmt.Errorf("Cloudflare WARP could not connect; check Cloudflare edge UDP access with warp-cli status")
+}
+
+func warpConnected(ctx context.Context) bool {
+	output, err := exec.CommandContext(ctx, "warp-cli", "status").Output()
+	return err == nil && strings.Contains(string(output), "Connected") && socks5Ready("127.0.0.1:40000")
 }
 
 func warpInstalled() bool {
@@ -96,7 +193,7 @@ func installWARPPackage(ctx context.Context, progress io.Writer) error {
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, progress, progress
 		return cmd.Run()
 	}
-	fmt.Fprintln(progress, "Installing Cloudflare WARP client from the official package repository (no registration or connection)…")
+	fmt.Fprintln(progress, "Installing Cloudflare WARP client from the official package repository…")
 	if err := run(nil, "sudo", "-n", "apt-get", "-o", "DPkg::Lock::Timeout=30", "update", "-qq"); err != nil {
 		return fmt.Errorf("refresh package index: %w", err)
 	}

@@ -202,7 +202,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		noProfiles := fs.Bool("no-profiles", false, "skip agent credential provisioning")
 		var tools []string
 		setupScript := fs.String("setup-script", "", "trusted Bash install commands; rerun on resume, so keep idempotent")
-		fs.Func("tool", "install an optional tool preset (foundry, blender, desktop, cloudflare-warp); repeat for additional tools", func(value string) error { tools = append(tools, value); return v1.ValidateTools(tools) })
+		fs.Func("tool", "install an optional tool preset (foundry, blender, desktop, tor-socks5, cloudflare-warp); repeat for additional tools", func(value string) error { tools = append(tools, value); return v1.ValidateTools(tools) })
 		desktopResolution := fs.String("desktop-resolution", v1.DefaultDesktopResolution, "desktop size: 1024x640 or 1280x720")
 		noDialog := fs.Bool("no-dialog", false, "use explicit arguments without the creation dialog")
 		hibernated := fs.Bool("hibernate", false, "create the workspace without leaving compute running")

@@ -3913,12 +3913,13 @@ function pairTileStatus(tile,mode,label){
    renderCreationProfileChoices(profiles);
    const toolsSet=$('#create-tools');toolsSet.replaceChildren();
    for(const tool of tools){
-    if(tool.id==='desktop')continue;
+    if(['desktop','tor-socks5','cloudflare-warp'].includes(tool.id))continue;
     const label=document.createElement('label'),input=document.createElement('input');
     input.type='checkbox';input.value=tool.id;input.name='tool';input.title=tool.description||tool.name;
     label.append(input,document.createTextNode(' '+tool.name));toolsSet.append(label);
    }
    toolsSet.hidden=!toolsSet.children.length;
+   for(const option of $('#create-proxy').options){if(option.value)option.disabled=!tools.some(tool=>tool.id===option.value)}
    $('#create-tools-status').textContent=toolsReady?(toolsSet.children.length?'':'No optional tool presets available.'):'Could not load tool presets. Reopen New box to retry.';
    const pools=providers.map(p=>({provider:p.provider,providerCredential:p.name||''}));
    const poolStatuses=await Promise.all(pools.map(async pool=>{
@@ -4012,7 +4013,7 @@ function pairTileStatus(tile,mode,label){
  createForm.onsubmit=async event=>{
   event.preventDefault();
   const f=createForm.elements,submit=$('#create-box-submit');submit.disabled=true;$('#new-box-status').textContent='Creating…';
-  const tools=['desktop',...[...createForm.querySelectorAll('input[name=tool]:checked')].map(i=>i.value)];
+  const tools=['desktop',...[...createForm.querySelectorAll('input[name=tool]:checked')].map(i=>i.value),...(createForm.elements.proxy.value?[createForm.elements.proxy.value]:[])];
   const selectedProfile=createForm.elements.loginProfile?.value;
   const profileRef=selectedProfile?JSON.parse(selectedProfile):null;
   const loginProfiles=profileRef?[{...profileRef,model:(createForm.elements.agentModel?.value||'').trim(),...(createForm.elements.agentReasoningEffort?.value?{reasoningEffort:createForm.elements.agentReasoningEffort.value}:{})}]:[];

@@ -6,7 +6,7 @@ func TestBlenderPreset(t *testing.T) {
 	if err := ValidateTools([]string{"desktop", "foundry", "blender", "cloudflare-warp"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, tools := range [][]string{{"blender", "blender"}, {"desktop", "desktop"}, {"unknown"}} {
+	for _, tools := range [][]string{{"blender", "blender"}, {"desktop", "desktop"}, {"unknown"}, {"tor-socks5", "cloudflare-warp"}} {
 		if ValidateTools(tools) == nil {
 			t.Fatalf("accepted invalid tools: %v", tools)
 		}

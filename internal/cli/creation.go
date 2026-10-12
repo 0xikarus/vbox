@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,6 +44,15 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 	var profiles []creationProfileFields
 	roleFields := map[string]*formField{}
 	tools := toolFields(request.Tools)
+	proxy := &formField{Label: "Proxy / IP", Value: "Direct connection", Choices: []string{"Direct connection", "Tor SOCKS5 · 127.0.0.1:9050", "Cloudflare WARP · 127.0.0.1:40000"}}
+	for _, tool := range request.Tools {
+		if tool == "tor-socks5" {
+			proxy.Value = proxy.Choices[1]
+		} else if tool == "cloudflare-warp" {
+			proxy.Value = proxy.Choices[2]
+		}
+	}
+	tools = slices.DeleteFunc(tools, func(field *formField) bool { return field.Label == "tor-socks5" || field.Label == "cloudflare-warp" })
 	resolution := &formField{Label: "Desktop resolution", Value: request.DesktopResolution, Choices: []string{v1.DefaultDesktopResolution, "1280x720"}}
 	if resolution.Value == "" {
 		resolution.Value = v1.DefaultDesktopResolution
@@ -141,6 +151,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			}
 		}
 		fields = append(fields, tools...)
+		fields = append(fields, proxy)
 		fields = append(fields, setup)
 		fields = append(fields, startup, after)
 	}
@@ -156,6 +167,12 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 		}
 		if dialog {
 			request.Tools = selectedTools(tools)
+			switch proxy.Value {
+			case proxy.Choices[1]:
+				request.Tools = append(request.Tools, "tor-socks5")
+			case proxy.Choices[2]:
+				request.Tools = append(request.Tools, "cloudflare-warp")
+			}
 			request.DesktopResolution = resolution.Value
 			request.SetupScript = setup.Value
 			p := providerChoices[providerField.Value]

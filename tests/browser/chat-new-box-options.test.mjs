@@ -16,7 +16,8 @@ const tools=[
  {id:'desktop',name:'Enable desktop',description:'Browser and desktop'},
  {id:'foundry',name:'Foundry',description:'forge and cast'},
  {id:'blender',name:'Blender',description:'3D tools'},
- {id:'cloudflare-warp',name:'Cloudflare WARP',description:'Install client only'},
+ {id:'tor-socks5',name:'Tor SOCKS5',description:'Local proxy'},
+ {id:'cloudflare-warp',name:'Cloudflare WARP',description:'Local proxy'},
 ];
 const providers=[{provider:'shared-worker',name:'primary'},{provider:'railway',name:'cloud'}];
 
@@ -72,7 +73,8 @@ test('New box loads saved accounts and tools when the default provider is unset'
     await page.waitForFunction(()=>document.querySelector('#create-tools label')?.textContent.includes('Foundry'));
     assert.ok(['/v1/login-profiles','/v1/tool-presets','/v1/provider-credentials','/v1/controller-defaults'].every(path=>requests.includes(path)));
     assert.equal(await page.$$eval('.create-profile-option',nodes=>nodes.length),3,'None plus two Claude accounts');
-    assert.deepEqual(await page.$$eval('#create-tools label',nodes=>nodes.map(node=>node.textContent.trim())),['Foundry','Blender','Cloudflare WARP']);
+    assert.deepEqual(await page.$$eval('#create-tools label',nodes=>nodes.map(node=>node.textContent.trim())),['Foundry','Blender']);
+    assert.deepEqual(await page.$eval('#create-proxy',select=>[...select.options].filter(option=>!option.disabled).map(option=>option.value)),['','tor-socks5','cloudflare-warp']);
     assert.deepEqual(await page.$eval('select[name="loginProfile"]',select=>[...select.options].map(option=>option.textContent)),['None','Work Claude','Personal Claude']);
     await page.$eval('.create-profile-option[data-profile*="Personal Claude"]',button=>button.click());
     assert.match(await page.$eval('select[name="loginProfile"]',select=>select.value),/Personal Claude/);
@@ -91,7 +93,7 @@ test('New box loads saved accounts and tools when the default provider is unset'
      }
      await page.select('#create-pool','0');
 	 await page.select('#create-box select[name="desktopResolution"]','1280x720');
-	 await page.$eval('#create-tools input[value="cloudflare-warp"]',input=>{input.checked=true;input.dispatchEvent(new Event('change',{bubbles:true}))});
+	 await page.select('#create-proxy','tor-socks5');
      assert.match(await page.$eval('#new-box-summary',node=>node.textContent),/shared-worker\/primary/);
      await page.$eval('#create-box input[name="name"]',input=>{input.value='new-box';input.dispatchEvent(new Event('input',{bubbles:true}))});
      await page.click('#create-box-submit');
@@ -99,7 +101,7 @@ test('New box loads saved accounts and tools when the default provider is unset'
      assert.equal(creations[0].provider,'shared-worker');
      assert.equal(creations[0].providerCredential,'primary');
 	 assert.equal(creations[0].desktopResolution,'1280x720');
-	 assert.ok(creations[0].tools.includes('cloudflare-warp'));
+	 assert.ok(creations[0].tools.includes('tor-socks5'));
     }else{
      assert.equal(status,'Choose a default provider in Providers.');
      assert.equal(await page.$eval('#create-provider-status a',link=>link.getAttribute('href')),'/#providers');
@@ -123,7 +125,7 @@ test('New box reports failed and empty sections without hiding other options',as
     await page.click('#new-box');
     await page.waitForFunction(()=>document.querySelector('#create-pool').options.length>0);
     assert.equal(await page.$$eval('.create-profile-option',nodes=>nodes.length),failedPath==='/v1/login-profiles'||failedPath==='empty'?0:3);
-    assert.equal(await page.$$eval('#create-tools label',nodes=>nodes.length),failedPath==='/v1/tool-presets'||failedPath==='empty'?0:3);
+    assert.equal(await page.$$eval('#create-tools label',nodes=>nodes.length),failedPath==='/v1/tool-presets'||failedPath==='empty'?0:2);
     const status=await page.evaluate(()=>({logins:document.querySelector('#profile-choices-status').textContent,tools:document.querySelector('#create-tools-status').textContent,instructions:document.querySelector('#create-instructions-status').textContent,provider:document.querySelector('#create-provider-status').textContent}));
     if(failedPath==='/v1/login-profiles')assert.match(status.logins,/Could not load saved logins/);
     if(failedPath==='/v1/tool-presets'){
