@@ -75,6 +75,15 @@ func RestoreToolSetup(ctx context.Context, home string, progress io.Writer) erro
 	if err := restoreBlender(ctx, home, progress); err != nil {
 		return err
 	}
+	if marker, err := warpMarker(home); err != nil {
+		return err
+	} else if _, err := os.Stat(marker); err == nil {
+		if err := restoreWARP(ctx, home, progress); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	path, err := toolSetupPath(home)
 	if err != nil {
 		return err

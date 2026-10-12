@@ -137,7 +137,7 @@ paths:
                 name: {type: string}
                 agent: {enum: [codex, claude, opencode]}
                 diskGiB: {type: integer, default: 10}
-                tools: {type: array, uniqueItems: true, maxItems: 3, items: {enum: [foundry, blender, desktop]}}
+                tools: {type: array, uniqueItems: true, maxItems: 4, items: {enum: [foundry, blender, desktop, cloudflare-warp]}}
                 slotId: {type: string, format: uuid, description: Exact available worker slot and pool; omission prefers the creator's pool then tries other pools}
                 instructions: {type: string, maxLength: 65536}
                 loginProfiles: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/LoginProfileRef'}}
@@ -1062,7 +1062,7 @@ components:
       type: object
       required: [id, name, version, description]
       properties:
-        id: {enum: [foundry, blender, desktop]}
+        id: {enum: [foundry, blender, desktop, cloudflare-warp]}
         name: {type: string}
         version: {type: string}
         description: {type: string}
@@ -1178,6 +1178,8 @@ components:
           description: Owner-only selection of one agent profile and optionally one GitHub profile; an agent profile application also selects the box harness; omitted means no saved credentials provisioned
           items: {$ref: '#/components/schemas/LoginProfileRef'}
         diskGiB: {type: integer, format: int64, default: 10}
+        desktopResolution: {enum: [1024x640, 1280x720], default: 1024x640, description: Desktop screen size selected at creation and retained across hibernation.}
+        tools: {type: array, uniqueItems: true, items: {enum: [desktop, foundry, blender, cloudflare-warp]}, description: Cloudflare WARP installs its client only; it does not register or connect.}
         volumeId: {type: string, description: Owner-only import; must be paired with volumeName.}
         volumeName: {type: string, description: Owner-only import; must be paired with volumeId.}
         allocateWhenReady: {type: boolean}

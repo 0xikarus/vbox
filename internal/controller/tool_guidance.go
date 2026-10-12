@@ -28,6 +28,9 @@ func newBoxToolGuidance(tools []string) string {
 	if selected["foundry"] {
 		lines = append(lines, "- Foundry: `~/bin/forge`, `~/bin/cast`, `~/bin/anvil`, and `~/bin/chisel`.")
 	}
+	if selected["cloudflare-warp"] {
+		lines = append(lines, "- Cloudflare WARP: `warp-cli` is installed but not registered or connected. Connecting changes networking and requires suitable worker permissions and Cloudflare edge connectivity.")
+	}
 	if len(lines) == 0 {
 		return ""
 	}

@@ -317,6 +317,15 @@ func (s *Server) finishLogicalBoxCreationActive(ctx context.Context, creation lo
 				return fail(fmt.Errorf("tool installation failed: %s", strings.TrimSpace(installed.Stderr)))
 			}
 		}
+		if creation.Request.DesktopResolution != "" && creation.Request.DesktopResolution != v1.DefaultDesktopResolution {
+			configured, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "desktop-resolution", creation.Request.DesktopResolution}, provider.ExecOptions{})
+			if err != nil {
+				return fail(fmt.Errorf("configure desktop resolution: %w", err))
+			}
+			if configured.ExitCode != 0 {
+				return fail(fmt.Errorf("configure desktop resolution: %s", strings.TrimSpace(configured.Stderr)))
+			}
+		}
 		if strings.TrimSpace(creation.Request.SetupScript) != "" {
 			if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-installing-tools"); err != nil {
 				return fail(err)

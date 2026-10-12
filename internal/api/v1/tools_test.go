@@ -3,7 +3,7 @@ package v1
 import "testing"
 
 func TestBlenderPreset(t *testing.T) {
-	if err := ValidateTools([]string{"desktop", "foundry", "blender"}); err != nil {
+	if err := ValidateTools([]string{"desktop", "foundry", "blender", "cloudflare-warp"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, tools := range [][]string{{"blender", "blender"}, {"desktop", "desktop"}, {"unknown"}} {

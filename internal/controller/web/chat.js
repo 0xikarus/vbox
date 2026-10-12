@@ -3797,6 +3797,7 @@ function pairTileStatus(tile,mode,label){
      if(pool)rows.push(['Pool',pool.label]);
     }
     if(!$('#create-memory-settings').hidden)rows.push(['RAM / swap',(f.memoryGiB?.value||'2')+' / '+(f.swapGiB?.value||'1')+' GiB']);
+	if(f.desktopResolution?.value)rows.push(['Desktop',f.desktopResolution.value.replace('x',' × ')]);
     return rows;
    }
    return [];
@@ -4019,7 +4020,7 @@ function pairTileStatus(tile,mode,label){
   const githubProfile=createForm.elements.githubProfile?.value;
   if(githubProfile)loginProfiles.push(JSON.parse(githubProfile));
   const setupScript=(createForm.elements.setupScript?.value||'').trim();
-  const body={name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true};
+  const body={name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,desktopResolution:f.desktopResolution.value,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true};
   const poolIndex=(f.pool.value||createForm.dataset.autoPool||'');
   if(poolIndex!==''){const pool=JSON.parse(createForm.dataset.pools||'[]')[Number(poolIndex)];if(pool){body.provider=pool.provider;body.providerCredential=pool.providerCredential||''}}
   if(!body.provider){$('#new-box-status').textContent='Choose a provider in Providers before creating a box.';submit.disabled=false;return}

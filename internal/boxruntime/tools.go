@@ -42,6 +42,8 @@ func InstallTools(ctx context.Context, home string, tools []string, progress io.
 			err = installFoundry(ctx, home, progress)
 		case "blender":
 			err = configureBlender(ctx, home, progress)
+		case "cloudflare-warp":
+			err = installWARP(ctx, home, progress)
 		}
 		if err != nil {
 			return err

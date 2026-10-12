@@ -67,6 +67,8 @@ cleanup to these boxes.
 | Imported-profile usage polling and cached owner view | `internal/controller/profile_usage.go`, `usage_probe.py`, `profile_usage_snapshots` in `schema.sql`, `GET /v1/profile-usage`, `POST /v1/profile-usage/refresh` |
 | Reusable browser profile import | `internal/cli/chromium_profiles.go`, `browser_export.go`, `browser_export_extension/`, `internal/controller/browser_profiles.go`, `internal/browser/state.go` |
 
+New box creation stores `desktopResolution` (1024x640 or 1280x720) in the pending request, writes it into the volume before detach, and desktop startup and input use that same retained value. The `cloudflare-warp` tool preset installs Cloudflare's signed Debian/Ubuntu package and retains a marker so restore reinstalls the client. It never registers or connects WARP; shared-worker containers have no `NET_ADMIN`, and UDP handshakes to Cloudflare can be blocked by hosting networks.
+
 `vbox profiles upload` discovers local Chrome/Chromium profiles and shows their
 paths. The bundled extension exports cookies and open-tab localStorage through
 a one-use loopback bridge into the CLI. The controller seals reusable browser

@@ -25,7 +25,7 @@ before(async()=>{
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/browser-session' && ['POST','DELETE'].includes(req.method)){res.statusCode=204;return res.end()}
   const values={
-   '/v1/tool-presets':[{id:'desktop',name:'Enable desktop',version:'worker packages',description:'Desktop and browser'},{id:'foundry',name:'Foundry',version:'v1.8.1',description:'forge, cast, anvil, chisel'},{id:'blender',name:'Blender',version:'5.1.2',description:'3D editor + desktop + MCP'}],
+   '/v1/tool-presets':[{id:'desktop',name:'Enable desktop',version:'worker packages',description:'Desktop and browser'},{id:'foundry',name:'Foundry',version:'v1.8.1',description:'forge, cast, anvil, chisel'},{id:'blender',name:'Blender',version:'5.1.2',description:'3D editor + desktop + MCP'},{id:'cloudflare-warp',name:'Cloudflare WARP',version:'stable',description:'Install client only'}],
    '/v1/capabilities':{providerEdits:true,nativeAttach:true},
    '/v1/logical-boxes':[{id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude',roles:fixtureRoles.filter(role=>fixtureBoxRoleIds.includes(role.id)).map(({id,name})=>({id,name}))}],
    '/v1/logical-boxes/box-1':{id:'box-1',name:'helper ü',state:'running',roles:fixtureRoles.filter(role=>fixtureBoxRoleIds.includes(role.id)).map(({id,name})=>({id,name}))},
@@ -340,10 +340,16 @@ test('desktop is implicit in creation and Blender remains optional',async()=>{
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('#create-tools input[value=blender]');
  assert.equal(await page.$('#create-tools input[value=desktop]'),null);
+ assert.ok(await page.$('#create-tools input[value=cloudflare-warp]'));
+ assert.equal(await page.$eval('#create select[name=desktopResolution]',select=>select.value),'1024x640');
+ await page.select('#create select[name=desktopResolution]','1280x720');
+ await page.click('#create-tools input[value=cloudflare-warp]');
  await page.type('#create input[name=name]','disposable-desktop-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
  await page.$eval('#create',form=>form.requestSubmit());await created;
- assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.tools,['desktop']);
+ const request=requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body;
+ assert.deepEqual(request.tools,['desktop','cloudflare-warp']);
+ assert.equal(request.desktopResolution,'1280x720');
  await page.close();
 });
 test('new box card stays collapsed until its header is used',async()=>{
@@ -594,7 +600,7 @@ test('table previews stay fixed size and tool choices stay compact',async()=>{
   });
   assert.equal(result.after.width,result.before.width,'the table stays within its available width');
   assert.ok(Math.abs(result.after.height-result.before.height)<3,'long previews do not grow the row');
-  assert.ok(result.toolHeight<70);assert.equal(result.customCollapsed,true);await page.close();
+  assert.ok(result.toolHeight<70,`tool height at ${width}px: ${result.toolHeight}`);assert.equal(result.customCollapsed,true);await page.close();
  }
 });
 test('rows and the create form lay out in reading order without overlapping values',async()=>{

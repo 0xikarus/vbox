@@ -40,6 +40,9 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	if err := v1.ValidateTools(request.Tools); err != nil {
 		return creation, err
 	}
+	if err := v1.ValidateDesktopResolution(request.DesktopResolution); err != nil {
+		return creation, err
+	}
 	if err := provider.ValidateName(request.Name); err != nil {
 		return creation, err
 	}
@@ -144,7 +147,7 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	fence := boxruntime.ID("create_fence_")
 	leaseOwner := "create:" + id
 	expires := time.Now().UTC().Add(10 * time.Minute)
-	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "memoryGiB": request.MemoryGiB, "swapGiB": request.SwapGiB, "region": request.Region, "creationSlotId": request.SlotID, "allocateWhenReady": request.ShouldAllocateWhenReady(), "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript, "agentCliVersion": creation.AgentCLIVersion})
+	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "memoryGiB": request.MemoryGiB, "swapGiB": request.SwapGiB, "desktopResolution": request.DesktopResolution, "region": request.Region, "creationSlotId": request.SlotID, "allocateWhenReady": request.ShouldAllocateWhenReady(), "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript, "agentCliVersion": creation.AgentCLIVersion})
 	if err != nil {
 		return creation, err
 	}
@@ -355,6 +358,7 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, SlotID: value.slotID, DiskGiB: value.disk, MemoryGiB: stored.MemoryGiB, SwapGiB: stored.SwapGiB, AllocateWhenReady: &allocate, AllocationRequestKey: value.allocationKey}, AgentCLIVersion: stored.AgentCLIVersion, Assignment: assignment})
 		result[len(result)-1].Request.LoginProfiles = stored.LoginProfiles
 		result[len(result)-1].Request.Tools = stored.Tools
+		result[len(result)-1].Request.DesktopResolution = stored.DesktopResolution
 		result[len(result)-1].Request.SetupScript = stored.SetupScript
 	}
 	return result, nil
