@@ -62,6 +62,8 @@ You need a controller with PostgreSQL and HTTPS, plus at least one worker. Runni
 2. Register a worker with the [Linux VPS guide](docs/LINUX-VPS-SETUP.md) or [another provider](docs/PROVIDERS.md).
 3. Open the controller, sign in, add an agent profile, and create a box. Chat, desktop, and TMUX are available in its browser workspace.
 
+During box creation, choose the desktop size (1024 × 640 by default or 1280 × 720). The optional Cloudflare WARP preset installs `warp-cli` and `warp-svc` in the box and reinstalls them after hibernation. It does not register or connect WARP. A connection needs suitable worker network permissions and working access to Cloudflare's edge; workers that block its UDP handshake cannot establish a WARP tunnel.
+
 For terminal access on Linux or macOS, install Git, OpenSSH, and Go 1.26 or Docker, then:
 
 ```bash

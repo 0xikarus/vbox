@@ -32,6 +32,7 @@
 <label class="field">Name <input name="name" required placeholder="my-box"></label>
 <label class="field">Start with <select name="defaultAgent"><option value="claude">claude</option><option value="codex">codex</option><option value="opencode">opencode</option><option value="shell">shell</option></select></label>
 <label class="field" >Disk (GiB) <input name="disk" type="number" min="1" value="10"></label>
+<label class="field">Desktop resolution <select name="desktopResolution"><option value="1024x640">1024 × 640 (default)</option><option value="1280x720">1280 × 720</option></select></label>
 <span id="create-memory-settings" hidden><label class="field">RAM GiB <input name="memoryGiB" type="number" min="1" max="8" value="2"></label><label class="field">swap GiB <input name="swapGiB" type="number" min="0" max="4" value="1"></label></span>
 </div>
 <details id="create-placement"><summary>Placement: automatic (override)</summary><label class="field" >Worker pool <select id="create-pool" name="pool"><option value="">Automatic (available capacity)</option></select></label><p class="hint">Uses available capacity in the least occupied pool. If none is free, queues in the controller default pool. Override to compare workers.</p></details>

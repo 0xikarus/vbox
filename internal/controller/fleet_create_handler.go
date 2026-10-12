@@ -24,13 +24,17 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 400, err)
 		return
 	}
+	if err := v1.ValidateDesktopResolution(request.DesktopResolution); err != nil {
+		writeError(w, 400, err)
+		return
+	}
 	if request.Instructions != nil {
 		if err := request.Instructions.Validate(); err != nil {
 			writeError(w, 400, err)
 			return
 		}
 	}
-	if (request.VolumeID != "" || request.VolumeName != "") && (len(request.Tools) > 0 || request.SetupScript != "") {
+	if (request.VolumeID != "" || request.VolumeName != "") && (len(request.Tools) > 0 || request.SetupScript != "" || request.DesktopResolution != v1.DefaultDesktopResolution) {
 		writeError(w, 400, fmt.Errorf("install tools after importing and resuming a volume; import does not initialize it"))
 		return
 	}

@@ -130,7 +130,7 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 			t.Fatalf("instructions schema=%#v", instructions)
 		}
 		presets, ok := properties["tools"].(map[string]any)
-		if !ok || presets["type"] != "array" || presets["maxItems"] != 3 {
+		if !ok || presets["type"] != "array" || presets["maxItems"] != 4 {
 			t.Fatalf("tool preset schema=%#v", properties["tools"])
 		}
 		if properties["loginProfiles"] == nil || properties["roleIds"] == nil || properties["slotId"] == nil {

@@ -67,11 +67,11 @@ func TestCreationDialogDefersUploadsAndRetainsThemOnRetry(t *testing.T) {
 			a.Out = &bytes.Buffer{}
 			a.Environ = map[string]string{"HOME": home}
 			a.IsTerminal = func() bool { return true }
-			keys := strings.Repeat("\t", 4) + "\r\x1b[B\r" // select Custom local path… from list, no write yet
+			keys := strings.Repeat("\t", 5) + "\r\x1b[B\r" // select Custom local path… from list, no write yet
 			if cancel {
 				keys += "\x03"
 			} else {
-				keys += strings.Repeat("\t", 12) + "\r\r"
+				keys += strings.Repeat("\t", 13) + "\r\r"
 			}
 			a.In = strings.NewReader(keys)
 			err := a.createWorkspace(context.Background(), config.Context{Controller: server.URL}, "test", v1.CreateLogicalBoxRequest{Name: "test", DiskGiB: 10, DefaultAgent: "shell", AllocationRequestKey: "unique"}, creationHibernated, "", true, false, false)

@@ -43,6 +43,10 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 	var profiles []creationProfileFields
 	roleFields := map[string]*formField{}
 	tools := toolFields(request.Tools)
+	resolution := &formField{Label: "Desktop resolution", Value: request.DesktopResolution, Choices: []string{v1.DefaultDesktopResolution, "1280x720"}}
+	if resolution.Value == "" {
+		resolution.Value = v1.DefaultDesktopResolution
+	}
 	setup := &formField{Label: "Custom install commands (optional)", Value: request.SetupScript}
 	name := &formField{Label: "Name", Value: request.Name}
 	disk := &formField{Label: "Disk GiB", Value: strconv.FormatInt(request.DiskGiB, 10)}
@@ -96,7 +100,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 				return fmt.Errorf("worker pool %s/%s is not configured; see vbox pools list", request.Provider, request.ProviderCredential)
 			}
 		}
-		fields = append(fields, disk)
+		fields = append(fields, disk, resolution)
 		var roles []v1.AgentRole
 		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/agent-roles", nil, &roles, nil); err != nil {
 			return err
@@ -152,6 +156,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 		}
 		if dialog {
 			request.Tools = selectedTools(tools)
+			request.DesktopResolution = resolution.Value
 			request.SetupScript = setup.Value
 			p := providerChoices[providerField.Value]
 			request.Provider, request.ProviderCredential = p.Provider, p.Name

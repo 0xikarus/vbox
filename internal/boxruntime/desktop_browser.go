@@ -31,7 +31,8 @@ func RunDesktopBrowser(ctx context.Context) error {
 }
 
 func desktopChromiumArgs(profile string, noSandbox bool) []string {
-	args := []string{"--user-data-dir=" + profile, "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check", "--window-size=960,600", "--disable-gpu"}
+	width, height := desktopDimensions()
+	args := []string{"--user-data-dir=" + profile, "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check", fmt.Sprintf("--window-size=%d,%d", width-64, height-40), "--disable-gpu"}
 	// Dedicated worker containers can use their container boundary when their
 	// host disallows Chromium's nested user/PID namespaces. An explicit false
 	// keeps Chromium's sandbox enabled for hosts that support it.

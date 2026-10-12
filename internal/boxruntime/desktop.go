@@ -225,7 +225,8 @@ func RunDesktop(ctx context.Context, assignment string) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	vnc := exec.CommandContext(ctx, "Xtigervnc", DesktopDisplay(), "-geometry", fmt.Sprintf("%dx%d", defaultDesktopWidth, defaultDesktopHeight), "-depth", "24", "-rfbport", "-1", "-rfbunixpath", socket, "-rfbunixmode", "0600", "-SecurityTypes", "None", "-AlwaysShared", "-nolisten", "tcp")
+	width, height := desktopDimensions()
+	vnc := exec.CommandContext(ctx, "Xtigervnc", DesktopDisplay(), "-geometry", fmt.Sprintf("%dx%d", width, height), "-depth", "24", "-rfbport", "-1", "-rfbunixpath", socket, "-rfbunixmode", "0600", "-SecurityTypes", "None", "-AlwaysShared", "-nolisten", "tcp")
 	// This process runs inside the vmbox-desktop tmux session, which tmux
 	// destroys as soon as it exits. Anything Xtigervnc wrote to the pane dies
 	// with it, so its diagnosis is captured here and returned instead.

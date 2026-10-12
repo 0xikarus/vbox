@@ -43,7 +43,8 @@ func desktopInputCommand(ctx context.Context, stdin string, args ...string) ([]b
 }
 
 func validateDesktopAction(a DesktopAction) error {
-	point := func(x, y int) bool { return x >= 0 && x < defaultDesktopWidth && y >= 0 && y < defaultDesktopHeight }
+	width, height := desktopDimensions()
+	point := func(x, y int) bool { return x >= 0 && x < width && y >= 0 && y < height }
 	switch a.Action {
 	case "pause", "resume":
 		return nil
@@ -190,7 +191,8 @@ func DesktopInput(ctx context.Context, assignment string, a DesktopAction) error
 		if !okX || !okY {
 			return fmt.Errorf("cursor position unavailable")
 		}
-		path, err := desktop.Movement(desktop.Point{X: x, Y: y}, target, defaultDesktopWidth, defaultDesktopHeight, bend)
+		width, height := desktopDimensions()
+		path, err := desktop.Movement(desktop.Point{X: x, Y: y}, target, width, height, bend)
 		if err != nil {
 			return err
 		}

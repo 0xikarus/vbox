@@ -9,6 +9,7 @@ import "strings"
 type CreateLogicalBoxRequest struct {
 	SetupScript        string            `json:"setupScript,omitempty"`
 	Tools              []string          `json:"tools,omitempty"`
+	DesktopResolution  string            `json:"desktopResolution,omitempty"`
 	LoginProfiles      []LoginProfileRef `json:"loginProfiles,omitempty"`
 	Name               string            `json:"name"`
 	Provider           string            `json:"provider"`
@@ -48,6 +49,9 @@ func (r *CreateLogicalBoxRequest) Normalize() {
 	}
 	if r.DiskGiB <= 0 {
 		r.DiskGiB = 10
+	}
+	if r.DesktopResolution == "" {
+		r.DesktopResolution = "1024x640"
 	}
 	if r.MemoryGiB != 0 || r.SwapGiB != nil {
 		if r.MemoryGiB == 0 {
