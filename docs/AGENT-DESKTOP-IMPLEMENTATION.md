@@ -104,8 +104,10 @@ Version 1 import example, with synthetic values:
 }
 ```
 
-Origins must be exact HTTPS origins. Cookies are exact-host and Secure; no domain
-cookies. `expires` is optional Unix seconds. The import limit is 1 MiB / 32 origins.
+Origins must be exact HTTPS origins. Version 1 cookies are exact-host and Secure;
+version 2 also supports domain cookies exported by the CLI browser helper.
+`expires` is optional Unix seconds. The import limit is 8 MiB; version 1 allows
+32 origins and version 2 allows 512.
 IndexedDB, sessionStorage, unknown fields and unsupported formats are rejected.
 Multi-origin application is not atomic: an error reports possible partial state
 and retains the source for explicit retry. Native browser profile persistence also

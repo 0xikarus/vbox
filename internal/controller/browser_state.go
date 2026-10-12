@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,7 +26,7 @@ func (s *Server) browserStateImports(w http.ResponseWriter, r *http.Request, p P
 		return
 	}
 	if r.Method == "GET" {
-		rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id::text,origins,status,created_at FROM browser_state_imports WHERE account_id=$1 AND box_id=$2 ORDER BY created_at`, p.AccountID, box.ID)
+		rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id::text,origins,status,source_name,created_at FROM browser_state_imports WHERE account_id=$1 AND box_id=$2 ORDER BY created_at`, p.AccountID, box.ID)
 		if err != nil {
 			writeError(w, 500, fmt.Errorf("imports unavailable"))
 			return
@@ -34,13 +35,18 @@ func (s *Server) browserStateImports(w http.ResponseWriter, r *http.Request, p P
 		values := []map[string]any{}
 		for rows.Next() {
 			var id, status string
+			var sourceName sql.NullString
 			var origins json.RawMessage
 			var created time.Time
-			if rows.Scan(&id, &origins, &status, &created) != nil {
+			if rows.Scan(&id, &origins, &status, &sourceName, &created) != nil {
 				writeError(w, 500, fmt.Errorf("imports unavailable"))
 				return
 			}
-			values = append(values, map[string]any{"id": id, "origins": origins, "status": status, "createdAt": created})
+			entry := map[string]any{"id": id, "origins": origins, "status": status, "createdAt": created}
+			if sourceName.Valid {
+				entry["sourceName"] = sourceName.String
+			}
+			values = append(values, entry)
 		}
 		if rows.Err() != nil {
 			writeError(w, 500, fmt.Errorf("imports unavailable"))
@@ -51,7 +57,7 @@ func (s *Server) browserStateImports(w http.ResponseWriter, r *http.Request, p P
 	}
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, browser.MaxStateBytes))
 	if err != nil {
-		writeError(w, 400, fmt.Errorf("browser state exceeds 1 MiB"))
+		writeError(w, 400, fmt.Errorf("browser state exceeds 8 MiB"))
 		return
 	}
 	defer clear(data)

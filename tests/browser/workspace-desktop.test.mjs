@@ -51,6 +51,9 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;tags=JSON.parse(body).tags}
    return res.end(JSON.stringify({tags}));
   }
+  else if(path==='/v1/browser-profiles')data=[{name:'chromium-default',sourceBrowser:'chromium',sourcePath:'/synthetic/Chromium/Default',origins:['https://example.test']}];
+  else if(path==='/v1/logical-boxes/test/browser/imports')data=[];
+  else if(path==='/v1/logical-boxes/test/browser/profiles/chromium-default/attach'&&method==='POST')data={id:'synthetic-import',status:'pending'};
   else if(path.endsWith('/resources'))data={slotId:'slot-test',assignmentGeneration:7,resources:{cpu:2,memoryMiB:12288},message:'Limits submitted. No restart requested.'};
   else if(path.endsWith('/connection'))data={connection:{transport:connectionTransport,endpoint:connectionTransport==='openssh'?'instance@ssh.railway.com':'service-id',metadata:{vmboxRegion:'europe-west4'}}};
   else if(path.endsWith('/allocate'))data={state:'failed',failureReason:'Fixture stopped box'};
@@ -69,6 +72,16 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    assert.equal(await p.$('#agent-message-form'),null);
    assert.equal(await p.$eval('.workspace-top-chat',element=>element.getAttribute('href')),'/chat#box=test');
    assert.equal(requests.some(request=>request.includes('/messages')),false);
+   await p.close();
+  });
+  await t.test('saved browser profile can be attached from Browser sessions',async()=>{
+   const p=await page();await terminalReady(p);
+   await p.click('#browser-imports summary');await p.click('#load-browser-imports');
+   await p.waitForFunction(()=>document.querySelector('#saved-browser-profile option[value="chromium-default"]'));
+   assert.match(await p.$eval('#saved-browser-profile',e=>e.textContent),/\/synthetic\/Chromium\/Default/);
+   await p.select('#saved-browser-profile','chromium-default');await p.click('#attach-browser-profile');
+   await p.waitForFunction(()=>document.querySelector('#browser-import-status').textContent.includes('Saved profile attached'));
+   assert.equal(requests.includes('POST /v1/logical-boxes/test/browser/profiles/chromium-default/attach'),true);
    await p.close();
   });
   await t.test('desktop reconnect requests reuse regardless of default agent',async()=>{

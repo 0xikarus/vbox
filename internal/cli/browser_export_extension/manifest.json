@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "vbox browser session export",
+  "version": "1.0.0",
+  "description": "Export selected local browser sessions to the vbox CLI on this computer.",
+  "permissions": ["cookies", "tabs", "scripting"],
+  "host_permissions": ["https://*/*", "http://127.0.0.1/*"],
+  "background": {"service_worker": "background.js"},
+  "content_scripts": [{
+    "matches": ["http://127.0.0.1/*"],
+    "js": ["bridge.js"],
+    "run_at": "document_idle"
+  }]
+}

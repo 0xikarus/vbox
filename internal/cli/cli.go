@@ -39,6 +39,7 @@ type App struct {
 	authReplacements     map[string]string
 	authPrompt           func(string) (string, error)
 	openCodeAPIProviders []openCodeAPIProvider
+	browserExport        func(context.Context, localBrowserProfile, func(string)) ([]byte, error)
 }
 
 type stringList []string
@@ -635,6 +636,7 @@ func (a *App) requestOnce(ctx context.Context, c config.Context, token, method, 
 		if err != nil {
 			return 0, err
 		}
+		defer clear(data)
 		body = bytes.NewReader(data)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.Controller, "/")+path, body)
@@ -679,7 +681,9 @@ func (a *App) usage() {
   vbox ls                      List boxes
   vbox whoami                  Show controller account, user and role
   vbox logout                  Clear this context's saved controller token
-  vbox profiles upload         Upload local logins without creating a box
+  vbox profiles upload         Upload local agent and browser profiles
+  vbox profiles list-browsers  List saved Chromium session profiles
+  vbox profiles attach-browser NAME BOX [--apply]
   vbox status BOX              Show its current state
   vbox hibernate BOX           Release compute; keep the workspace
   vbox delete BOX              Permanently delete box and files (confirmation required)

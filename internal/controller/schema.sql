@@ -59,6 +59,17 @@ CREATE TABLE IF NOT EXISTS login_profiles (
   created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(account_id, application, name)
 );
+CREATE TABLE IF NOT EXISTS browser_profiles (
+ account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ name text NOT NULL,
+ source_browser text NOT NULL,
+ source_path text NOT NULL,
+ encrypted_value text NOT NULL,
+ origins jsonb NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(account_id, name)
+);
 CREATE TABLE IF NOT EXISTS ai_helper_settings (
   account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   encrypted_key text NOT NULL,
@@ -772,9 +783,11 @@ CREATE TABLE IF NOT EXISTS browser_state_imports (
  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
  encrypted_value text NOT NULL,
  origins jsonb NOT NULL,
+ source_name text,
  status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','applied')),
  created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE browser_state_imports ADD COLUMN IF NOT EXISTS source_name text;
 
 CREATE TABLE IF NOT EXISTS box_notes (
  id uuid PRIMARY KEY,

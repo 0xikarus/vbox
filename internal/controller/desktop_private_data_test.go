@@ -134,6 +134,51 @@ func testDesktopPrivateDataRoutes(t *testing.T, store *Store, owner, other Princ
 		t.Fatal("browser state encryption failed")
 	}
 	clear(plain)
+	profileState := `{"version":2,"origins":[{"origin":"https://example.test","cookies":[{"name":"session","value":"synthetic-browser-private","path":"/","domain":".example.test"}]}]}`
+	profileBody, _ := json.Marshal(map[string]any{"sourceBrowser": "chrome", "sourcePath": `C:\Users\fixture\Chrome\User Data\Default`, "state": json.RawMessage(profileState)})
+	profileRequest := httptest.NewRequest("PUT", "/", strings.NewReader(string(profileBody)))
+	profileRequest.SetPathValue("name", "disposable-browser-profile")
+	profileResponse := httptest.NewRecorder()
+	server.saveBrowserProfile(profileResponse, profileRequest, owner)
+	if profileResponse.Code != 201 || strings.Contains(profileResponse.Body.String(), "synthetic-browser-private") {
+		t.Fatal("private browser profile save failed or exposed state")
+	}
+	var browserCipher string
+	if err := store.DB.QueryRow(`SELECT encrypted_value FROM browser_profiles WHERE account_id=$1 AND name='disposable-browser-profile'`, owner.AccountID).Scan(&browserCipher); err != nil {
+		t.Fatal(err)
+	}
+	profilePlain, err := store.Envelope.Open(browserProfileScope(owner.AccountID, "disposable-browser-profile"), browserCipher)
+	if err != nil || string(profilePlain) != profileState || strings.Contains(browserCipher, "synthetic-browser-private") {
+		t.Fatal("browser profile was not encrypted")
+	}
+	clear(profilePlain)
+	listResponse := httptest.NewRecorder()
+	server.listBrowserProfiles(listResponse, httptest.NewRequest("GET", "/", nil), owner)
+	if listResponse.Code != 200 || !strings.Contains(listResponse.Body.String(), "disposable-browser-profile") || strings.Contains(listResponse.Body.String(), "synthetic-browser-private") {
+		t.Fatal("browser profile metadata list failed or exposed state")
+	}
+	listResponse = httptest.NewRecorder()
+	server.listBrowserProfiles(listResponse, httptest.NewRequest("GET", "/", nil), other)
+	if listResponse.Code != 200 || strings.Contains(listResponse.Body.String(), "disposable-browser-profile") {
+		t.Fatal("cross-account browser profile list exposed metadata")
+	}
+	attachRequest := httptest.NewRequest("POST", "/", nil)
+	attachRequest.SetPathValue("id", box)
+	attachRequest.SetPathValue("name", "disposable-browser-profile")
+	attachResponse := httptest.NewRecorder()
+	server.attachBrowserProfile(attachResponse, attachRequest, other)
+	if attachResponse.Code != 404 {
+		t.Fatal("cross-account browser profile attached")
+	}
+	attachResponse = httptest.NewRecorder()
+	server.attachBrowserProfile(attachResponse, attachRequest, owner)
+	if attachResponse.Code != 201 || strings.Contains(attachResponse.Body.String(), "synthetic-browser-private") {
+		t.Fatal("saved browser profile attach failed or exposed state")
+	}
+	response = invoke(server.browserStateImports, "GET", "", "", owner)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"sourceName":"disposable-browser-profile"`) || strings.Contains(response.Body.String(), "synthetic-browser-private") {
+		t.Fatal("attached browser profile was not listed by name")
+	}
 	response = invoke(server.browserStateImports, "GET", "", "", other)
 	if response.Code != 404 {
 		t.Fatal("cross-account browser import listing accepted")

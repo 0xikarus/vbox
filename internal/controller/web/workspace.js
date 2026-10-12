@@ -421,9 +421,14 @@ if(importForm){
  const message=document.querySelector('#browser-import-status');
  const load=async()=>{
   try{
-   const values=await api(bp+'/browser/imports');const list=document.querySelector('#browser-import-list');list.replaceChildren();
+   const [values,profiles]=await Promise.all([api(bp+'/browser/imports'),api('/v1/browser-profiles')]);const list=document.querySelector('#browser-import-list');list.replaceChildren();
+   const selector=document.querySelector('#saved-browser-profile');const previous=selector.value;selector.replaceChildren();
+   const empty=document.createElement('option');empty.value='';empty.textContent=profiles.length?'Choose a saved profile':'No saved browser profiles';selector.append(empty);
+   for(const profile of profiles){const option=document.createElement('option');option.value=profile.name;option.textContent=profile.name+' · '+profile.sourceBrowser+' · '+profile.sourcePath;selector.append(option)}
+   if(profiles.some(profile=>profile.name===previous))selector.value=previous;
+   document.querySelector('#attach-browser-profile').disabled=!selector.value;
    for(const value of values){
-    const row=document.createElement('li');row.textContent=value.origins.join(', ')+' · '+value.status+' ';
+    const row=document.createElement('li');row.textContent=(value.sourceName?value.sourceName+' · ':'')+value.origins.join(', ')+' · '+value.status+' ';
     for(const [label,method,suffix]of [['Apply','POST','/apply'],['Remove saved import','DELETE','']]){
      const button=document.createElement('button');button.type='button';button.textContent=label;
      button.onclick=async()=>{button.disabled=true;try{await api(bp+'/browser/imports/'+encodeURIComponent(value.id)+suffix,method,undefined,{},75000);await load();message.textContent=method==='DELETE'?'Saved import removed.':'Browser state applied.'}catch(e){message.textContent=e.message;button.disabled=false}};row.append(button);
@@ -432,10 +437,17 @@ if(importForm){
    }
   }catch(e){message.textContent=e.message}
  };
+ const selector=document.querySelector('#saved-browser-profile');
+ selector.addEventListener('change',()=>{document.querySelector('#attach-browser-profile').disabled=!selector.value});
+ document.querySelector('#attach-browser-profile').onclick=async()=>{
+  if(!selector.value)return;const button=document.querySelector('#attach-browser-profile');button.disabled=true;
+  try{await api(bp+'/browser/profiles/'+encodeURIComponent(selector.value)+'/attach','POST');await load();message.textContent='Saved profile attached. Choose Apply on the new import when Chromium is running.'}
+  catch(e){message.textContent=e.message}finally{button.disabled=!selector.value}
+ };
  document.querySelector('#load-browser-imports').onclick=()=>void load();
  importForm.onsubmit=async event=>{
   event.preventDefault();const file=importForm.elements.state.files[0];if(!file)return;
-  if(file.size>1048576){message.textContent='State file must be at most 1 MiB.';return}
+  if(file.size>8388608){message.textContent='State file must be at most 8 MiB.';return}
   const button=importForm.querySelector('button');button.disabled=true;
   try{const data=JSON.parse(await file.text());await api(bp+'/browser/imports','POST',data);importForm.reset();await load();message.textContent='Private browser import saved.'}
   catch(e){message.textContent=e instanceof SyntaxError?'Invalid JSON state file.':e.message}

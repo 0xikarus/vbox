@@ -14,15 +14,13 @@ func (c *Client) ApplyState(ctx context.Context, state StateImport) error {
 	if err := state.Validate(); err != nil {
 		return err
 	}
+	cookies := make([]map[string]any, 0)
 	for _, site := range state.Origins {
-		if len(site.LocalStorage) > 0 {
-			if err := c.applyLocalStorage(ctx, site); err != nil {
-				return fmt.Errorf("browser storage import incomplete; earlier entries may have been applied")
-			}
-		}
-		cookies := make([]map[string]any, 0, len(site.Cookies))
 		for _, cookie := range site.Cookies {
 			value := map[string]any{"name": cookie.Name, "value": cookie.Value, "url": site.Origin + cookie.Path, "path": cookie.Path, "secure": true, "httpOnly": cookie.HTTPOnly}
+			if cookie.Domain != "" {
+				value["domain"] = cookie.Domain
+			}
 			if cookie.SameSite != "" {
 				value["sameSite"] = cookie.SameSite
 			}
@@ -31,9 +29,16 @@ func (c *Client) ApplyState(ctx context.Context, state StateImport) error {
 			}
 			cookies = append(cookies, value)
 		}
-		if len(cookies) > 0 {
-			if err := c.Call(ctx, "", "Storage.setCookies", map[string]any{"cookies": cookies}, nil); err != nil {
-				return fmt.Errorf("cookie import incomplete; earlier entries may have been applied")
+	}
+	if len(cookies) > 0 {
+		if err := c.Call(ctx, "", "Storage.setCookies", map[string]any{"cookies": cookies}, nil); err != nil {
+			return fmt.Errorf("cookie import incomplete; earlier entries may have been applied")
+		}
+	}
+	for _, site := range state.Origins {
+		if len(site.LocalStorage) > 0 {
+			if err := c.applyLocalStorage(ctx, site); err != nil {
+				return fmt.Errorf("browser storage import incomplete; earlier entries may have been applied")
 			}
 		}
 	}

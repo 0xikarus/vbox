@@ -84,6 +84,41 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 	if len(args) == 1 && args[0] == "upload" {
 		return a.uploadProfilesDialog(ctx, c, token)
 	}
+	if len(args) >= 3 && args[0] == "attach-browser" && len(args) <= 4 {
+		if len(args) == 4 && args[3] != "--apply" {
+			return fmt.Errorf("usage: vbox profiles attach-browser NAME BOX [--apply]")
+		}
+		var attached struct {
+			ID string `json:"id"`
+		}
+		path := "/v1/logical-boxes/" + url.PathEscape(args[2]) + "/browser/profiles/" + url.PathEscape(args[1]) + "/attach"
+		if _, err := a.request(ctx, c, token, http.MethodPost, path, nil, &attached, nil); err != nil {
+			return err
+		}
+		if len(args) == 4 {
+			apply := "/v1/logical-boxes/" + url.PathEscape(args[2]) + "/browser/imports/" + url.PathEscape(attached.ID) + "/apply"
+			if _, err := a.request(ctx, c, token, http.MethodPost, apply, nil, nil, nil); err != nil {
+				return fmt.Errorf("browser profile attached as import %s, but apply failed: %w", attached.ID, err)
+			}
+			fmt.Fprintf(a.Out, "Applied browser profile %s to %s.\n", args[1], args[2])
+			return nil
+		}
+		fmt.Fprintf(a.Out, "Attached browser profile %s to %s as import %s. Apply it in the box's Browser sessions panel.\n", args[1], args[2], attached.ID)
+		return nil
+	}
+	if len(args) > 0 && args[0] == "list-browsers" && (len(args) == 1 || len(args) == 2 && args[1] == "--json") {
+		var browsers []v1.BrowserProfile
+		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/browser-profiles", nil, &browsers, nil); err != nil {
+			return err
+		}
+		if len(args) == 2 {
+			return json.NewEncoder(a.Out).Encode(browsers)
+		}
+		for _, profile := range browsers {
+			fmt.Fprintf(a.Out, "browser/%s · %s · %s\n", tuiLabel(profile.SourceBrowser, 20), tuiLabel(profile.Name, 64), profile.SourcePath)
+		}
+		return nil
+	}
 	asJSON := len(args) > 0 && args[len(args)-1] == "--json"
 	if asJSON {
 		args = args[:len(args)-1]
@@ -99,16 +134,23 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 		if asJSON {
 			return json.NewEncoder(a.Out).Encode(profiles)
 		}
+		var browsers []v1.BrowserProfile
+		if status, err := a.request(ctx, c, token, http.MethodGet, "/v1/browser-profiles", nil, &browsers, nil); err != nil && status != http.StatusNotFound {
+			return err
+		}
 		if len(profiles) == 0 {
 			fmt.Fprintln(a.Out, "No saved login profiles. Use: vbox profiles save claude|codex|opencode NAME --from PATH, or profiles save github NAME --from HOST:USER")
 		}
 		for _, profile := range profiles {
 			fmt.Fprintf(a.Out, "%s · %s\n", tuiLabel(profile.Application, 30), tuiLabel(profile.Name, 64))
 		}
+		for _, profile := range browsers {
+			fmt.Fprintf(a.Out, "browser/%s · %s · %s\n", tuiLabel(profile.SourceBrowser, 20), tuiLabel(profile.Name, 64), profile.SourcePath)
+		}
 		return nil
 	}
 	if len(args) != 5 || args[0] != "save" || args[3] != "--from" {
-		return fmt.Errorf("usage: vbox profiles [list] [--json] | profiles save claude|codex|opencode NAME --from PATH | profiles save github NAME --from HOST:USER [--json]")
+		return fmt.Errorf("usage: vbox profiles upload | profiles [list] [--json] | profiles attach-browser NAME BOX [--apply] | profiles save claude|codex|opencode NAME --from PATH | profiles save github NAME --from HOST:USER [--json]")
 	}
 	profile, err := a.saveLocalLoginProfile(ctx, c, token, args[1], args[2], args[4])
 	if err != nil {

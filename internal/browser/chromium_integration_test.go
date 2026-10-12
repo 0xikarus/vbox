@@ -77,7 +77,10 @@ func TestChromiumStateAndPasswordIntegration(t *testing.T) {
 	}
 	client, cmd := start()
 	expiry := float64(time.Now().Add(time.Hour).Unix())
-	state := StateImport{Version: 1, Origins: []OriginState{{Origin: site.URL, Cookies: []StateCookie{{Name: "session", Value: "synthetic-cookie", Path: "/", HTTPOnly: true, Expires: &expiry}}, LocalStorage: []StorageEntry{{Name: "token", Value: "synthetic-storage"}}}}}
+	state := StateImport{Version: 2, Origins: []OriginState{
+		{Origin: site.URL, Cookies: []StateCookie{{Name: "session", Value: "synthetic-cookie", Path: "/", HTTPOnly: true, Expires: &expiry}}, LocalStorage: []StorageEntry{{Name: "token", Value: "synthetic-storage"}}},
+		{Origin: "https://example.test", Cookies: []StateCookie{{Name: "domain-session", Value: "synthetic-domain-cookie", Path: "/", Domain: ".example.test", HTTPOnly: true, Expires: &expiry}}},
+	}}
 	if err := client.ApplyState(ctx, state); err != nil {
 		t.Fatal(err)
 	}
@@ -93,14 +96,17 @@ func TestChromiumStateAndPasswordIntegration(t *testing.T) {
 	if err := client.Call(ctx, "", "Storage.getCookies", nil, &cookies); err != nil {
 		t.Fatal(err)
 	}
-	found := false
+	found, domainFound := false, false
 	for _, c := range cookies.Cookies {
 		if c.Name == "session" && c.Value == "synthetic-cookie" {
 			found = true
 		}
+		if c.Name == "domain-session" && c.Value == "synthetic-domain-cookie" {
+			domainFound = true
+		}
 	}
-	if !found {
-		t.Fatal("cookie did not survive restart")
+	if !found || !domainFound {
+		t.Fatal("host or domain cookie did not survive restart")
 	}
 	var target struct {
 		ID string `json:"targetId"`

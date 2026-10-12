@@ -75,6 +75,11 @@ vbox builder
 
 The CLI is named `vbox`; `vmbox` is a compatibility symlink. Run `vbox help` for other commands.
 
+To upload a local Chrome or Chromium browser session for later use in a box,
+run `vbox profiles upload` and mark its profile row. The picker shows the local
+profile path. See [browser profile imports](docs/BROWSER-PROFILES.md) for the
+one-time browser helper setup and attaching a saved profile to a box.
+
 ## Documentation
 
 Start with the [documentation index](docs/README.md). See [controller operations](docs/CONTROLLER.md), [worker isolation](docs/SHARED-WORKERS.md), the [agent desktop guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md), and the [API contract](docs/openapi.yaml).

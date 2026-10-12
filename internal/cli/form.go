@@ -26,6 +26,7 @@ type formField struct {
 	Checkbox     bool
 	RenderRow    func(int) string
 	TableHeader  string
+	Detail       string
 }
 
 // A single alternate-screen lifetime covers edits, inline choices, submission,
@@ -127,7 +128,14 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 				help = "Delete saved profile? y: confirm · any other key: cancel"
 			}
 		}
-		statusLines := formStatusLines(status, width-1)
+		visibleStatus := status
+		if selected < len(rows) && rows[selected].Detail != "" {
+			if visibleStatus != "" {
+				visibleStatus += "\n"
+			}
+			visibleStatus += rows[selected].Detail
+		}
+		statusLines := formStatusLines(visibleStatus, width-1)
 		statusLines = statusLines[:min(len(statusLines), max(1, height-7))]
 		if len(statusLines) > 0 {
 			statusLines = append(statusLines, strings.Repeat("─", width-1))
