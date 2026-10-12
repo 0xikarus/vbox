@@ -44,6 +44,8 @@ func InstallTools(ctx context.Context, home string, tools []string, progress io.
 			err = configureBlender(ctx, home, progress)
 		case "cloudflare-warp":
 			err = installWARP(ctx, home, progress)
+		case "tor-socks5":
+			err = installTor(ctx, home, progress)
 		}
 		if err != nil {
 			return err

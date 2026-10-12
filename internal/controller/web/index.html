@@ -43,6 +43,7 @@
 </fieldset>
 <fieldset class="group" data-owner><legend>3 · Tools</legend>
 <fieldset id="create-tools" class="tools" data-owner><legend>Optional tools</legend></fieldset>
+<label class="field">Proxy / IP <select id="create-proxy" name="proxy"><option value="">Direct connection (default)</option><option value="tor-socks5">Tor SOCKS5 · 127.0.0.1:9050</option><option value="cloudflare-warp">Cloudflare WARP · 127.0.0.1:40000</option></select></label><p class="hint">Starts a local proxy. Apps must opt in with socks5h://; WARP needs Cloudflare UDP access and may be unavailable on this provider.</p>
 <details class="custom-tools"><summary>add custom tooling</summary><label class="field">Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label><p class="hint">Trusted commands run inside the box before work starts (5-minute limit). Use package managers or your own installer. The recipe reruns on resume: keep it idempotent. Do not paste credentials. Logs: ~/.config/vmbox/tool-setup.log.</p></details>
 </fieldset>
 <fieldset class="group"><legend>4 · Instructions</legend>

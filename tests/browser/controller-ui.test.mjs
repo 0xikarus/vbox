@@ -25,7 +25,7 @@ before(async()=>{
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/browser-session' && ['POST','DELETE'].includes(req.method)){res.statusCode=204;return res.end()}
   const values={
-   '/v1/tool-presets':[{id:'desktop',name:'Enable desktop',version:'worker packages',description:'Desktop and browser'},{id:'foundry',name:'Foundry',version:'v1.8.1',description:'forge, cast, anvil, chisel'},{id:'blender',name:'Blender',version:'5.1.2',description:'3D editor + desktop + MCP'},{id:'cloudflare-warp',name:'Cloudflare WARP',version:'stable',description:'Install client only'}],
+   '/v1/tool-presets':[{id:'desktop',name:'Enable desktop',version:'worker packages',description:'Desktop and browser'},{id:'foundry',name:'Foundry',version:'v1.8.1',description:'forge, cast, anvil, chisel'},{id:'blender',name:'Blender',version:'5.1.2',description:'3D editor + desktop + MCP'},{id:'tor-socks5',name:'Tor SOCKS5',version:'distribution package',description:'Local proxy'},{id:'cloudflare-warp',name:'Cloudflare WARP',version:'stable',description:'Local proxy'}],
    '/v1/capabilities':{providerEdits:true,nativeAttach:true},
    '/v1/logical-boxes':[{id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude',roles:fixtureRoles.filter(role=>fixtureBoxRoleIds.includes(role.id)).map(({id,name})=>({id,name}))}],
    '/v1/logical-boxes/box-1':{id:'box-1',name:'helper ü',state:'running',roles:fixtureRoles.filter(role=>fixtureBoxRoleIds.includes(role.id)).map(({id,name})=>({id,name}))},
@@ -340,10 +340,10 @@ test('desktop is implicit in creation and Blender remains optional',async()=>{
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('#create-tools input[value=blender]');
  assert.equal(await page.$('#create-tools input[value=desktop]'),null);
- assert.ok(await page.$('#create-tools input[value=cloudflare-warp]'));
+ assert.equal(await page.$('#create-tools input[value=cloudflare-warp]'),null);
  assert.equal(await page.$eval('#create select[name=desktopResolution]',select=>select.value),'1024x640');
  await page.select('#create select[name=desktopResolution]','1280x720');
- await page.click('#create-tools input[value=cloudflare-warp]');
+ await page.select('#create-proxy','cloudflare-warp');
  await page.type('#create input[name=name]','disposable-desktop-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
  await page.$eval('#create',form=>form.requestSubmit());await created;

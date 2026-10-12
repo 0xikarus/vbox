@@ -29,7 +29,10 @@ func newBoxToolGuidance(tools []string) string {
 		lines = append(lines, "- Foundry: `~/bin/forge`, `~/bin/cast`, `~/bin/anvil`, and `~/bin/chisel`.")
 	}
 	if selected["cloudflare-warp"] {
-		lines = append(lines, "- Cloudflare WARP: `warp-cli` is installed but not registered or connected. Connecting changes networking and requires suitable worker permissions and Cloudflare edge connectivity.")
+		lines = append(lines, "- Cloudflare WARP: local SOCKS5 at `socks5h://127.0.0.1:40000` when connected; check `~/.config/vmbox/warp-status` or `warp-cli status`. Apps must opt in; Cloudflare UDP connectivity is required.")
+	}
+	if selected["tor-socks5"] {
+		lines = append(lines, "- Tor: local SOCKS5 at `socks5h://127.0.0.1:9050`. Apps must opt in; use socks5h for remote DNS.")
 	}
 	if len(lines) == 0 {
 		return ""

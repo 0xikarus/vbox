@@ -25,16 +25,20 @@ func ToolPresets() []ToolPreset {
 		{ID: "foundry", Name: "Foundry", Version: "v1.8.1", Description: "forge, cast, anvil and chisel · about 500 MiB installed"},
 		{ID: "blender", Name: "Blender", Version: "5.1.2 + Blender MCP 1.9.1", Description: "Pinned 5.1 release + desktop + MCP for Codex/Claude/OpenCode · extra download/disk/RAM"},
 		{ID: "desktop", Name: "Enable desktop", Version: "worker packages", Description: "Desktop and Chromium browser without Blender; required for Blender"},
-		{ID: "cloudflare-warp", Name: "Cloudflare WARP", Version: "stable package", Description: "Install warp-cli and warp-svc; no registration or connection. Shared-worker containers cannot run a full tunnel."},
+		{ID: "tor-socks5", Name: "Tor SOCKS5", Version: "distribution package", Description: "Start a local SOCKS5 proxy at 127.0.0.1:9050; apps opt in with socks5h://127.0.0.1:9050."},
+		{ID: "cloudflare-warp", Name: "Cloudflare WARP", Version: "stable package", Description: "Start and connect a local SOCKS5 proxy at 127.0.0.1:40000 when Cloudflare UDP is reachable; connection status is saved in ~/.config/vmbox/warp-status."},
 	}
 }
 func ValidateTools(tools []string) error {
 	seen := map[string]bool{}
 	for _, tool := range tools {
-		if (tool != "foundry" && tool != "blender" && tool != "desktop" && tool != "cloudflare-warp") || seen[tool] {
-			return fmt.Errorf("select each supported tool preset at most once (foundry, blender, desktop, cloudflare-warp)")
+		if (tool != "foundry" && tool != "blender" && tool != "desktop" && tool != "tor-socks5" && tool != "cloudflare-warp") || seen[tool] {
+			return fmt.Errorf("select each supported tool preset at most once (foundry, blender, desktop, tor-socks5, cloudflare-warp)")
 		}
 		seen[tool] = true
+	}
+	if seen["tor-socks5"] && seen["cloudflare-warp"] {
+		return fmt.Errorf("choose Tor SOCKS5 or Cloudflare WARP, not both")
 	}
 	return nil
 }

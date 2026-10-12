@@ -16,7 +16,7 @@ func TestWebCreationAlwaysIncludesDesktopWithoutCheckbox(t *testing.T) {
 				t.Fatal(err)
 			}
 			js := string(contents)
-			if !strings.Contains(js, "if(preset.id==='desktop')continue") && !strings.Contains(js, "if(tool.id==='desktop')continue") {
+			if !strings.Contains(js, "if(preset.id==='desktop')continue") && !strings.Contains(js, "if(tool.id==='desktop')continue") && !strings.Contains(js, "['desktop','tor-socks5','cloudflare-warp'].includes") {
 				t.Fatal("desktop preset must not render as a creation checkbox")
 			}
 			if !strings.Contains(js, "tools=['desktop',") {
