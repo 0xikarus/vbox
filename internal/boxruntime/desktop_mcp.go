@@ -531,6 +531,7 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 	// appear much later. Emit each inbox event once per MCP connection; a new
 	// connection after a TUI restart gets a fresh map and can retry it.
 	sent := map[string]bool{}
+	receipts := &claudeReceiptScanner{}
 	for {
 		if !claudeChannelCurrent(ctx, session) {
 			// A brief tmux/worker interruption does not close Claude's MCP
@@ -556,14 +557,23 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 			}
 		}
 		if events, err := pendingChatInbound(home, session); err == nil {
+			accepted, scanErr := receipts.scan(ctx, home, session, events)
+			if scanErr != nil {
+				// Keep the durable inbox intact if transcript inspection failed.
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					continue
+				}
+			}
 			emitted := false
 			for _, pending := range events {
 				event, path := pending.event, pending.path
-				accepted, receiptErr := claudeNativeReceipt(ctx, home, session, event.ID, pending.mtime)
-				if receiptErr == nil && accepted {
+				if accepted[event.ID] {
 					_ = ackClaudeNativeReceipt(home, session, event.ID, path)
 					delete(sent, event.ID)
-				} else if receiptErr == nil && !emitted {
+				} else if !emitted {
 					emitted = emitClaudeChannelEvent(session, event, sent, encode)
 				}
 			}

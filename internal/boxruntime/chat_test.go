@@ -161,6 +161,65 @@ func TestClaudeNativeReceiptFindsQueuedChannelAttachment(t *testing.T) {
 	}
 }
 
+func TestClaudeReceiptScannerFindsAppendedReceiptsWithoutRescanningHistory(t *testing.T) {
+	home, session := t.TempDir(), "claude-long-session"
+	transcript := filepath.Join(home, ".claude", "projects", "workspace", "native.jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0700); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(transcript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 10000 {
+		if _, err := file.WriteString(`{"type":"assistant","message":{"content":"ordinary transcript history"}}` + "\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"first", "second"} {
+		if err := StoreChatInbound(home, session, ChatInbound{ID: id, Text: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pending, err := pendingChatInbound(home, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := &claudeReceiptScanner{}
+	accepted, err := scanner.scan(context.Background(), home, session, pending)
+	if err != nil || accepted["first"] || accepted["second"] {
+		t.Fatalf("initial receipt scan: accepted=%v error=%v", accepted, err)
+	}
+	before := scanner.files[transcript].offset
+	if before < 500000 {
+		t.Fatalf("test transcript unexpectedly short: %d", before)
+	}
+	for _, id := range []string{"first", "second"} {
+		record, _ := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": "<channel source=\"vmbox-desktop\" chat_id=\"" + session + "\" message_id=\"" + id + "\">\n" + id + "\n</channel>"}})
+		file, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = file.Write(append(record, '\n'))
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	accepted, err = scanner.scan(context.Background(), home, session, pending)
+	if err != nil || !accepted["first"] || !accepted["second"] {
+		t.Fatalf("appended receipts: accepted=%v error=%v", accepted, err)
+	}
+	if scanner.files[transcript].offset <= before {
+		t.Fatal("scanner did not advance past appended receipts")
+	}
+}
+
 func TestPendingChatInboundUsesArrivalOrder(t *testing.T) {
 	home, session := t.TempDir(), "claude-ordered"
 	for _, event := range []ChatInbound{{ID: "z-first", Text: "one"}, {ID: "a-second", Text: "two"}} {

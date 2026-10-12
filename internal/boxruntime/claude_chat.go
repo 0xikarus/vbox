@@ -2,6 +2,7 @@ package boxruntime
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,141 @@ import (
 	"syscall"
 	"time"
 )
+
+// claudeReceiptScanner remembers how far the live channel has read each
+// transcript. A long-lived Claude session can have a very large JSONL file;
+// rescanning it once for every pending inbox event on every poll can starve
+// the channel that is supposed to deliver those events.
+type claudeReceiptScanner struct {
+	files map[string]claudeReceiptFile
+	seen  map[string]bool
+}
+
+type claudeReceiptFile struct {
+	info   os.FileInfo
+	offset int64
+}
+
+func (s *claudeReceiptScanner) scan(ctx context.Context, home, session string, pending []pendingInbound) (map[string]bool, error) {
+	if s.files == nil {
+		s.files = make(map[string]claudeReceiptFile)
+		s.seen = make(map[string]bool)
+	}
+	wanted := make(map[string]bool, len(pending))
+	if len(pending) == 0 {
+		return wanted, nil
+	}
+	oldest := pending[0].mtime.Add(-5 * time.Second)
+	for _, event := range pending {
+		wanted[event.event.ID] = true
+	}
+	root := filepath.Join(home, ".claude", "projects")
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if errors.Is(walkErr, os.ErrNotExist) {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(oldest) {
+			return nil
+		}
+		state := s.files[path]
+		if state.info == nil || !os.SameFile(state.info, info) || state.offset > info.Size() {
+			state.offset = 0
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		err = func() error {
+			defer file.Close()
+			if _, err := file.Seek(state.offset, io.SeekStart); err != nil {
+				return err
+			}
+			reader := bufio.NewReader(file)
+			for {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				line, readErr := reader.ReadBytes('\n')
+				if len(line) > 0 && line[len(line)-1] == '\n' {
+					state.offset += int64(len(line))
+					if bytes.Contains(line, []byte("vmbox-desktop")) && bytes.Contains(line, []byte("message_id")) {
+						for id := range wanted {
+							if !s.seen[id] && bytes.Contains(line, []byte(id)) && claudeReceiptLineMatches(line, session, id) {
+								s.seen[id] = true
+							}
+						}
+					}
+				}
+				if errors.Is(readErr, io.EOF) {
+					return nil
+				}
+				if readErr != nil {
+					return readErr
+				}
+			}
+		}()
+		if err != nil {
+			return err
+		}
+		state.info = info
+		s.files[path] = state
+		return nil
+	})
+	if errors.Is(err, os.ErrNotExist) {
+		err = nil
+	}
+	for id := range wanted {
+		wanted[id] = s.seen[id]
+	}
+	return wanted, err
+}
+
+func claudeReceiptLineMatches(line []byte, session, messageID string) bool {
+	var record struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"message"`
+		Attachment struct {
+			Type   string `json:"type"`
+			Prompt string `json:"prompt"`
+			Origin struct {
+				Kind   string `json:"kind"`
+				Server string `json:"server"`
+			} `json:"origin"`
+		} `json:"attachment"`
+	}
+	if json.Unmarshal(line, &record) != nil {
+		return false
+	}
+	if record.Type == "attachment" && record.Attachment.Type == "queued_command" &&
+		record.Attachment.Origin.Kind == "channel" && record.Attachment.Origin.Server == "vmbox-desktop" &&
+		claudeChannelHeaderMatches(record.Attachment.Prompt, session, messageID) {
+		return true
+	}
+	if record.Type == "user" && record.Message.Role == "user" {
+		for _, content := range claudeUserTexts(record.Message.Content) {
+			if claudeChannelHeaderMatches(content, session, messageID) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 var claudeChannelCurrent = func(ctx context.Context, session string) bool {
 	data, err := tmuxCommand(ctx, "", "display-message", "-p", "-t", "="+session+":", "#{pane_pid}")
@@ -201,13 +337,29 @@ func DeliverClaudeChat(ctx context.Context, home, session string, inbound ChatIn
 	defer deadline.Stop()
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+	scanner := &claudeReceiptScanner{}
+	pending := []pendingInbound{{event: chatInboundFile{ID: inbound.ID}, mtime: info.ModTime()}}
 	for {
-		accepted, err := claudeNativeReceipt(ctx, home, session, inbound.ID, info.ModTime())
+		if _, err := os.Stat(claudeChatReceiptPath(home, session, inbound.ID)); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		owners, err := claudeChannelOwners(home, session)
 		if err != nil {
 			return err
 		}
-		if accepted {
-			return ackClaudeNativeReceipt(home, session, inbound.ID, inboxPath)
+		// The live channel scans once for all pending messages and writes the
+		// receipt marker. A separate delivery process must not scan the same
+		// large transcript for each message while that channel is active.
+		if len(owners) == 0 {
+			accepted, err := scanner.scan(ctx, home, session, pending)
+			if err != nil {
+				return err
+			}
+			if accepted[inbound.ID] {
+				return ackClaudeNativeReceipt(home, session, inbound.ID, inboxPath)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -235,6 +387,13 @@ func ConfirmClaudeChat(ctx context.Context, home, session, messageID string) (bo
 	}
 	if err != nil {
 		return false, err
+	}
+	owners, err := claudeChannelOwners(home, session)
+	if err != nil {
+		return false, err
+	}
+	if len(owners) > 0 {
+		return false, nil
 	}
 	accepted, err := claudeNativeReceipt(ctx, home, session, messageID, info.ModTime())
 	if err != nil || !accepted {
