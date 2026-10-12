@@ -54,6 +54,13 @@ func restoreTor(ctx context.Context, home string, progress io.Writer) error {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return err
 	}
+	configPath := filepath.Join(dataDir, "torrc")
+	if err := os.WriteFile(configPath, nil, 0600); err != nil {
+		return err
+	}
+	if err := os.Chmod(configPath, 0600); err != nil {
+		return err
+	}
 	pidPath := filepath.Join(dataDir, "tor.pid")
 	if pid, err := os.ReadFile(pidPath); err == nil {
 		if socks5Ready(torAddress) && processAlive(strings.TrimSpace(string(pid))) {
@@ -61,7 +68,7 @@ func restoreTor(ctx context.Context, home string, progress io.Writer) error {
 			return nil
 		}
 	}
-	cmd := exec.CommandContext(ctx, "tor", "-f", "/dev/null", "--RunAsDaemon", "1", "--DataDirectory", dataDir, "--PidFile", pidPath, "--SocksPort", torAddress, "--ControlPort", "0")
+	cmd := exec.CommandContext(ctx, "tor", "-f", configPath, "--RunAsDaemon", "1", "--DataDirectory", dataDir, "--PidFile", pidPath, "--SocksPort", torAddress, "--ControlPort", "0")
 	cmd.Stdout, cmd.Stderr = progress, progress
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("start Tor SOCKS5: %w", err)
