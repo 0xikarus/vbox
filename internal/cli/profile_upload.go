@@ -2,16 +2,25 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/config"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
 type uploadEntry struct {
 	application, path, choice, target *formField
 	saved                             bool
+}
+
+type browserUploadEntry struct {
+	profile localBrowserProfile
+	choice  *formField
+	name    *formField
+	saved   bool
 }
 
 func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token string) error {
@@ -38,6 +47,14 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 	var fields []*formField
 	var entries []*uploadEntry
 	var apiEntries []*openCodeAPIUploadEntry
+	var browserEntries []*browserUploadEntry
+	browserProfiles := discoverLocalBrowserProfiles(a.Environ)
+	browserSaved := []v1.BrowserProfile{}
+	if len(browserProfiles) > 0 {
+		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/browser-profiles", nil, &browserSaved, nil); err != nil {
+			return fmt.Errorf("could not list saved browser profiles: %w", err)
+		}
+	}
 	accountWidth := 7
 	for _, p := range profiles {
 		for _, path := range p.localPaths {
@@ -68,7 +85,7 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 				entry.target.When = func() bool { return entry.choice.Value == "Replace" && !entry.saved }
 			}
 			account := profileAccountName(p.app, path)
-			entry.choice.TableHeader = fmt.Sprintf("    %-8s %-*s %s", "Agent", accountWidth, "Account", "Source")
+			entry.choice.TableHeader = fmt.Sprintf("    %-8s %-*s %s", "Type", accountWidth, "Account / profile", "Source path")
 			entry.choice.RenderRow = func(width int) string {
 				mark := "[ ]"
 				if entry.choice.Value == "Upload" || entry.choice.Value == "Replace" {
@@ -87,6 +104,32 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 				fields = append(fields, entry.target)
 			}
 		}
+	}
+	for _, browserProfile := range browserProfiles {
+		entry := &browserUploadEntry{profile: browserProfile}
+		entry.name = &formField{Label: "  Save browser as", Value: savedBrowserProfileName(browserProfile)}
+		entry.choice = &formField{Value: "Skip", Choices: []string{"Skip", "Upload"}, Checkbox: true, Detail: browserProfile.Path}
+		entry.name.When = func() bool { return entry.choice.Value == "Upload" && !entry.saved }
+		entry.choice.RenderRow = func(width int) string {
+			mark := "[ ]"
+			if entry.saved {
+				mark = "[✓]"
+			} else if entry.choice.Value == "Upload" {
+				mark = "[x]"
+				for _, saved := range browserSaved {
+					if saved.Name == entry.name.Value {
+						mark = "[↻]"
+						break
+					}
+				}
+			}
+			return fmt.Sprintf("%s %-8s %-*s %s", mark, entry.profile.Browser, accountWidth, tuiLabel(entry.profile.Name, accountWidth), entry.profile.Path)
+		}
+		if len(fields) == 0 {
+			entry.choice.TableHeader = fmt.Sprintf("    %-8s %-*s %s", "Type", accountWidth, "Account / profile", "Source path")
+		}
+		fields = append(fields, entry.choice, entry.name)
+		browserEntries = append(browserEntries, entry)
 	}
 	add := &formField{Label: "[ Add entry ]"}
 	add.AddFields = func() []*formField {
@@ -224,6 +267,47 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			entry.choice.Choices = []string{"Saved"}
 			savedCount++
 		}
+		for _, entry := range browserEntries {
+			if entry.saved || entry.choice.Value != "Upload" {
+				continue
+			}
+			name := strings.TrimSpace(entry.name.Value)
+			if name == "" {
+				return fmt.Errorf("enter a saved name for %s", entry.profile.Path)
+			}
+			progress("Exporting " + entry.profile.Browser + " / " + entry.profile.Name + "…")
+			export := a.browserExport
+			if export == nil {
+				export = a.exportLocalBrowserProfile
+			}
+			data, err := export(ctx, entry.profile, progress)
+			if err != nil {
+				return err
+			}
+			replaceExisting := false
+			for _, saved := range browserSaved {
+				if saved.Name == name {
+					replaceExisting = true
+					break
+				}
+			}
+			var value v1.BrowserProfile
+			request := v1.SaveBrowserProfileRequest{SourceBrowser: entry.profile.Browser, SourcePath: entry.profile.Path, State: json.RawMessage(data), ReplaceExisting: replaceExisting}
+			_, err = a.request(ctx, c, token, http.MethodPut, "/v1/browser-profiles/"+url.PathEscape(name), request, &value, nil)
+			clear(data)
+			if err != nil {
+				return err
+			}
+			if replaceExisting {
+				replacedCount++
+			}
+			browserSaved = append(browserSaved, value)
+			entry.saved = true
+			entry.choice.Value = "Saved"
+			entry.choice.Choices = []string{"Saved"}
+			entry.name.Hidden = true
+			savedCount++
+		}
 		if savedCount == 0 {
 			return fmt.Errorf("select an entry for Upload, or add a custom entry")
 		}
@@ -232,6 +316,10 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Out, "Uploaded %d login profile(s), replacing %d saved copy/copies. No box created or refreshed.\n", savedCount, replacedCount)
+	label := "login profile(s)"
+	if len(browserEntries) > 0 {
+		label = "profile(s)"
+	}
+	fmt.Fprintf(a.Out, "Uploaded %d %s, replacing %d saved copy/copies. No box created or refreshed.\n", savedCount, label, replacedCount)
 	return nil
 }

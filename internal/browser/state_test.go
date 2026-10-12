@@ -13,7 +13,7 @@ func TestStateImportValidationAndPrivateErrors(t *testing.T) {
 	for _, invalid := range []string{
 		strings.Replace(good, "https://site.test", "http://site.test", 1),
 		strings.Replace(good, "https://site.test", "https://site.test/path", 1),
-		strings.Replace(good, `"version":1`, `"version":2`, 1),
+		strings.Replace(good, `"version":1`, `"version":3`, 1),
 		strings.Replace(good, `"path":"/"`, `"path":"/","domain":"other.test"`, 1),
 		strings.Replace(good, `"cookies":`, `"indexedDB":[],"cookies":`, 1),
 		strings.Replace(good, `"cookies":`, `"sessionStorage":[],"cookies":`, 1),
@@ -27,6 +27,23 @@ func TestStateImportValidationAndPrivateErrors(t *testing.T) {
 		}
 		if len(state.Origins) != 0 || strings.Contains(err.Error(), "synthetic-private") {
 			t.Fatal("invalid payload exposed")
+		}
+	}
+}
+
+func TestBrowserStateV2DomainCookieScope(t *testing.T) {
+	good := `{"version":2,"origins":[{"origin":"https://example.test","cookies":[{"name":"session","value":"synthetic","path":"/","domain":".example.test"}]}]}`
+	if _, err := DecodeStateImport([]byte(good)); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{
+		strings.Replace(good, ".example.test", ".other.test", 1),
+		strings.Replace(good, ".example.test", "example.test", 1),
+		strings.Replace(good, ".example.test", ".com", 1),
+		strings.Replace(good, `"name":"session"`, `"name":"__Host-session"`, 1),
+	} {
+		if _, err := DecodeStateImport([]byte(bad)); err == nil {
+			t.Fatal("invalid domain cookie accepted")
 		}
 	}
 }

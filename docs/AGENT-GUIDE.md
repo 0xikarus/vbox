@@ -65,6 +65,14 @@ cleanup to these boxes.
 | Grid | `internal/controller/grid.go`, `web/grid.html`, `web/grid.js`, `web/grid.css` |
 | Agent chats (WhatsApp-style, PWA, web push) | `web/chat.html`, `web/chat.js`, `web/chat.css`, `web/push-sw.js`, `internal/controller/web_push.go` |
 | Imported-profile usage polling and cached owner view | `internal/controller/profile_usage.go`, `usage_probe.py`, `profile_usage_snapshots` in `schema.sql`, `GET /v1/profile-usage`, `POST /v1/profile-usage/refresh` |
+| Reusable browser profile import | `internal/cli/chromium_profiles.go`, `browser_export.go`, `browser_export_extension/`, `internal/controller/browser_profiles.go`, `internal/browser/state.go` |
+
+`vbox profiles upload` discovers local Chrome/Chromium profiles and shows their
+paths. The bundled extension exports cookies and open-tab localStorage through
+a one-use loopback bridge into the CLI. The controller seals reusable browser
+exports by account and saved name. Attaching a saved export creates an existing
+per-box browser import; applying it still goes through fenced live Chromium
+control and never wakes the box. See [browser profile imports](BROWSER-PROFILES.md).
 
 Profile usage polling enumerates saved Claude/Codex/OpenCode profiles. It
 prefers a running box with the imported profile; otherwise it checks the saved

@@ -9,6 +9,7 @@ Start with the [project README](../README.md) for installation and everyday comm
 - [Shared workers and isolation](SHARED-WORKERS.md)
 - [Worker provider choices, including Railway](PROVIDERS.md)
 - [Mail for boxes](MAIL.md)
+- [Import Chromium browser sessions](BROWSER-PROFILES.md)
 - [API specification](openapi.yaml)
 
 ## Build and integrate
