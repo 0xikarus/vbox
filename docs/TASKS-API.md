@@ -123,7 +123,7 @@ sessions retain their existing account and role checks.
 | --- | --- | --- |
 | GET | `/v1/tasks/profiles` | List selectable saved login profiles using opaque IDs and safe labels. |
 | POST | `/v1/tasks` | Create and enqueue a task. `Idempotency-Key` required; returns `201` with its current state. |
-| GET | `/v1/tasks` | Recent tasks retained until deletion. `?state=`, `?creator=`, `?limit=`, `?cursor=`. |
+| GET | `/v1/tasks` | Recent tasks retained until deletion. `?state=` (exact state, `current` or `history`), `?creator=`, `?limit=`, `?cursor=`. |
 | GET | `/v1/tasks/{id}` | Return the current task state and any result immediately. |
 | GET | `/v1/tasks/{id}/events` | Timeline: state changes, nudges, owner messages, result. `?after=` cursor. |
 | GET | `/v1/tasks/{id}/messages` | Chat transcript while the task is retained. |

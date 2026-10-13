@@ -147,7 +147,7 @@ func (s *Server) listGoalTasksHandler(w http.ResponseWriter, r *http.Request, a 
 		before = &t
 		cursorID = id
 	}
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT `+goalTaskColumns+` FROM goal_tasks g LEFT JOIN logical_boxes b ON b.id=g.logical_box_id WHERE g.account_id=$1 AND ($2 OR (g.creator_kind=$3 AND g.creator_id=$4)) AND ($5='' OR g.state=$5) AND ($6='' OR g.creator_id=$6) AND ($7::timestamptz IS NULL OR (g.created_at,g.id::text)<($7,$8)) ORDER BY g.created_at DESC,g.id DESC LIMIT $9`, a.AccountID, a.Role == "owner", a.Kind, a.ID, state, creator, before, cursorID, limit+1)
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT `+goalTaskColumns+` FROM goal_tasks g LEFT JOIN logical_boxes b ON b.id=g.logical_box_id WHERE g.account_id=$1 AND ($2 OR (g.creator_kind=$3 AND g.creator_id=$4)) AND ($5='' OR g.state=$5 OR ($5='current' AND g.state IN ('queued','starting','running')) OR ($5='history' AND g.state IN ('completed','failed','timed_out','abandoned','cancelled'))) AND ($6='' OR g.creator_id=$6) AND ($7::timestamptz IS NULL OR (g.created_at,g.id::text)<($7,$8)) ORDER BY g.created_at DESC,g.id DESC LIMIT $9`, a.AccountID, a.Role == "owner", a.Kind, a.ID, state, creator, before, cursorID, limit+1)
 	if err != nil {
 		goalTaskHTTPError(w, err)
 		return

@@ -82,6 +82,42 @@ func taskHTTP(s *Server, method, path, token string, body any) *httptest.Respons
 	s.Handler().ServeHTTP(w, r)
 	return w
 }
+func TestGoalTaskCurrentAndHistoryPostgres(t *testing.T) {
+	store, p, token := goalTaskTestStore(t)
+	ctx := context.Background()
+	a := goalTaskActor{Principal: p, Kind: "owner", ID: p.UserID}
+	states := []string{"queued", "starting", "running", "completed", "failed", "timed_out", "abandoned", "cancelled"}
+	for _, state := range states {
+		id, _, err := store.createGoalTask(ctx, a, testGoalRequest(state), state)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = store.DB.ExecContext(ctx, `UPDATE goal_tasks SET state=$2 WHERE id=$1`, id, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := &Server{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	for filter, count := range map[string]int{"": 8, "current": 3, "history": 5, "failed": 1} {
+		w := taskHTTP(srv, "GET", "/v1/tasks?state="+filter, token, nil)
+		if w.Code != 200 {
+			t.Fatalf("%s: %d %s", filter, w.Code, w.Body.String())
+		}
+		var result struct {
+			Tasks []v1.GoalTask `json:"tasks"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Tasks) != count {
+			t.Fatalf("%s: got %d tasks, want %d", filter, len(result.Tasks), count)
+		}
+		for _, task := range result.Tasks {
+			if (filter == "current" && v1.GoalTaskFinished(task.State)) || (filter == "history" && !v1.GoalTaskFinished(task.State)) {
+				t.Fatalf("%s includes %s", filter, task.State)
+			}
+		}
+	}
+}
 func TestGoalTaskQueueAndRetentionPostgres(t *testing.T) {
 	store, p, _ := goalTaskTestStore(t)
 	ctx := context.Background()

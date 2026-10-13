@@ -49,6 +49,7 @@ test('all workspace topbars keep Usage beside Providers and open the all-profile
    await page.$eval('#'+id,button=>window.VMBoxWorkspaceNav.updateUsagePill(button,[],true));
    assert.equal(await page.$eval('#'+id,button=>button.textContent),'Usage',name+' is independent of profile usage');
    if(name==='chat')assert.equal(await page.evaluate(()=>!!document.querySelector('#chat-menu-sheet #usage-toggle')),false);
+   if(name==='chat'){await page.$eval('#chat-menu-sheet',n=>n.hidden=false);const taskLink=await page.$eval('#chat-menu-sheet a[href="/tasks"]',n=>({text:n.textContent,icon:!!n.querySelector('.menu-icon'),height:n.getBoundingClientRect().height}));assert.equal(taskLink.text,'Tasks');assert.equal(taskLink.icon,true);assert.ok(taskLink.height>=32);await page.$eval('#chat-menu-sheet',n=>n.hidden=true)}
    if(name==='manage')assert.equal(await page.evaluate(()=>!!document.querySelector('#manage-menu-panel #manage-usage')),false);
    await page.click('#'+id);
    if(name==='chat')assert.equal(await page.$eval('#usage-modal',sheet=>sheet.hidden),false);
