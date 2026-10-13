@@ -5,8 +5,9 @@ import {readFile} from 'node:fs/promises';
 import {extname} from 'node:path';
 import puppeteer from 'puppeteer-core';
 
-async function fixture(t){
+async function fixture(t,{history=false}={}){
  const task={id:'fixture-task',name:'queued-example',goal:'fixture goal',state:'queued',queuePosition:2,box:null,links:[],createdAt:new Date().toISOString()};
+ const past={...task,id:'finished-task',name:'finished-example',state:'completed',queuePosition:undefined,finishedAt:new Date().toISOString()};
  const calls=[],services=[];const errors=[];
  const server=http.createServer(async(req,res)=>{
   const u=new URL(req.url,'http://localhost'),path=u.pathname;
@@ -17,7 +18,7 @@ async function fixture(t){
   if(path==='/v1/task-service-credentials/profiles')return res.end(JSON.stringify([{id:'lp_fixture',application:'codex',label:'codex · ABCD',name:'private@example.test'}]));
   if(path==='/v1/agent-roles')return res.end('[]');
   if(path==='/v1/task-service-credentials'){if(req.method==='POST'){services.push({id:'service1',...data});res.statusCode=201;return res.end(JSON.stringify({id:'service1',token:'fixture-token-shown-once'}))}return res.end(JSON.stringify(services))}
-  if(path==='/v1/tasks'){if(req.method==='POST'){Object.assign(task,data);res.statusCode=201;return res.end(JSON.stringify(task))}return res.end(JSON.stringify({tasks:[task],nextCursor:''}))}
+  if(path==='/v1/tasks'){if(req.method==='POST'){Object.assign(task,data);res.statusCode=201;return res.end(JSON.stringify(task))}const state=u.searchParams.get('state'),all=history?[task,past]:[task],finished=s=>['completed','failed','timed_out','abandoned','cancelled'].includes(s);return res.end(JSON.stringify({tasks:all.filter(t=>!state||(state==='current'?!finished(t.state):state==='history'?finished(t.state):t.state===state)),nextCursor:''}))}
   if(path==='/v1/tasks/fixture-task')return res.end(JSON.stringify(task));
   if(path.endsWith('/messages')){if(req.method==='POST'){res.statusCode=202;return res.end('{}')}return res.end(JSON.stringify([{direction:'agent',text:'<script>window.injected=true</script>'}]))}
   if(path.endsWith('/events'))return res.end(JSON.stringify({events:[{kind:'queued',text:'Waiting for capacity',createdAt:task.createdAt}]}));
@@ -42,4 +43,17 @@ test('task result UI safely renders files, transcript, and final actions',async 
 test('owner can map profiles and mint a scoped token shown once',async t=>{
  const {page,calls,errors}=await fixture(t);await page.click('#service-panel summary');await page.type('#service-form [name=name]','fixture-client');await page.click('#service-profiles input');await page.click('#service-form button');await page.waitForFunction(()=>!document.querySelector('#new-token').hidden);
  const req=calls.find(c=>c.path==='/v1/task-service-credentials'&&c.method==='POST');assert.deepEqual(req.data.profileIds,['lp_fixture']);assert.equal(req.data.allowControl,false);assert.equal(await page.$eval('#new-token textarea',n=>n.value),'fixture-token-shown-once');await page.click('#clear-token');assert.equal(await page.$eval('#new-token textarea',n=>n.value),'');assert.deepEqual(errors,[]);
+});
+
+test('task list switches between all, current and historical tasks',async t=>{
+ const {page,errors}=await fixture(t,{history:true});
+ assert.equal(await page.$$eval('.task-card',nodes=>nodes.length),2);
+ await page.select('#state-filter','history');
+ await page.waitForFunction(()=>document.querySelectorAll('.task-card').length===1&&document.querySelector('.task-card').dataset.task==='finished-task');
+ assert.match(await page.$eval('.task-card',n=>n.textContent),/Finished /);
+ await page.select('#state-filter','current');
+ await page.waitForFunction(()=>document.querySelectorAll('.task-card').length===1&&document.querySelector('.task-card').dataset.task==='fixture-task');
+ await page.select('#state-filter','');
+ await page.waitForFunction(()=>document.querySelectorAll('.task-card').length===2);
+ assert.deepEqual(errors,[]);
 });
