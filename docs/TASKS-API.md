@@ -27,7 +27,9 @@ queued ─▶ starting ─▶ running ─┬─▶ completed   (agent: completed
                                ├─▶ timed_out   (time limit reached)
                                ├─▶ abandoned   (agent stopped without either tool)
                                └─▶ cancelled   (creator: cancel)
-any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
+queued or starting ────────────▶ cancelled   (creator: cancel)
+finished with a box ─▶ box hibernated ─▶ box and task deleted at deleteAt
+finished without a box ───────────────▶ task deleted at deleteAt
 ```
 
 - **Watchdog.** If the agent is idle or stalled (the #480 activity states) for
@@ -45,6 +47,31 @@ any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
   with its finished outcome while cleanup is pending; deletion of the task
   record follows successful box deletion.
 - After deletion, task reads return `404`; there is no permanent task history.
+
+### Queue and concurrency
+
+- Each account may run at most **4** task boxes concurrently. This cap applies
+  across owner-, user-, service- and box-created tasks, so another creator cannot
+  bypass it. Ordinary boxes use worker slots but do not count against this
+  task-specific limit.
+- `POST /v1/tasks` creates a durable `queued` task and returns `201` even when
+  all four task places are occupied. The controller starts it when both a task
+  place and a compatible worker slot are available. A queued task has no box
+  or workspace volume yet; `box` and `startedAt` are `null`. `queuePosition`
+  is an approximate, changing position in the account's queue.
+- The dispatcher takes the oldest runnable queued task first. It may pass a
+  task whose requested `slotId`, memory or disk cannot currently be placed,
+  so that other tasks can use available workers. Invalid requests fail at
+  creation; temporarily unavailable capacity keeps a valid task queued.
+- Reserving a task place is atomic and survives controller restarts. The place
+  is held from dispatch through startup, running and hibernation. A finished
+  task frees its place only when its box releases the worker slot, then the
+  dispatcher starts another queued task. Physical worker capacity remains a
+  separate limit. If startup fails before a worker slot is occupied, cleanup
+  releases the task place.
+- The running-time limit starts when the agent begins work, not while queued.
+  Cancelling a queued task needs no box cleanup; it becomes `cancelled` and
+  enters the normal retention period.
 
 ## Resource
 
@@ -75,6 +102,8 @@ any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
 
 - `failure` is `{ "message": "...", "reason": "agent|timeout|abandoned|cancelled|box_error" }`.
 - `box` becomes `null` after the box is deleted.
+- `box` and `startedAt` are `null` while queued; `queuePosition` is present
+  only while queued and may change as worker availability changes.
 - `creator.kind` is `owner`, `user`, `service` or `box`.
 - `links` carry their full secret URLs only in the response to the call that
   minted them (create, or `POST …/links`). Elsewhere `links` lists only
@@ -93,7 +122,7 @@ sessions retain their existing account and role checks.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/v1/tasks/profiles` | List selectable saved login profiles using opaque IDs and safe labels. |
-| POST | `/v1/tasks` | Create and start a task. `Idempotency-Key` required. |
+| POST | `/v1/tasks` | Create and enqueue a task. `Idempotency-Key` required; returns `201` with its current state. |
 | GET | `/v1/tasks` | Recent tasks retained until deletion. `?state=`, `?creator=`, `?limit=`, `?cursor=`. |
 | GET | `/v1/tasks/{id}` | Return the current task state and any result immediately. |
 | GET | `/v1/tasks/{id}/events` | Timeline: state changes, nudges, owner messages, result. `?after=` cursor. |
@@ -214,6 +243,9 @@ Rules:
   on screen. Treat every link as a sensitive capability.
 - **Sleeping box:** a link never wakes a hibernated box; the page shows the final
   screenshot and state instead.
+- **Queued task:** links minted at creation refer to the task until its box
+  exists. The page shows queued state; screenshot requests return `409` until
+  a desktop frame is available.
 - **Audit:** each link use is written to `audit_log` (kind, link id, IP).
 
 Endpoints behind the link cookie:
@@ -271,7 +303,7 @@ There is no new MCP tool. `create_agent_box` takes an optional `task` object:
 
 1. Backend: tables, task-scoped service credentials, selectable profile IDs,
    create/list/get/cancel/delete, the two agent tools (needs a worker update),
-   watchdog, time limit, retention sweeper.
+   account queue and concurrency limit, watchdog, time limit, retention sweeper.
 2. Links: `/t/{token}` page and the stream, screenshot and state endpoints.
 3. UI: Recent Tasks list and task page (state, result, files, final screenshot,
    transcript, Create new task/Delete now), owner notifications.
