@@ -137,8 +137,24 @@ func connectWARP(ctx context.Context, home string, progress io.Writer) error {
 		return nil
 	}
 	if err := exec.CommandContext(ctx, "warp-cli", "--accept-tos", "registration", "show").Run(); err != nil {
-		if err := run("registration", "new"); err != nil {
-			return err
+		// warp-cli status may succeed while the daemon still reports "Daemon
+		// Startup" and rejects registration. Give it a short, bounded retry.
+		for attempt := 0; attempt < 20; attempt++ {
+			err := run("registration", "new")
+			if err == nil {
+				break
+			}
+			if exec.CommandContext(ctx, "warp-cli", "--accept-tos", "registration", "show").Run() == nil {
+				break
+			}
+			if attempt == 19 {
+				return err
+			}
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("WARP registration unavailable: %w", ctx.Err())
+			case <-time.After(time.Second):
+			}
 		}
 	}
 	for _, args := range [][]string{{"tunnel", "protocol", "set", "MASQUE"}, {"mode", "proxy"}, {"proxy", "port", "40000"}, {"connect"}} {
