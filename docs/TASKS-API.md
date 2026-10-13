@@ -87,7 +87,7 @@ any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
 | --- | --- | --- |
 | POST | `/v1/tasks` | Create and start a task. `Idempotency-Key` required. |
 | GET | `/v1/tasks` | Recent tasks retained until deletion. `?state=`, `?creator=`, `?limit=`, `?cursor=`. |
-| GET | `/v1/tasks/{id}` | One task. `?wait=finished&timeout=60` long-polls for a terminal state (max 60 s). |
+| GET | `/v1/tasks/{id}` | Return the current task state and any result immediately. |
 | GET | `/v1/tasks/{id}/events` | Timeline: state changes, nudges, owner messages, result. `?after=` cursor. |
 | GET | `/v1/tasks/{id}/messages` | Chat transcript while the task is retained. |
 | POST | `/v1/tasks/{id}/messages` | Message a running task's agent; `409` after finish. |
@@ -135,13 +135,12 @@ Response: `201` with the task resource, including full link URLs.
 ### Polling for a result
 
 External services poll the task resource; the controller does not call their
-webhooks. After `POST /v1/tasks`, save the returned task ID and repeat
-`GET /v1/tasks/{id}?wait=finished&timeout=60` until `state` is `completed`,
-`failed`, `timed_out`, `abandoned` or `cancelled`. A wait returns `200` with the
-current task resource as soon as it reaches one of those states, or after the
-requested timeout if it is still active. `timeout` is 1–60 seconds; without
-`wait`, GET returns the current resource immediately. A disconnected or failed
-poll does not change the task; retry with the same ID and backoff.
+webhooks. After `POST /v1/tasks`, save the returned task ID and call
+`GET /v1/tasks/{id}` every few seconds until `state` is `completed`, `failed`,
+`timed_out`, `abandoned` or `cancelled`. Each GET returns `200` with the current
+task resource immediately. A disconnected or failed poll does not change the
+task; retry with the same ID and backoff. Pollers should space requests apart
+and add jitter when they monitor many tasks.
 
 The terminal response includes `result` or `failure` and `deleteAt`. The
 polling service should copy any result text and download required files before
