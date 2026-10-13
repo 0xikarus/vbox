@@ -117,6 +117,23 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 		writeError(w, 500, fmt.Errorf("message images unavailable"))
 		return
 	}
+	// A page spans few agent sessions, so one lookup per distinct task is cheap.
+	agents := map[string]string{}
+	for i := range values {
+		taskID := values[i].TaskID
+		if taskID == "" {
+			continue
+		}
+		agent, ok := agents[taskID]
+		if !ok {
+			if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT agent FROM box_tasks WHERE account_id=$1 AND logical_box_id=$2 AND id=$3`, p.AccountID, box.ID, taskID).Scan(&agent); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				writeError(w, 500, fmt.Errorf("message history unavailable"))
+				return
+			}
+			agents[taskID] = agent
+		}
+		values[i].Agent = agent
+	}
 	if busy, known, updatedAt, busyErr := s.Store.BoxAgentBusy(r.Context(), p.AccountID, box.ID); busyErr == nil && known {
 		w.Header().Set("X-Vmbox-Agent-Busy", strconv.FormatBool(busy))
 		if !updatedAt.IsZero() {
