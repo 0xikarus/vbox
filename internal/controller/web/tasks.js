@@ -4,6 +4,20 @@
  const el=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n};
  let profiles=[],owner=false,cursor='',selected=location.hash.slice(1),detailVersion='',sequence=0,requestKey,requestBody,refreshing=false;
  const minted=new Map();
+ $('#api-context').value=`vbox Tasks API
+Base URL: ${location.origin}
+Use Authorization: Bearer <TASK_SERVICE_TOKEN> on every request; obtain the scoped token separately from the owner. JSON requests use Content-Type: application/json.
+
+1. GET /v1/tasks/profiles returns allowed profiles: {id, application, label}. Select a profile matching the agent; IDs and labels hide private profile names.
+2. POST /v1/tasks with Idempotency-Key: <new UUID> and body:
+{"name":"research-example","goal":"Your goal and requested deliverables","agent":"codex","loginProfiles":[{"profileId":"<PROFILE_ID>"}],"diskGiB":10,"timeLimitSeconds":14400,"retentionSeconds":86400}
+Agents: codex, claude, opencode. Optional resources: memoryGiB, swapGiB, slotId. A successful create returns HTTP 201 with the task id. Reuse the same idempotency key and body when retrying that creation.
+3. Poll GET /v1/tasks/{id} every 30 seconds. queued, starting, running are active; completed, failed, timed_out, abandoned, cancelled are final. Maximum 4 active task boxes per account; extra tasks wait without allocating boxes.
+4. Read result.text and result.files on completion, or failure.message on failure. Download each file with GET /v1/tasks/{id}/files/{fileId}. Save results before deleteAt; default retention is 24 hours. Finished tasks cannot be reopened; create a new task for follow-up work.
+
+GET /v1/tasks?state=current or ?state=history lists visible tasks; follow nextCursor using ?cursor=<URL-encoded cursor> and the same filter. GET /v1/tasks/{id}/messages and /events show progress. POST /v1/tasks/{id}/cancel cancels; DELETE /v1/tasks/{id} deletes a finished task and its results.
+The agent inside the task box finishes with completed_task(text, files?) or failed_task(message); the controller releases its worker slot automatically.`;
+ $('#copy-api-context').onclick=async()=>{const field=$('#api-context'),message=$('#api-copy-status');try{await navigator.clipboard.writeText(field.value);message.textContent='Copied — ready to paste into an agent’s context.'}catch{field.focus();field.select();message.textContent='Select and copy the guide manually.'}};
  function status(text){$('#status').textContent=text}
  async function api(path,method='GET',body,headers={}){
   const r=await fetch(path,{method,credentials:'same-origin',cache:'no-store',headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
