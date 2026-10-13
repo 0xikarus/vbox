@@ -136,11 +136,12 @@ Response: `201` with the task resource, including full link URLs.
 
 External services poll the task resource; the controller does not call their
 webhooks. After `POST /v1/tasks`, save the returned task ID and call
-`GET /v1/tasks/{id}` every few seconds until `state` is `completed`, `failed`,
-`timed_out`, `abandoned` or `cancelled`. Each GET returns `200` with the current
-task resource immediately. A disconnected or failed poll does not change the
-task; retry with the same ID and backoff. Pollers should space requests apart
-and add jitter when they monitor many tasks.
+`GET /v1/tasks/{id}` every 30 seconds until `state` is `completed`, `failed`,
+`timed_out`, `abandoned` or `cancelled`. The service can cache the latest status
+between polls; a 60-second interval is also reasonable if slower completion
+updates are acceptable. Each GET returns `200` with the current task resource
+immediately. A disconnected or failed poll does not change the task; retry with
+the same ID and backoff. Pollers should add jitter when monitoring many tasks.
 
 The terminal response includes `result` or `failure` and `deleteAt`. The
 polling service should copy any result text and download required files before
