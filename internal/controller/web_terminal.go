@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	desktopprotocol "github.com/0xikarus/vmbox-service/internal/desktop"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 	"github.com/coder/websocket"
 )
@@ -103,6 +104,15 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 	}
 	defer input.Close()
 	defer writer.Close()
+	scope, shared := r.Context().Value(goalTaskLinkContextKey{}).(goalTaskLinkScope)
+	readOnly := shared && scope.Kind == "view"
+	var source io.Reader = input
+	if desktop && readOnly {
+		filtered, sink := io.Pipe()
+		defer filtered.Close()
+		source = filtered
+		go func() { defer sink.Close(); defer cancel(); _ = desktopprotocol.FilterViewOnlyRFB(sink, input) }()
+	}
 	go func() {
 		defer cancel()
 		defer writer.Close()
@@ -132,6 +142,9 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 						continue
 					}
 				}
+				if readOnly {
+					continue
+				}
 				data = append(data, '\n')
 			}
 			if _, err = writer.Write(data); err != nil {
@@ -140,7 +153,11 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 		}
 	}()
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
+		interval := 5 * time.Second
+		if shared {
+			interval = 250 * time.Millisecond
+		}
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		var flakySince time.Time
 		for {
@@ -159,7 +176,7 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 	if desktop {
 		command = []string{"vmbox-runtime", "desktop-stream", inv.Assignment}
 	}
-	result, err := executor.StreamConnection(ctx, conn, command, provider.ExecOptions{Stdin: input, Stdout: terminalSocketWriter{ctx, ws}, Stderr: io.Discard})
+	result, err := executor.StreamConnection(ctx, conn, command, provider.ExecOptions{Stdin: source, Stdout: terminalSocketWriter{ctx, ws}, Stderr: io.Discard})
 	if err != nil || result.ExitCode != 0 {
 		_ = ws.Close(websocket.StatusInternalError, "Terminal stream ended; reconnect to return to your session")
 		return
@@ -183,6 +200,9 @@ func revalidationTolerated(flaky *time.Time) bool {
 // window, then fail closed. A genuine assignment change, stopped box, or
 // revoked/expired token ends the stream on the first observation.
 func (s *Server) workspaceStreamAlive(ctx context.Context, r *http.Request, p Principal, fence string, a fleetAssignment, flaky *time.Time) bool {
+	if scope, ok := r.Context().Value(goalTaskLinkContextKey{}).(goalTaskLinkScope); ok && !s.goalTaskLinkAlive(ctx, scope) {
+		return false
+	}
 	current, err := s.Store.assignment(ctx, p.AccountID, a.Box.ID)
 	if err != nil {
 		return !errors.Is(err, errLogicalBoxMissing) && revalidationTolerated(flaky)
@@ -190,6 +210,9 @@ func (s *Server) workspaceStreamAlive(ctx context.Context, r *http.Request, p Pr
 	*flaky = time.Time{}
 	if nativeFence(current) != fence || current.Box.State != "running" {
 		return false
+	}
+	if _, ok := r.Context().Value(goalTaskLinkContextKey{}).(goalTaskLinkScope); ok {
+		return true
 	}
 	token, ok := authorizationValue(r.Header.Get("Authorization"), "Bearer")
 	if !ok {

@@ -105,6 +105,7 @@ func NewServer(store *Store, providers *provider.Registry) *Server {
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.registerGoalTaskRoutes(mux)
 	if s.RailwayWebhooks != nil {
 		mux.Handle("POST /v1/railway-webhooks/{secret}", s.RailwayWebhooks)
 	}
@@ -769,6 +770,7 @@ func (s *Server) applyLifecycle(ctx context.Context, p Principal, runID string, 
 }
 
 func (s *Server) StartReconciler(ctx context.Context) error {
+	s.startGoalTaskReconciler(ctx)
 	// This independent loop must keep running when infrastructure reconciliation
 	// waits behind the shared Railway request budget.
 	s.startRunningWorkerReplacementReconciler(ctx)
@@ -1236,7 +1238,7 @@ func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
-		if strings.HasPrefix(r.URL.Path, "/boxes/") || r.URL.Path == "/grid" || r.URL.Path == "/chat" || r.URL.Path == "/box-chats" {
+		if strings.HasPrefix(r.URL.Path, "/boxes/") || r.URL.Path == "/grid" || r.URL.Path == "/chat" || r.URL.Path == "/box-chats" || r.URL.Path == "/t" || r.URL.Path == "/tasks" {
 			// Terminal palettes, noVNC geometry and chat menu/message bubbles
 			// generate styles at runtime. Script execution remains restricted
 			// to locally bundled assets.

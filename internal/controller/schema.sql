@@ -1209,3 +1209,124 @@ DO $$ BEGIN
       CHECK (direction IN ('user','system','agent','box'));
   END IF;
 END $$;
+
+-- Durable goal tasks, independently retained from their temporary workspaces.
+ALTER TABLE login_profiles ADD COLUMN IF NOT EXISTS public_id text NOT NULL DEFAULT ('lp_' || replace(gen_random_uuid()::text,'-',''));
+CREATE UNIQUE INDEX IF NOT EXISTS login_profiles_public_id ON login_profiles(public_id);
+CREATE TABLE IF NOT EXISTS task_service_credentials (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ user_id uuid NOT NULL REFERENCES users(id),
+ name text NOT NULL,
+ token_hash bytea NOT NULL UNIQUE,
+ profile_ids jsonb NOT NULL DEFAULT '[]',
+ allow_control boolean NOT NULL DEFAULT false,
+ expires_at timestamptz,
+ revoked_at timestamptz,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS goal_tasks (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ user_id uuid NOT NULL REFERENCES users(id),
+ creator_kind text NOT NULL CHECK (creator_kind IN ('owner','user','service','box')),
+ creator_id text NOT NULL,
+ creator_name text NOT NULL,
+ logical_box_id uuid REFERENCES logical_boxes(id) ON DELETE SET NULL,
+ name text NOT NULL,
+ goal text NOT NULL,
+ agent text NOT NULL CHECK (agent IN ('codex','claude','opencode')),
+ settings jsonb NOT NULL,
+ idempotency_key text NOT NULL,
+ state text NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','starting','running','completed','failed','timed_out','abandoned','cancelled')),
+ slot_held boolean NOT NULL DEFAULT false,
+ result jsonb,
+ failure jsonb,
+ final_screenshot bytea,
+ screenshot_at timestamptz,
+ final_terminal text NOT NULL DEFAULT '',
+ transcript jsonb NOT NULL DEFAULT '[]',
+ captured_at timestamptz,
+ notified_at timestamptz,
+ nudge_at timestamptz,
+ running_seconds double precision NOT NULL DEFAULT 0,
+ running_observed_at timestamptz,
+ time_limit_seconds integer NOT NULL CHECK (time_limit_seconds BETWEEN 300 AND 604800),
+ retention_seconds integer NOT NULL CHECK (retention_seconds BETWEEN 3600 AND 604800),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ started_at timestamptz,
+ finished_at timestamptz,
+ delete_at timestamptz,
+ box_deleted_at timestamptz,
+ delete_box_requested boolean NOT NULL DEFAULT false,
+ UNIQUE(account_id,creator_kind,creator_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS goal_tasks_queue ON goal_tasks(account_id,created_at,id) WHERE state='queued';
+CREATE INDEX IF NOT EXISTS goal_tasks_box ON goal_tasks(logical_box_id) WHERE logical_box_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS goal_task_events (
+ sequence bigserial PRIMARY KEY,
+ task_id uuid NOT NULL REFERENCES goal_tasks(id) ON DELETE CASCADE,
+ kind text NOT NULL,
+ text text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS goal_task_files (
+ id uuid PRIMARY KEY,
+ task_id uuid NOT NULL REFERENCES goal_tasks(id) ON DELETE CASCADE,
+ name text NOT NULL,
+ media_type text NOT NULL,
+ data bytea NOT NULL CHECK (octet_length(data)<=26214400)
+);
+CREATE TABLE IF NOT EXISTS goal_task_links (
+ id uuid PRIMARY KEY,
+ task_id uuid NOT NULL REFERENCES goal_tasks(id) ON DELETE CASCADE,
+ token_hash bytea NOT NULL UNIQUE,
+ kind text NOT NULL CHECK (kind IN ('control','view','screenshot')),
+ expires_at timestamptz NOT NULL,
+ revoked_at timestamptz,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS goal_task_link_sessions (
+ token_hash bytea PRIMARY KEY,
+ link_id uuid NOT NULL REFERENCES goal_task_links(id) ON DELETE CASCADE,
+ expires_at timestamptz NOT NULL
+);
+ALTER TABLE goal_tasks ADD COLUMN IF NOT EXISTS prompt_sent_at timestamptz;
+
+-- Finished goal workspaces can never be allocated again, including through
+-- ordinary box APIs. The marker survives deletion of the retained task record.
+CREATE OR REPLACE FUNCTION guard_finished_goal_box() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF OLD.metadata->>'goalTaskFinished'='true' AND NEW.state IN ('reserved','attaching','running') AND NEW.state IS DISTINCT FROM OLD.state THEN
+  RAISE EXCEPTION 'finished tasks cannot be reopened; create a new task';
+ END IF;
+ RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS finished_goal_box ON logical_boxes;
+CREATE TRIGGER finished_goal_box BEFORE UPDATE OF state ON logical_boxes FOR EACH ROW EXECUTE FUNCTION guard_finished_goal_box();
+
+CREATE OR REPLACE FUNCTION guard_finished_goal_message() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE target uuid;
+BEGIN
+ IF TG_TABLE_NAME='box_tasks' THEN target=NEW.logical_box_id;
+ ELSE SELECT logical_box_id INTO target FROM box_tasks WHERE id=NEW.task_id; END IF;
+ IF EXISTS(SELECT 1 FROM logical_boxes WHERE id=target AND metadata->>'goalTaskFinished'='true') THEN
+  RAISE EXCEPTION 'finished tasks cannot receive messages; create a new task';
+ END IF;
+ RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS finished_goal_message ON box_messages;
+CREATE TRIGGER finished_goal_message BEFORE INSERT ON box_messages FOR EACH ROW EXECUTE FUNCTION guard_finished_goal_message();
+DROP TRIGGER IF EXISTS finished_goal_session ON box_tasks;
+CREATE TRIGGER finished_goal_session BEFORE INSERT ON box_tasks FOR EACH ROW EXECUTE FUNCTION guard_finished_goal_message();
+
+ALTER TABLE goal_tasks ADD COLUMN IF NOT EXISTS watchdog_active_at timestamptz;
+-- A copied notification belongs to the creator's chat, independent of task
+-- retention. It waits for an existing live agent session; it never wakes one.
+CREATE TABLE IF NOT EXISTS goal_task_notices (
+ task_id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+ body text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now()
+);

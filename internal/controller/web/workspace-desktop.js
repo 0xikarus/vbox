@@ -2,7 +2,7 @@
 window.openWorkspaceDesktop=function(boxID,onStatus,options={}){
  const viewOnly=options.viewOnly===true;
  const root=options.root||document.querySelector('#desktop-screen');root.replaceChildren();
- const url=new URL('/v1/logical-boxes/'+encodeURIComponent(boxID)+'/desktop/stream',location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';
+ const url=new URL(options.streamURL||('/v1/logical-boxes/'+encodeURIComponent(boxID)+'/desktop/stream'),location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';
  const rfb=new NoVNC.default(root,url.href);rfb.scaleViewport=true;rfb.resizeSession=false;rfb.showDotCursor=true;rfb.viewOnly=viewOnly;let closed=false;
  // A takeover can change its stage height when the mobile keyboard opens.
  // Recompute noVNC's proportional fit for that stage; Fit still toggles to 1:1.

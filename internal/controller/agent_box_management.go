@@ -16,6 +16,7 @@ import (
 // agentManagedBox deliberately omits provider credentials, volume identifiers,
 // lease data, and desktop/terminal connection information.
 type agentManagedBox struct {
+	Task          *v1.GoalTask          `json:"task,omitempty"`
 	ID            string                `json:"id"`
 	Name          string                `json:"name"`
 	State         v1.LogicalBoxState    `json:"state"`
@@ -193,6 +194,18 @@ func (s *Server) agentBoxHandler(w http.ResponseWriter, r *http.Request, p Princ
 		return
 	}
 	value.Activity = &activity
+	var taskID string
+	if e := s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text FROM goal_tasks WHERE account_id=$1 AND logical_box_id=$2`, p.AccountID, box.ID).Scan(&taskID); e == nil {
+		task, e := s.Store.goalTask(r.Context(), goalTaskActor{Principal: ownerPrincipal(p)}, taskID)
+		if e != nil {
+			goalTaskHTTPError(w, e)
+			return
+		}
+		value.Task = &task
+	} else if !errors.Is(e, sql.ErrNoRows) {
+		goalTaskHTTPError(w, e)
+		return
+	}
 	writeJSON(w, http.StatusOK, value)
 }
 

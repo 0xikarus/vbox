@@ -199,6 +199,7 @@ test('Reply uses the main composer without opening the thread sidebar',async()=>
   await p.type('#chat-input','Ship it.');await p.click('#send');await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(posts.at(-1).parentMessageId,threadRoot,'the message stays in the selected thread');
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'sending the reply does not open the thread sidebar');
+  await p.waitForFunction(()=>document.querySelector('#reply-preview').hidden);
   assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),true,'the reply target clears after sending');
   await p.waitForSelector('#chat-messages .msg.agent .msg-reply');
   await p.$eval('#chat-messages .msg.agent .msg-reply',button=>button.click());

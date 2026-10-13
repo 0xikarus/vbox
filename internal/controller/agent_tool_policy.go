@@ -95,5 +95,13 @@ func (s *Server) agentToolPolicyHandler(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	var isTask bool
+	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM goal_tasks WHERE account_id=$1 AND logical_box_id=$2 AND state IN ('starting','running'))`, p.AccountID, r.PathValue("id")).Scan(&isTask); err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if isTask {
+		tools = append(tools, v1.TaskAgentMCPTools...)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"tools": tools})
 }

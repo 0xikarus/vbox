@@ -68,7 +68,7 @@ func TestBoxRunBudgetPolicyPostgres(t *testing.T) {
 	}
 	runBudgetPrincipal := owner
 	runBudgetPrincipal.Subject = "controller:run-budget"
-	if err := (&Server{Store: store}).resumeLogicalBoxHibernate(ctx, runBudgetPrincipal, boxID); err == nil || !strings.Contains(err.Error(), "run-time limit changed") {
+	if err := (&Server{Store: store}).resumeLogicalBoxHibernate(ctx, runBudgetPrincipal, boxID); err == nil || (!strings.Contains(err.Error(), "run-time limit changed") && !strings.Contains(err.Error(), "run-time limit deferred")) {
 		t.Fatalf("non-expired run budget should not hibernate the box: %v", err)
 	}
 	var state string
