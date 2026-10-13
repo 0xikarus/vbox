@@ -225,7 +225,7 @@ func (s *Server) reconcileGoalTask(ctx context.Context, id string) error {
 		if _, err = s.routeBoxMessage(ctx, p, box.ID, "goal-task:"+id+":prompt", v1.DirectBoxMessageRequest{Agent: req.Agent, Text: req.Goal}); err != nil {
 			return err
 		}
-		_, err = s.Store.DB.ExecContext(ctx, `UPDATE goal_tasks SET prompt_sent_at=now() WHERE id=$1 AND prompt_sent_at IS NULL`, id)
+		_, err = s.Store.DB.ExecContext(ctx, `UPDATE goal_tasks SET prompt_sent_at=now(),started_at=now(),running_observed_at=now() WHERE id=$1 AND prompt_sent_at IS NULL AND state='running'`, id)
 		return err
 	}
 	var exhausted bool

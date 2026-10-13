@@ -213,7 +213,7 @@ func (s *Server) goalTaskLinkState(w http.ResponseWriter, r *http.Request, scope
 			goalTaskHTTPError(w, err)
 			return
 		}
-		if len(tasks) > 0 {
+		if len(tasks) > 0 && tasks[0].State == "active" {
 			session = tasks[0].Session
 		}
 	}
