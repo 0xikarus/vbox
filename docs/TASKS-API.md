@@ -75,16 +75,24 @@ any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
 
 - `failure` is `{ "message": "...", "reason": "agent|timeout|abandoned|cancelled|box_error" }`.
 - `box` becomes `null` after the box is deleted.
-- `creator.kind` is `owner`, `user` or `box`.
+- `creator.kind` is `owner`, `user`, `service` or `box`.
 - `links` carry their full secret URLs only in the response to the call that
   minted them (create, or `POST …/links`). Elsewhere `links` lists only
   `kind`, `expiresAt` and a short id, because the controller stores token
   hashes.
 
-## Owner/user endpoints (Bearer or browser session)
+## Task API endpoints (scoped Bearer or browser session)
+
+Third-party services use a task-scoped bearer credential. It may create and
+manage only tasks created with that credential and list only the login profiles
+the owner has allowed for it. Its task creator has `kind: "service"` and the
+credential's ID. It cannot call the owner-only `/v1/login-profiles` API or mint
+control links unless the owner grants that separate capability. Browser
+sessions retain their existing account and role checks.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/v1/tasks/profiles` | List selectable saved login profiles using opaque IDs and safe labels. |
 | POST | `/v1/tasks` | Create and start a task. `Idempotency-Key` required. |
 | GET | `/v1/tasks` | Recent tasks retained until deletion. `?state=`, `?creator=`, `?limit=`, `?cursor=`. |
 | GET | `/v1/tasks/{id}` | Return the current task state and any result immediately. |
@@ -99,6 +107,28 @@ any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
 | POST | `/v1/tasks/{id}/links` | Mint links: `{ "kinds": ["control","view","screenshot"], "ttlSeconds": 86400 }`. |
 | DELETE | `/v1/tasks/{id}/links` | Revoke all links (or `?id=` for one). |
 
+### Selectable login profiles
+
+`GET /v1/tasks/profiles` returns only profiles the caller may use for task
+creation. For example:
+
+```json
+[
+  { "id": "lp_7f3a…", "application": "codex", "label": "Codex · 7F3A" },
+  { "id": "lp_20b9…", "application": "github", "label": "GitHub · 20B9" }
+]
+```
+
+IDs are random, stable, account-scoped references stored with the saved
+profiles. Labels are generated from the application and a short part of the
+random ID; neither IDs nor labels are derived from email, username, host or
+the existing profile name. The response contains no email, username, host,
+original profile name or credential contents. The owner can see which saved
+profile each label represents in the controller UI. Deleting and recreating a
+profile gives it a new ID. A task creation request can use only IDs returned
+for its caller; the controller resolves them within that account and rechecks
+access at creation time.
+
 ### Create request
 
 ```json
@@ -107,12 +137,12 @@ any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
   "goal": "Make TestFoo pass reliably and open a PR.",
   "agent": "codex",
   "loginProfiles": [
-    { "application": "codex", "name": "ikarus", "model": "gpt-6-sol", "reasoningEffort": "high" },
-    { "application": "github", "name": "0xikarus" }
+    { "profileId": "lp_7f3a…", "model": "gpt-6-sol", "reasoningEffort": "high" },
+    { "profileId": "lp_20b9…" }
   ],
   "tools": ["desktop"],
   "instructions": "Optional extra Markdown instructions.",
-  "slotId": "…", "diskGiB": 20, "memoryGiB": 4,
+  "slotId": "…", "diskGiB": 20, "memoryGiB": 4, "swapGiB": 1,
   "timeLimitSeconds": 7200,
   "retentionSeconds": 86400,
   "links": { "kinds": ["control", "screenshot"], "ttlSeconds": 86400 }
@@ -120,7 +150,13 @@ any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
 ```
 
 - Required: `name`, `goal` (1–100,000 bytes), `agent`.
-- Every other field matches box creation and is optional.
+- `diskGiB` sets the task box's workspace volume size (1–1,000 GiB, default
+  10 GiB). `memoryGiB` and `swapGiB` set per-box limits where the selected
+  container-isolated shared worker supports them; omit them to use normal box
+  defaults. `slotId` optionally selects an available worker slot. Creation
+  validates these settings against the selected worker and caller's limits.
+- The other optional settings follow box creation. The task's `loginProfiles`
+  use `profileId` from `/v1/tasks/profiles` instead of profile names.
 - `timeLimitSeconds`: 300–604,800, default 14,400 (4 hours).
 - `retentionSeconds`: 3,600–604,800, default 86,400. It applies to both the
   box and task record so the result remains available for inspection.
@@ -233,8 +269,9 @@ There is no new MCP tool. `create_agent_box` takes an optional `task` object:
 
 ## Build order
 
-1. Backend: tables, create/list/get/cancel/delete, the two agent tools
-   (needs a worker update), watchdog, time limit, retention sweeper.
+1. Backend: tables, task-scoped service credentials, selectable profile IDs,
+   create/list/get/cancel/delete, the two agent tools (needs a worker update),
+   watchdog, time limit, retention sweeper.
 2. Links: `/t/{token}` page and the stream, screenshot and state endpoints.
 3. UI: Recent Tasks list and task page (state, result, files, final screenshot,
    transcript, Create new task/Delete now), owner notifications.
