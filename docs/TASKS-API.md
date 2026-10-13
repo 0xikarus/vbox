@@ -87,7 +87,7 @@ any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
 | --- | --- | --- |
 | POST | `/v1/tasks` | Create and start a task. `Idempotency-Key` required. |
 | GET | `/v1/tasks` | Recent tasks retained until deletion. `?state=`, `?creator=`, `?limit=`, `?cursor=`. |
-| GET | `/v1/tasks/{id}` | One task. `?wait=finished&timeout=60` long-polls until it finishes (max 60 s). |
+| GET | `/v1/tasks/{id}` | One task. `?wait=finished&timeout=60` long-polls for a terminal state (max 60 s). |
 | GET | `/v1/tasks/{id}/events` | Timeline: state changes, nudges, owner messages, result. `?after=` cursor. |
 | GET | `/v1/tasks/{id}/messages` | Chat transcript while the task is retained. |
 | POST | `/v1/tasks/{id}/messages` | Message a running task's agent; `409` after finish. |
@@ -115,8 +115,7 @@ any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
   "slotId": "…", "diskGiB": 20, "memoryGiB": 4,
   "timeLimitSeconds": 7200,
   "retentionSeconds": 86400,
-  "links": { "kinds": ["control", "screenshot"], "ttlSeconds": 86400 },
-  "notify": { "webhookUrl": "https://example.com/hooks/vbox" }
+  "links": { "kinds": ["control", "screenshot"], "ttlSeconds": 86400 }
 }
 ```
 
@@ -126,14 +125,29 @@ any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
 - `retentionSeconds`: 3,600–604,800, default 86,400. It applies to both the
   box and task record so the result remains available for inspection.
 - `links` is optional; without it no links are minted.
-- `notify.webhookUrl` is optional. The controller POSTs the task JSON on finish,
-  signed like inbound mail (`X-Vbox-Signature`, `X-Vbox-Timestamp`).
 
 The box's startup instructions are the goal plus a fixed preamble: work until
 the goal is done, then call `completed_task`; call `failed_task` only when the
 goal is impossible, and say why.
 
 Response: `201` with the task resource, including full link URLs.
+
+### Polling for a result
+
+External services poll the task resource; the controller does not call their
+webhooks. After `POST /v1/tasks`, save the returned task ID and repeat
+`GET /v1/tasks/{id}?wait=finished&timeout=60` until `state` is `completed`,
+`failed`, `timed_out`, `abandoned` or `cancelled`. A wait returns `200` with the
+current task resource as soon as it reaches one of those states, or after the
+requested timeout if it is still active. `timeout` is 1–60 seconds; without
+`wait`, GET returns the current resource immediately. A disconnected or failed
+poll does not change the task; retry with the same ID and backoff.
+
+The terminal response includes `result` or `failure` and `deleteAt`. The
+polling service should copy any result text and download required files before
+`deleteAt`; subsequent reads return `404` after the task is deleted. The
+service can return its own job ID immediately to its caller and expose the
+saved result through its own API. No outbound callback is required.
 
 ## Links
 
@@ -205,7 +219,6 @@ There is no new MCP tool. `create_agent_box` takes an optional `task` object:
   result text; it opens the task page while the task is retained.
 - Box-created: the chat message above to the creator box. The owner sees it in
   the Recent Tasks list until deletion.
-- With `notify.webhookUrl`, the webhook is sent in addition to these.
 
 ## Storage
 
@@ -225,4 +238,4 @@ There is no new MCP tool. `create_agent_box` takes an optional `task` object:
 2. Links: `/t/{token}` page and the stream, screenshot and state endpoints.
 3. UI: Recent Tasks list and task page (state, result, files, final screenshot,
    transcript, Create new task/Delete now), owner notifications.
-4. `create_agent_box` `task` field, the message to the creator box, webhooks.
+4. `create_agent_box` `task` field and the message to the creator box.
