@@ -61,6 +61,7 @@ async function openBox(page,base){
 }
 
 async function draw(page,tool,from,to,{shift=false}={}){
+ await page.waitForFunction(()=>document.querySelector('#image-annotation-status').textContent.startsWith('Draw on the image'));
  await page.click('[data-annotation-tool="'+tool+'"]');
  const rect=await page.$eval('#image-annotation-canvas',canvas=>canvas.getBoundingClientRect().toJSON());
  const x=point=>rect.x+rect.width*point[0],y=point=>rect.y+rect.height*point[1];
@@ -71,7 +72,7 @@ async function draw(page,tool,from,to,{shift=false}={}){
 
 test('composer annotation replaces one upload, cancel preserves another, and paste/drop previews can be edited',async()=>{
  await withChat(async({browser,base,uploads,posts})=>{
-  const page=await browser.newPage();await page.setViewport({width:1100,height:800});await openBox(page,base);
+  const page=await browser.newPage();await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);await page.setViewport({width:1100,height:800});await openBox(page,base);
   await addImages(page,{names:['first.png','second.png']});
   await page.waitForFunction(()=>document.querySelectorAll('#chat-image-drafts .draft').length===2);
   assert.equal(uploads.length,2);
@@ -115,7 +116,7 @@ test('composer annotation replaces one upload, cancel preserves another, and pas
 
 test('all drawing tools export sharp marks at the original resolution with undo, redo and clear',async()=>{
  await withChat(async({browser,base,uploads})=>{
-  const page=await browser.newPage();await page.setViewport({width:1440,height:900});await openBox(page,base);
+  const page=await browser.newPage();await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);await page.setViewport({width:1440,height:900});await openBox(page,base);
   await addImages(page,{names:['large.png'],width:5000,height:1200});
   await page.waitForSelector('#chat-image-drafts .draft');
   await page.click('#chat-image-drafts .draft-annotate');await page.waitForSelector('#image-annotation[open]');
@@ -150,7 +151,7 @@ test('all drawing tools export sharp marks at the original resolution with undo,
 
 test('thread composer accepts pasted and dropped images, then annotates and sends only its own drafts',async()=>{
  await withChat(async({browser,base,uploads,posts})=>{
-  const page=await browser.newPage();await page.setViewport({width:1100,height:800});await openBox(page,base);
+  const page=await browser.newPage();await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);await page.setViewport({width:1100,height:800});await openBox(page,base);
   await page.waitForSelector('#chat-messages .msg-thread-line');
   await page.click('#chat-messages .msg-thread-line');
   await page.waitForFunction(()=>!document.querySelector('#thread-panel').hidden);
@@ -173,7 +174,7 @@ test('thread composer accepts pasted and dropped images, then annotates and send
 
 test('mobile thumbnail opens a full-screen editor with touch-friendly shape tools',async()=>{
  await withChat(async({browser,base,uploads})=>{
-  const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});await openBox(page,base);
+  const page=await browser.newPage();await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});await openBox(page,base);
   await addImages(page,{names:['mobile.png']});await page.waitForSelector('#chat-image-drafts .draft');
   await page.click('#chat-image-drafts .draft-open');await page.waitForSelector('#image-annotation[open]');
   const layout=await page.evaluate(()=>{

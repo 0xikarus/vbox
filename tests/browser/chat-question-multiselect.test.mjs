@@ -38,7 +38,7 @@ test('chat_ask questions accept several choices even when multiple is unset',asy
  await new Promise(done=>server.listen(0,'127.0.0.1',done));
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
  try{
-  const page=await browser.newPage();await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+  const page=await browser.newPage();await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
   await page.goto(`http://127.0.0.1:${server.address().port}/chat#box=builder`);
   const choice='.msg[data-key="'+id+'"] .question .choice';
   await page.waitForSelector(choice);

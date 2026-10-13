@@ -54,6 +54,7 @@ test('send, quiet heartbeat, stale busy signal, and reply keep every activity su
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await page.waitForFunction(()=>document.querySelector('#chat-header-state')?.textContent==='codex · idle');
   const assertState=async(state,preview,bubble)=>{
+   await page.waitForFunction(expected=>document.querySelector('[data-box-id="builder"] .avatar-mascot svg')?.dataset.mood===expected,{},state==='working'?'working':'idle');
    assert.equal(await page.$eval('#chat-header-state',el=>el.textContent),'codex · '+state);
    assert.equal(await page.$eval('[data-box-id="builder"] .preview',el=>el.textContent),preview);
    assert.equal(!!await page.$('#chat-messages .msg.processing'),bubble);

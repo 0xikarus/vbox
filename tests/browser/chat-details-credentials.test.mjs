@@ -19,7 +19,7 @@ const available=[
 ];
 
 function fixtureServer(fail,writes,requests){
- let failed=false,state={profiles:imported,pending:[],verified:true};
+ let recovered=false,failed=false,state={profiles:imported,pending:[],verified:true};
  let releaseCredentials;
  const heldCredentials=new Promise(resolve=>{releaseCredentials=resolve});
  const server=http.createServer(async(req,res)=>{
@@ -32,12 +32,12 @@ function fixtureServer(fail,writes,requests){
    if(path==='/v1/logical-boxes/builder/imported-credentials'){
     requests.push('GET state');await new Promise(done=>setTimeout(done,150));
     if(fail==='loading')await heldCredentials;
-    if(fail==='state'&&!failed&&requests.includes('GET available')){failed=true;res.statusCode=502;return res.end('{"error":"Credential service unavailable"}')}
+    if(fail==='state'&&!recovered&&requests.includes('GET available')){failed=true;res.statusCode=502;return res.end('{"error":"Credential service unavailable"}')}
     return res.end(JSON.stringify(state));
    }
    if(path==='/v1/login-profiles'){
     requests.push('GET available');
-    if(fail==='profiles'&&!failed){failed=true;res.statusCode=500;return res.end('{"error":"Could not list login profiles"}')}
+    if(fail==='profiles'&&!recovered){failed=true;res.statusCode=500;return res.end('{"error":"Could not list login profiles"}')}
     return res.end(JSON.stringify(available));
    }
    if(path==='/v1/logical-boxes/builder/login-profiles'&&req.method==='PUT'){
@@ -56,7 +56,7 @@ function fixtureServer(fail,writes,requests){
   try{res.setHeader('Content-Type',({'.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.html':'text/html','.woff2':'font/woff2'})[extname(file)]||'text/plain');res.end(await readFile(file))}
   catch{res.statusCode=404;res.end()}
  });
- server.releaseCredentials=releaseCredentials;
+ server.releaseCredentials=releaseCredentials;server.recoverCredentials=()=>{recovered=true};
  return server;
 }
 
@@ -144,6 +144,7 @@ test('Details Credentials shows loading errors and Retry before allowing a PUT',
     assert.match(await page.$eval('#box-credentials-status',el=>el.textContent),/Could not load credentials/);
     assert.equal(await page.$$eval('.credential-slot-change',nodes=>nodes.length),0,'missing refs cannot be overwritten');
     assert.deepEqual(writes,[]);
+    server.recoverCredentials();
     await page.click('#box-credentials-retry');
     await page.waitForSelector('[data-slot="agent"] .credential-slot-change');
     assert.equal(await page.$eval('#box-credentials-retry',el=>el.hidden),true);

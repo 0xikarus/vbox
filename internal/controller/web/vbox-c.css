@@ -3198,3 +3198,5 @@ dialog:not([open]){display:none}
 .inline-permission-card .box-create-limit .mail-switch input:checked+span::after{transform:translateX(17px)}
 .inline-permission-card .box-create-limit .mail-switch input:focus-visible+span{outline:2px solid var(--vb-ink);outline-offset:3px}
 .inline-permission-card .box-create-limit .mail-switch input:disabled+span{opacity:.55}
+
+@media(max-width:600px){#inspect.details-prototype .ip-page .ip-policy-compact .run-budget-actions button{min-width:40px;flex-shrink:0}}

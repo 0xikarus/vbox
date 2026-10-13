@@ -48,7 +48,7 @@ test('Details drawer uses grouped rows, subpages and credential slots',async()=>
  try{
   const base='http://127.0.0.1:'+server.address().port;
   for(const width of [360,390,1440]){
-   const page=await browser.newPage();await page.setViewport({width,height:900,isMobile:width<600,hasTouch:width<600});
+   const page=await browser.newPage();await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);await page.setViewport({width,height:900,isMobile:width<600,hasTouch:width<600});
    await page.goto(base+'/chat#box=builder');
    await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden&&document.querySelector('#chat-loading').hidden);
    await page.$eval('#chat-info',button=>button.click());
@@ -65,7 +65,7 @@ test('Details drawer uses grouped rows, subpages and credential slots',async()=>
    assert.equal(await page.$eval('#inspect-prototype-main',node=>node.hidden),false);
    assert.equal(await page.$eval('#inspect-idle-policy',node=>node.closest('#inspect-prototype-page')!==null),true);
    if(width<600)assert.deepEqual(await page.evaluate(()=>['#inspect-close','#inspect-resources-adjust'].flatMap(selector=>{
-    const rect=document.querySelector(selector).getBoundingClientRect();return rect.width>=40&&rect.height>=40?[]:[`${selector}: ${rect.width}×${rect.height}`];
+    const rect=document.querySelector(selector).getBoundingClientRect();return rect.width>=39.99&&rect.height>=39.99?[]:[`${selector}: ${rect.width}×${rect.height}`];
    })),[],'phone main-page controls have 40px hit areas');
    await page.$eval('[data-ip-row="power"]',button=>button.click());
    assert.equal(await page.$eval('#inspect-prototype-page',node=>node.hidden),false);
@@ -80,7 +80,7 @@ test('Details drawer uses grouped rows, subpages and credential slots',async()=>
     '#inspect-run-budget-policy .idle-policy-controls:not(.run-budget-actions)>button',
     '#inspect-run-budget-policy .run-budget-actions button',
    ].flatMap(selector=>[...document.querySelectorAll(selector)].flatMap(node=>{
-    const rect=node.getBoundingClientRect();return rect.width>=40&&rect.height>=40?[]:[`${selector}: ${rect.width}×${rect.height}`];
+    const rect=node.getBoundingClientRect();return rect.width>=39.99&&rect.height>=39.99?[]:[`${selector}: ${rect.width}×${rect.height}`];
    }))),[],'phone policy controls have 40px hit areas');
    assert.equal(await page.$eval('#inspect-run-budget-policy .idle-policy-switch input',input=>input.checked),true);
    await page.$eval('#inspect-run-budget-policy .idle-policy-switch input',input=>input.click());

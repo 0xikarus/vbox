@@ -45,7 +45,7 @@ async function withChat(fn){
  finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 }
 async function openTouch(browser,base){
- const page=await browser.newPage();await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+ const page=await browser.newPage();await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
  await page.goto(base+'/chat#box=builder');
  await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden&&document.querySelector('#chat-loading').hidden);
  await page.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg .text').length>0);
@@ -112,7 +112,7 @@ test('Touch: long-press outside the text still opens the actions menu',async()=>
 
 test('Desktop: drag-select and double-click select text without swipe, reply or menu',async()=>{
  await withChat(async(browser,base)=>{
-  const page=await browser.newPage();await page.setViewport({width:1440,height:900});
+  const page=await browser.newPage();await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);await page.setViewport({width:1440,height:900});
   await page.goto(base+'/chat#box=builder');
   await page.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg .text').length>0);
   const boxRect=await page.$eval('#chat-messages .msg .text',el=>{const b=el.getBoundingClientRect();return {left:b.left,top:b.top,right:b.right,bottom:b.bottom}});
