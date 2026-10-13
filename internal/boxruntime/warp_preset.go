@@ -71,7 +71,7 @@ func restoreWARP(ctx context.Context, home string, progress io.Writer) error {
 	if !warpConnected(ctx) {
 		if info, err := os.Stat(statusPath); err == nil && time.Since(info.ModTime()) < 10*time.Minute {
 			previous, _ := os.ReadFile(statusPath)
-			if strings.HasPrefix(string(previous), "unavailable:") && exec.CommandContext(ctx, "warp-cli", "status").Run() == nil {
+			if warpEdgeHandshakeFailed(string(previous)) && exec.CommandContext(ctx, "warp-cli", "--accept-tos", "status").Run() == nil {
 				// A failed edge handshake should not delay every later task.
 				return nil
 			}
@@ -92,15 +92,19 @@ func restoreWARP(ctx context.Context, home string, progress io.Writer) error {
 	return os.WriteFile(statusPath, []byte(status), 0600)
 }
 
+func warpEdgeHandshakeFailed(status string) bool {
+	return strings.HasPrefix(status, "unavailable: Cloudflare WARP could not connect")
+}
+
 func connectWARP(ctx context.Context, home string, progress io.Writer) error {
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	if warpConnected(ctx) {
 		return nil
 	}
 	// Proxy mode avoids a device-wide route and NET_ADMIN, which worker
 	// containers intentionally do not have.
-	status := exec.CommandContext(ctx, "warp-cli", "status")
+	status := exec.CommandContext(ctx, "warp-cli", "--accept-tos", "status")
 	if err := status.Run(); err != nil {
 		logPath := filepath.Join(home, ".config", "vmbox", "warp-svc.log")
 		if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
@@ -119,7 +123,7 @@ func connectWARP(ctx context.Context, home string, progress io.Writer) error {
 		cmd.Process.Release()
 		log.Close()
 		for i := 0; i < 30; i++ {
-			if exec.CommandContext(ctx, "warp-cli", "status").Run() == nil {
+			if exec.CommandContext(ctx, "warp-cli", "--accept-tos", "status").Run() == nil {
 				break
 			}
 			select {
@@ -130,15 +134,32 @@ func connectWARP(ctx context.Context, home string, progress io.Writer) error {
 		}
 	}
 	run := func(args ...string) error {
-		cmd := exec.CommandContext(ctx, "warp-cli", args...)
+		cmd := exec.CommandContext(ctx, "warp-cli", append([]string{"--accept-tos"}, args...)...)
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("warp-cli %s: %w", strings.Join(args, " "), err)
 		}
 		return nil
 	}
-	if err := exec.CommandContext(ctx, "warp-cli", "registration", "show").Run(); err != nil {
-		if err := run("--accept-tos", "registration", "new"); err != nil {
-			return err
+	if err := exec.CommandContext(ctx, "warp-cli", "--accept-tos", "registration", "show").Run(); err != nil {
+		// warp-cli status may succeed while the daemon still reports "Daemon
+		// Startup" and rejects registration for about a minute. Retry within
+		// the connection timeout so restore can finish without a manual step.
+		for attempt := 0; attempt < 75; attempt++ {
+			err := run("registration", "new")
+			if err == nil {
+				break
+			}
+			if exec.CommandContext(ctx, "warp-cli", "--accept-tos", "registration", "show").Run() == nil {
+				break
+			}
+			if attempt == 74 {
+				return err
+			}
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("WARP registration unavailable: %w", ctx.Err())
+			case <-time.After(time.Second):
+			}
 		}
 	}
 	for _, args := range [][]string{{"tunnel", "protocol", "set", "MASQUE"}, {"mode", "proxy"}, {"proxy", "port", "40000"}, {"connect"}} {
@@ -161,7 +182,7 @@ func connectWARP(ctx context.Context, home string, progress io.Writer) error {
 }
 
 func warpConnected(ctx context.Context) bool {
-	output, err := exec.CommandContext(ctx, "warp-cli", "status").Output()
+	output, err := exec.CommandContext(ctx, "warp-cli", "--accept-tos", "status").Output()
 	return err == nil && strings.Contains(string(output), "Connected") && socks5Ready("127.0.0.1:40000")
 }
 
@@ -194,6 +215,17 @@ func installWARPPackage(ctx context.Context, progress io.Writer) error {
 		return cmd.Run()
 	}
 	fmt.Fprintln(progress, "Installing Cloudflare WARP client from the official package repository…")
+	// A previous attempt may have created these files under a restrictive sudo
+	// umask. Repair them before apt reads the repository on a retry.
+	for _, path := range []string{warpKeyring, warpSource} {
+		if _, err := os.Stat(path); err == nil {
+			if err := run(nil, "sudo", "-n", "chmod", "0644", path); err != nil {
+				return fmt.Errorf("make Cloudflare repository readable: %w", err)
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
 	if err := run(nil, "sudo", "-n", "apt-get", "-o", "DPkg::Lock::Timeout=30", "update", "-qq"); err != nil {
 		return fmt.Errorf("refresh package index: %w", err)
 	}
@@ -214,6 +246,9 @@ func installWARPPackage(ctx context.Context, progress io.Writer) error {
 	}
 	if err := run(strings.NewReader(entry), "sudo", "-n", "tee", warpSource); err != nil {
 		return fmt.Errorf("configure Cloudflare package repository: %w", err)
+	}
+	if err := run(nil, "sudo", "-n", "chmod", "0644", warpKeyring, warpSource); err != nil {
+		return fmt.Errorf("make Cloudflare repository readable: %w", err)
 	}
 	if err := run(nil, "sudo", "-n", "apt-get", "-o", "DPkg::Lock::Timeout=30", "update", "-qq"); err != nil {
 		return fmt.Errorf("refresh Cloudflare package index: %w", err)

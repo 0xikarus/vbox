@@ -873,34 +873,6 @@ paths:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/SendBoxMessage'}}}
       responses: {'204': {description: Input delivered}, '409': {description: Delivery is ambiguous or box is not running}}
-  /v1/logical-boxes/{id}/tasks:
-    get:
-      parameters: [{$ref: '#/components/parameters/ID'}]
-      responses: {'200': {description: Tasks for the logical box, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/BoxTask'}}}}}}
-    post:
-      parameters:
-        - {$ref: '#/components/parameters/ID'}
-        - {$ref: '#/components/parameters/IdempotencyKey'}
-      requestBody:
-        required: true
-        content: {application/json: {schema: {$ref: '#/components/schemas/CreateBoxTask'}}}
-      responses: {'202': {description: Task accepted, content: {application/json: {schema: {$ref: '#/components/schemas/BoxTask'}}}}}
-  /v1/tasks/{id}:
-    get:
-      parameters: [{$ref: '#/components/parameters/ID'}]
-      responses: {'200': {description: Box task, content: {application/json: {schema: {$ref: '#/components/schemas/BoxTask'}}}}}
-  /v1/tasks/{id}/messages:
-    get:
-      parameters: [{$ref: '#/components/parameters/ID'}]
-      responses: {'200': {description: Task messages, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/BoxMessage'}}}}}}
-    post:
-      parameters:
-        - {$ref: '#/components/parameters/ID'}
-        - {$ref: '#/components/parameters/IdempotencyKey'}
-      requestBody:
-        required: true
-        content: {application/json: {schema: {$ref: '#/components/schemas/SendBoxMessage'}}}
-      responses: {'202': {description: Message accepted or delivered}}
   /v1/allocations/{id}:
     get:
       parameters: [{$ref: '#/components/parameters/ID'}]
@@ -1256,28 +1228,6 @@ components:
         contact: {type: string, description: Target box name or id.}
         state: {enum: [inherit, allow, block]}
         twoWay: {type: boolean, default: false}
-    CreateBoxTask:
-      type: object
-      required: [agent, prompt]
-      properties:
-        agent: {enum: [codex, claude, opencode, shell]}
-        prompt: {type: string, minLength: 1}
-        session: {type: string, default: vmbox}
-    BoxTask:
-      type: object
-      required: [id, logicalBoxId, boxName, userId, agent, session, prompt, state, createdAt, updatedAt]
-      properties:
-        id: {type: string}
-        logicalBoxId: {type: string}
-        boxName: {type: string}
-        userId: {type: string}
-        agent: {type: string}
-        session: {type: string}
-        prompt: {type: string}
-        state: {enum: [queued, waiting_capacity, starting, active, failed]}
-        failureReason: {type: string}
-        createdAt: {type: string, format: date-time}
-        updatedAt: {type: string, format: date-time}
     SendBoxMessage:
       type: object
       required: [text]
