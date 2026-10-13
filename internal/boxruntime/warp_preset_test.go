@@ -16,3 +16,19 @@ func TestWarpAptEntryUsesSupportedDistroCodename(t *testing.T) {
 		}
 	}
 }
+
+func TestWarpCooldownOnlyAppliesToEdgeHandshakeFailures(t *testing.T) {
+	for _, tc := range []struct {
+		status string
+		want   bool
+	}{
+		{"unavailable: Cloudflare WARP could not connect; check Cloudflare edge UDP access\n", true},
+		{"unavailable: warp-cli registration new: exit status 1\n", false},
+		{"unavailable: WARP service unavailable: context deadline exceeded\n", false},
+		{"connected\n", false},
+	} {
+		if got := warpEdgeHandshakeFailed(tc.status); got != tc.want {
+			t.Errorf("status %q: got %v, want %v", tc.status, got, tc.want)
+		}
+	}
+}

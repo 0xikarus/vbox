@@ -71,7 +71,7 @@ func restoreWARP(ctx context.Context, home string, progress io.Writer) error {
 	if !warpConnected(ctx) {
 		if info, err := os.Stat(statusPath); err == nil && time.Since(info.ModTime()) < 10*time.Minute {
 			previous, _ := os.ReadFile(statusPath)
-			if strings.HasPrefix(string(previous), "unavailable:") && exec.CommandContext(ctx, "warp-cli", "--accept-tos", "status").Run() == nil {
+			if warpEdgeHandshakeFailed(string(previous)) && exec.CommandContext(ctx, "warp-cli", "--accept-tos", "status").Run() == nil {
 				// A failed edge handshake should not delay every later task.
 				return nil
 			}
@@ -92,8 +92,12 @@ func restoreWARP(ctx context.Context, home string, progress io.Writer) error {
 	return os.WriteFile(statusPath, []byte(status), 0600)
 }
 
+func warpEdgeHandshakeFailed(status string) bool {
+	return strings.HasPrefix(status, "unavailable: Cloudflare WARP could not connect")
+}
+
 func connectWARP(ctx context.Context, home string, progress io.Writer) error {
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	if warpConnected(ctx) {
 		return nil
@@ -138,8 +142,9 @@ func connectWARP(ctx context.Context, home string, progress io.Writer) error {
 	}
 	if err := exec.CommandContext(ctx, "warp-cli", "--accept-tos", "registration", "show").Run(); err != nil {
 		// warp-cli status may succeed while the daemon still reports "Daemon
-		// Startup" and rejects registration. Give it a short, bounded retry.
-		for attempt := 0; attempt < 20; attempt++ {
+		// Startup" and rejects registration for about a minute. Retry within
+		// the connection timeout so restore can finish without a manual step.
+		for attempt := 0; attempt < 75; attempt++ {
 			err := run("registration", "new")
 			if err == nil {
 				break
@@ -147,7 +152,7 @@ func connectWARP(ctx context.Context, home string, progress io.Writer) error {
 			if exec.CommandContext(ctx, "warp-cli", "--accept-tos", "registration", "show").Run() == nil {
 				break
 			}
-			if attempt == 19 {
+			if attempt == 74 {
 				return err
 			}
 			select {
