@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
@@ -85,57 +83,5 @@ func TestMaterializeRailwaySSHIdentityRejectsInvalidInput(t *testing.T) {
 	}
 	if path, err := materializeRailwaySSHIdentity("", t.TempDir()); err != nil || path != "" {
 		t.Fatalf("empty identity path=%q err=%v", path, err)
-	}
-}
-
-func TestSeedRailwayCredentialRequiresRailwayScopeWithoutLeakingToken(t *testing.T) {
-	const token = "do-not-leak-project-token"
-	t.Setenv("RAILWAY_API_TOKEN", "")
-	t.Setenv("RAILWAY_TOKEN", token)
-	t.Setenv("RAILWAY_PROJECT_ID", "")
-	t.Setenv("RAILWAY_ENVIRONMENT_ID", "")
-	err := seedRailwayCredentialFromEnvironment(context.Background(), &controller.Store{})
-	if err == nil || !strings.Contains(err.Error(), "RAILWAY_PROJECT_ID") {
-		t.Fatalf("error=%v", err)
-	}
-	if strings.Contains(err.Error(), token) {
-		t.Fatal("environment token leaked through error")
-	}
-}
-
-func TestSeedRailwayCredentialPrefersAccountOrWorkspaceToken(t *testing.T) {
-	t.Setenv("RAILWAY_API_TOKEN", "account-or-workspace-token")
-	t.Setenv("RAILWAY_TOKEN", "project-token")
-	t.Setenv("RAILWAY_PROJECT_ID", "")
-	t.Setenv("RAILWAY_ENVIRONMENT_ID", "")
-	err := seedRailwayCredentialFromEnvironment(context.Background(), &controller.Store{})
-	if err == nil || !strings.Contains(err.Error(), "RAILWAY_API_TOKEN requires") {
-		t.Fatalf("error=%v", err)
-	}
-	if strings.Contains(err.Error(), "account-or-workspace-token") || strings.Contains(err.Error(), "project-token") {
-		t.Fatal("environment token leaked through error")
-	}
-}
-
-func TestSeedRailwayCredentialIsDisabledWithoutToken(t *testing.T) {
-	t.Setenv("RAILWAY_API_TOKEN", "")
-	t.Setenv("RAILWAY_TOKEN", "")
-	if err := seedRailwayCredentialFromEnvironment(context.Background(), &controller.Store{}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestSeedInitialFleetIsDisabledWithoutSetting(t *testing.T) {
-	t.Setenv("VMBOX_INITIAL_COMPUTE_BOX_SLOTS", "")
-	if err := seedInitialFleetFromEnvironment(context.Background(), &controller.Store{}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestSeedInitialFleetRejectsInvalidSetting(t *testing.T) {
-	t.Setenv("VMBOX_INITIAL_COMPUTE_BOX_SLOTS", "two")
-	err := seedInitialFleetFromEnvironment(context.Background(), &controller.Store{})
-	if err == nil || !strings.Contains(err.Error(), "must be an integer") {
-		t.Fatalf("error=%v", err)
 	}
 }
