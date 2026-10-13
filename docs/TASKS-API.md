@@ -13,9 +13,10 @@ and control its desktop and terminal.
 
 ## Naming
 
-`/v1/tasks/{id}` already exists: it addresses a box's agent session
-(`box_tasks`). The new resource therefore lives at **`/v1/goal-tasks`** and is
-stored in `goal_tasks`. The UI calls it "Tasks".
+The resource lives at **`/v1/tasks`** and is stored in `goal_tasks`. The old
+`/v1/tasks/{id}` and `/v1/logical-boxes/{id}/tasks` routes, which addressed a
+box's agent session, are removed first (#494). The internal `box_tasks` table
+keeps running agent sessions and is unrelated to this API.
 
 ## Lifecycle
 
@@ -78,21 +79,21 @@ finished + keep     ─▶ box becomes a normal box; the task stays in history
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/v1/goal-tasks` | Create and start a task. `Idempotency-Key` required. |
-| GET | `/v1/goal-tasks` | Task history. `?state=`, `?creator=`, `?limit=`, `?cursor=`. |
-| GET | `/v1/goal-tasks/{id}` | One task. `?wait=finished&timeout=60` long-polls until it finishes (max 60 s). |
-| GET | `/v1/goal-tasks/{id}/events` | Timeline: state changes, nudges, owner messages, result. `?after=` cursor. |
-| GET | `/v1/goal-tasks/{id}/messages` | Chat transcript; archived when the box is deleted. |
-| POST | `/v1/goal-tasks/{id}/messages` | Message the agent. On a finished task within retention this reopens it. |
-| POST | `/v1/goal-tasks/{id}/cancel` | End as `cancelled`; hibernates the box. |
-| POST | `/v1/goal-tasks/{id}/reopen` | Wake the box, clear `deleteAt`, back to `running`. Optional `{ "message": "..." }`. |
-| POST | `/v1/goal-tasks/{id}/keep` | Turn the box into a normal box. The task record stays. |
-| DELETE | `/v1/goal-tasks/{id}/box` | Delete the box now. |
-| DELETE | `/v1/goal-tasks/{id}` | Remove a finished task from history (deletes its box first if needed). |
-| GET | `/v1/goal-tasks/{id}/files/{fileId}` | Download a result file. |
-| GET | `/v1/goal-tasks/{id}/final-screenshot` | Screenshot captured at finish. |
-| POST | `/v1/goal-tasks/{id}/links` | Mint links: `{ "kinds": ["control","view","screenshot"], "ttlSeconds": 86400 }`. |
-| DELETE | `/v1/goal-tasks/{id}/links` | Revoke all links (or `?id=` for one). |
+| POST | `/v1/tasks` | Create and start a task. `Idempotency-Key` required. |
+| GET | `/v1/tasks` | Task history. `?state=`, `?creator=`, `?limit=`, `?cursor=`. |
+| GET | `/v1/tasks/{id}` | One task. `?wait=finished&timeout=60` long-polls until it finishes (max 60 s). |
+| GET | `/v1/tasks/{id}/events` | Timeline: state changes, nudges, owner messages, result. `?after=` cursor. |
+| GET | `/v1/tasks/{id}/messages` | Chat transcript; archived when the box is deleted. |
+| POST | `/v1/tasks/{id}/messages` | Message the agent. On a finished task within retention this reopens it. |
+| POST | `/v1/tasks/{id}/cancel` | End as `cancelled`; hibernates the box. |
+| POST | `/v1/tasks/{id}/reopen` | Wake the box, clear `deleteAt`, back to `running`. Optional `{ "message": "..." }`. |
+| POST | `/v1/tasks/{id}/keep` | Turn the box into a normal box. The task record stays. |
+| DELETE | `/v1/tasks/{id}/box` | Delete the box now. |
+| DELETE | `/v1/tasks/{id}` | Remove a finished task from history (deletes its box first if needed). |
+| GET | `/v1/tasks/{id}/files/{fileId}` | Download a result file. |
+| GET | `/v1/tasks/{id}/final-screenshot` | Screenshot captured at finish. |
+| POST | `/v1/tasks/{id}/links` | Mint links: `{ "kinds": ["control","view","screenshot"], "ttlSeconds": 86400 }`. |
+| DELETE | `/v1/tasks/{id}/links` | Revoke all links (or `?id=` for one). |
 
 ### Create request
 
@@ -117,7 +118,7 @@ finished + keep     ─▶ box becomes a normal box; the task stays in history
 
 - Required: `name`, `goal` (1–100,000 bytes), `agent`.
 - Every other field matches box creation and is optional.
-- `timeLimitSeconds`: 300–604,800, default 3,600.
+- `timeLimitSeconds`: 300–604,800, default 14,400 (4 hours).
 - `retentionSeconds`: 0–604,800, default 86,400. 0 deletes the box right after it finishes.
 - `links` is optional; without it no links are minted.
 - `notify.webhookUrl` is optional. The controller POSTs the task JSON on finish,
@@ -170,7 +171,7 @@ Endpoints behind the link cookie:
 
 Both tools then: stop the agent, capture the final screenshot, notify the
 creator, hibernate the box and set `deleteAt`. Repeated calls return the
-existing result. Worker side, they call `POST /v1/agent-desktop/goal-task/complete`
+existing result. Worker side, they call `POST /v1/agent-desktop/task/complete`
 and `…/fail` with the box's desktop-agent auth.
 
 ## Tasks created by boxes
@@ -179,7 +180,7 @@ There is no new MCP tool. `create_agent_box` takes an optional `task` object:
 
 ```json
 { "name": "…", "agent": "codex", "idempotencyKey": "…",
-  "task": { "goal": "…", "timeLimitSeconds": 3600, "retentionSeconds": 86400, "links": { "kinds": ["screenshot"] } } }
+  "task": { "goal": "…", "timeLimitSeconds": 14400, "retentionSeconds": 86400, "links": { "kinds": ["screenshot"] } } }
 ```
 
 - The same create grant and limits apply (`maxBoxes`, `maxDiskGiB`, allowed agents).
