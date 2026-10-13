@@ -100,6 +100,7 @@ type TerminalInputRequest struct {
 type BoxMessage struct {
 	ID              string              `json:"id"`
 	TaskID          string              `json:"taskId"`
+	Agent           string              `json:"agent,omitempty"`
 	UserID          string              `json:"userId,omitempty"`
 	Direction       string              `json:"direction"`
 	ChatKey         string              `json:"chatKey,omitempty"`

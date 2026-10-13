@@ -192,11 +192,7 @@ func (a *App) controllerTaskStatus(ctx context.Context, c config.Context, token 
 		return nil
 	}
 	var task v1.ProcessTask
-	status, err := a.request(ctx, c, token, http.MethodGet, "/v1/process-tasks/"+url.PathEscape(args[1]), nil, &task, nil)
-	if status == http.StatusNotFound {
-		_, err = a.request(ctx, c, token, http.MethodGet, "/v1/tasks/"+url.PathEscape(args[1]), nil, &task, nil)
-	}
-	if err != nil {
+	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/process-tasks/"+url.PathEscape(args[1]), nil, &task, nil); err != nil {
 		return err
 	}
 	if task.BoxName != box && task.LogicalBoxID != box {
