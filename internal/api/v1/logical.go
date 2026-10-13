@@ -7,6 +7,8 @@ import "strings"
 // explicitly imports an existing detached volume; ordinary creation leaves
 // both empty and lets the controller create and detach the volume safely.
 type CreateLogicalBoxRequest struct {
+	// GoalTaskID is controller-internal and binds dispatch to workspace creation.
+	GoalTaskID         string            `json:"-"`
 	SetupScript        string            `json:"setupScript,omitempty"`
 	Tools              []string          `json:"tools,omitempty"`
 	DesktopResolution  string            `json:"desktopResolution,omitempty"`

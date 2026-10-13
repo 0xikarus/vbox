@@ -1,6 +1,6 @@
-# Tasks API (proposal)
+# Tasks API
 
-Status: draft for review. Nothing here is implemented yet.
+Implementation contract for PR #492. The owner UI is at `/tasks`.
 
 A **task** is a temporary box with one goal. Its agent gets two extra tools,
 `completed_task` and `failed_task`. Calling either one records the result,
@@ -92,11 +92,11 @@ finished without a box ───────────────▶ task del
   "timeLimitSeconds": 7200,
   "retentionSeconds": 86400,
   "createdAt": "…", "startedAt": "…", "finishedAt": "…", "deleteAt": "…", "boxDeletedAt": null,
-  "links": {
-    "control":    { "url": "https://ctrl.example.com/t/…", "expiresAt": "…" },
-    "view":       { "url": "https://ctrl.example.com/t/…", "expiresAt": "…" },
-    "screenshot": { "url": "https://ctrl.example.com/v1/task-links/…/screenshot.png", "expiresAt": "…" }
-  }
+  "links": [
+    { "id": "…", "kind": "control", "url": "https://ctrl.example.com/t/…", "expiresAt": "…" },
+    { "id": "…", "kind": "view", "url": "https://ctrl.example.com/t/…", "expiresAt": "…" },
+    { "id": "…", "kind": "screenshot", "url": "https://ctrl.example.com/v1/task-links/…/screenshot.png", "expiresAt": "…" }
+  ]
 }
 ```
 
@@ -133,6 +133,7 @@ sessions retain their existing account and role checks.
 | DELETE | `/v1/tasks/{id}` | Delete a finished task and its box now. |
 | GET | `/v1/tasks/{id}/files/{fileId}` | Download a result file. |
 | GET | `/v1/tasks/{id}/final-screenshot` | Screenshot captured at finish. |
+| GET | `/v1/tasks/{id}/final-terminal` | Terminal text captured at finish. |
 | POST | `/v1/tasks/{id}/links` | Mint links: `{ "kinds": ["control","view","screenshot"], "ttlSeconds": 86400 }`. |
 | DELETE | `/v1/tasks/{id}/links` | Revoke all links (or `?id=` for one). |
 
@@ -222,20 +223,21 @@ has the URL gets that access, without logging in.
 | Kind | URL | Gives |
 | --- | --- | --- |
 | `control` | `/t/{token}` | Page with the live desktop (noVNC) and tmux terminal, input enabled. |
-| `view` | `/t/{token}` | Same page, view-only (noVNC `viewOnly`, terminal read-only). |
+| `view` | `/t/{token}` | Same page, view-only (noVNC `viewOnly`, terminal read-only, enforced by the server). |
 | `screenshot` | `/v1/task-links/{token}/screenshot.png` | Current desktop PNG. `?source=terminal` returns the terminal as text/plain. When the box isn't running it returns the final screenshot, with `X-Vbox-Captured-At`. |
 
 Rules:
-- **Tokens:** 256-bit random, stored only as SHA-256, compared in constant time.
+- **Tokens:** 256-bit random, stored and looked up only as SHA-256 hashes.
 - **Expiry:** `ttlSeconds` defaults to 24 h and is capped at the task's `deleteAt`, or 7 days while it runs.
-- **Revocation:** revoked links fail at once, and open streams are closed.
+- **Revocation:** revoked links fail on the next request; open streams revalidate every 250 ms and close on revocation or expiry.
 - **After deletion:** `control`/`view` links stop working when the box is
   deleted. If the box is deleted early, `screenshot` keeps serving the final
   screenshot until the task record is deleted. All links fail after task deletion.
 - **Page links:** `/t/{token}` exchanges the token for an HttpOnly,
   `SameSite=Strict` cookie limited to `/v1/task-links/` and that box. It then
-  removes the token from the address bar, so it doesn't leak through history
-  or `Referer`.
+  redirects to `/t#<link-id>`, leaving the secret out of the final address
+  and `Referer`. The initial capability URL is sensitive and may still appear
+  in a browser history or an upstream access log. Each link gets a separate cookie.
 - **Scope:** a link gives no direct access to other boxes or `/v1/` endpoints
   outside `/v1/task-links/`. A `control` link does grant input to this box's
   terminal and desktop, including access to files and credentials readable
@@ -295,16 +297,40 @@ There is no new MCP tool. `create_agent_box` takes an optional `task` object:
   failure_reason, failure_message, final_screenshot, timestamps.
 - `goal_task_files`, `goal_task_links` (token_hash, kind, expires_at,
   revoked_at), `goal_task_events`.
-- `goal_task_transcripts` holds a text copy of the box chat if the box is
-  deleted early, because `box_messages` is removed with the box. It is removed
-  with the task record at `deleteAt`.
+- `goal_tasks.transcript` holds a copy of the box chat before hibernation,
+  because `box_messages` is removed with the box. It is removed with the task
+  record at `deleteAt`. Copied creator chat notifications wait independently
+  in `goal_task_notices` until an existing agent session can receive them.
 
-## Build order
+## Service access and example
 
-1. Backend: tables, task-scoped service credentials, selectable profile IDs,
-   create/list/get/cancel/delete, the two agent tools (needs a worker update),
-   account queue and concurrency limit, watchdog, time limit, retention sweeper.
-2. Links: `/t/{token}` page and the stream, screenshot and state endpoints.
-3. UI: Recent Tasks list and task page (state, result, files, final screenshot,
-   transcript, Create new task/Delete now), owner notifications.
-4. `create_agent_box` `task` field and the message to the creator box.
+Owners create/revoke service tokens in **Tasks → Service API access and profile
+mapping**, or via `GET/POST /v1/task-service-credentials` and
+`DELETE /v1/task-service-credentials/{id}`. POST accepts `name`, `profileIds`,
+optional `allowControl` (default false) and `expiresAt`. The raw `vbtask_` token
+is returned once. `/v1/task-service-credentials/profiles` is the owner-only
+mapping of opaque labels to saved names; task service tokens cannot access it.
+Revoking a token prevents new API requests and prevents its queued tasks from
+starting. Already running tasks still finish normally.
+
+Run the standard-library Python example:
+
+```sh
+export VMBOX_CONTROLLER_URL=https://your-controller.example
+# Set VMBOX_TASK_TOKEN privately to the service token.
+python3 scripts/examples/tasks_api.py --list-profiles
+python3 scripts/examples/tasks_api.py --profile-id lp_... --count 6 --delete
+```
+
+This creates explicitly named `api-test-*` tasks, each with a small deliverable,
+polls every 30 seconds with jitter, saves results locally and requests cleanup.
+Six tasks exercise the queue beyond the four-task cap. `--task-id UUID` resumes
+polling without creating another task. Neither polling nor shared links wakes
+boxes. Download saved files before `deleteAt`; deletion removes them permanently.
+
+Task workspaces always include the desktop tool preset for task MCP credentials
+and final captures. If the worker is unavailable at completion, a final frame
+or terminal may be unavailable; the outcome and uploaded result files remain
+saved, and workspace cleanup continues. No task API permission gives a service
+access to unrelated controller endpoints. A control link can access the entire
+workspace through its terminal, including credentials imported into that box.

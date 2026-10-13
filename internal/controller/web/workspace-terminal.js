@@ -4,7 +4,7 @@ window.openWorkspaceTerminal=function(boxID,session,onStatus,options={}){
  const viewOnly=options.viewOnly===true;
  const terminal=new Terminal({cols:80,rows:24,cursorBlink:!viewOnly,disableStdin:viewOnly,fontSize:viewOnly?12:14,lineHeight:viewOnly?1.2:1,scrollback:5000,convertEol:false}),fit=viewOnly?null:new FitAddon.FitAddon();
  if(fit)terminal.loadAddon(fit);terminal.open(root);fit?.fit();
- const url=new URL('/v1/logical-boxes/'+encodeURIComponent(boxID)+'/terminal/stream',location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';url.searchParams.set('session',session);
+ const url=new URL(options.streamURL||('/v1/logical-boxes/'+encodeURIComponent(boxID)+'/terminal/stream'),location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';url.searchParams.set('session',session);
  const socket=new WebSocket(url);socket.binaryType='arraybuffer';let closed=false,latencyTimer,pendingProbe=null,probeSequence=0;
  const metrics=value=>options.onMetrics?.(value);
  function send(frame){if(socket.readyState!==WebSocket.OPEN)return;if(socket.bufferedAmount>1024*1024){onStatus('Input connection is congested; reconnect. Input was not replayed.');socket.close();return}socket.send(JSON.stringify(frame))}

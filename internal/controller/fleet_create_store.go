@@ -89,7 +89,11 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		if creatorBoxID == "" {
 			return creation, fmt.Errorf("creator box ID is required")
 		}
-		if err := tx.QueryRowContext(ctx, `SELECT name FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='running' FOR UPDATE`, p.AccountID, creatorBoxID).Scan(&creatorName); err != nil {
+		creatorState := "state='running'"
+		if request.GoalTaskID != "" {
+			creatorState = "state NOT IN ('deleting','failed')"
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT name FROM logical_boxes WHERE account_id=$1 AND id=$2 AND `+creatorState+` FOR UPDATE`, p.AccountID, creatorBoxID).Scan(&creatorName); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return creation, fmt.Errorf("creator box is unavailable")
 			}
@@ -166,6 +170,24 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	}
 	if err := assignInitialRoles(ctx, tx, p, box.ID, request.RoleIDs); err != nil {
 		return creation, err
+	}
+	if request.GoalTaskID != "" {
+		result, err := tx.ExecContext(ctx, `UPDATE goal_tasks SET logical_box_id=$3 WHERE account_id=$1 AND id=$2 AND state='starting' AND slot_held AND logical_box_id IS NULL`, p.AccountID, request.GoalTaskID, box.ID)
+		if err != nil {
+			return creation, err
+		}
+		if n, _ := result.RowsAffected(); n != 1 {
+			return creation, fmt.Errorf("task dispatch changed")
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET idle_timeout_seconds=0,metadata=metadata || jsonb_build_object('goalTaskId',$2::text,'runBudgetSeconds',0) WHERE id=$1`, box.ID, request.GoalTaskID); err != nil {
+			return creation, err
+		}
+		// Persist startup instructions in the same transaction as the task/box binding.
+		// A controller crash after reservation must not launch an unbriefed task agent.
+		if _, err = tx.ExecContext(ctx, `INSERT INTO box_instruction_snapshots(account_id,box_id,source,modified,markdown,tool_guidance) SELECT account_id,$2,'custom',false,$3||E'\n\n'||COALESCE(settings->>'instructions',''),$4 FROM goal_tasks WHERE id=$1`, request.GoalTaskID, box.ID, goalTaskPreamble, newBoxToolGuidance(request.Tools)); err != nil {
+			return creation, err
+		}
+
 	}
 	if creatorBoxID != "" {
 		if err := putContactOverrideWithEvent(ctx, tx, p, creatorBoxID, box.ID, box.Name, "allow"); err != nil {

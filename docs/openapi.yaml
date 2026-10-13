@@ -141,6 +141,7 @@ paths:
                 slotId: {type: string, format: uuid, description: Exact available worker slot and pool; omission prefers the creator's pool then tries other pools}
                 instructions: {type: string, maxLength: 65536}
                 loginProfiles: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/LoginProfileRef'}}
+                task: {$ref: "#/components/schemas/AgentGoalTaskOptions"}
                 roleIds: {type: array, maxItems: 8, items: {type: string, format: uuid}}
       responses:
         '202': {description: Box creation accepted}
@@ -963,9 +964,183 @@ paths:
         required: true
         content: {application/json: {schema: {type: object, required: [session, revision], properties: {session: {type: string}, revision: {type: string}}}}}
       responses: {'200': {description: Exact revision acknowledged for authenticated user}, '409': {description: Stale, foreign or unknown revision; nothing newer acknowledged}}
+  /v1/tasks/profiles:
+    get:
+      summary: List permitted task login profiles using random IDs and anonymous labels
+      responses:
+        '200': {description: No saved names, email addresses or credentials, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/TaskProfile'}}}}}
+        '401': {description: Invalid owner, user or task service authentication}
+  /v1/tasks:
+    post:
+      summary: Queue a disposable single-goal task
+      description: Account-wide limit of four live task boxes. Queued tasks have no workspace volume. Service tokens can create only their own tasks with permitted profiles.
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateGoalTask'}}}
+      responses:
+        '201': {description: Queued task; Idempotency-Replayed true for a replay, content: {application/json: {schema: {$ref: '#/components/schemas/GoalTask'}}}}
+        '400': {description: Invalid resources, profile selection or request}
+        '403': {description: Permission denied}
+        '409': {description: Idempotency key reused with different parameters}
+    get:
+      summary: List retained tasks visible to this creator (all account tasks for owners)
+      parameters:
+        - {name: state, in: query, schema: {type: string}}
+        - {name: creator, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+        - {name: cursor, in: query, schema: {type: string}}
+      responses:
+        '200': {description: Page of tasks, content: {application/json: {schema: {type: object, properties: {tasks: {type: array, items: {$ref: '#/components/schemas/GoalTask'}}, nextCursor: {type: string}}}}}}
+  /v1/tasks/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get:
+      summary: Immediately read current task state and result (poll every 30 seconds)
+      responses:
+        '200': {description: Current task, content: {application/json: {schema: {$ref: '#/components/schemas/GoalTask'}}}}
+        '404': {description: Missing, deleted or outside caller scope}
+    delete:
+      summary: Delete a finished task, workspace and results through durable cleanup
+      responses:
+        '202': {description: Cleanup queued}
+        '409': {description: Cancel the active task first}
+  /v1/tasks/{id}/cancel:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post:
+      summary: Cancel queued or live work and release its workspace
+      responses:
+        '200': {description: Cancelled task, content: {application/json: {schema: {$ref: '#/components/schemas/GoalTask'}}}}
+        '409': {description: Task has another terminal outcome}
+  /v1/tasks/{id}/box:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    delete:
+      summary: Delete a finished task workspace early, retaining results until deleteAt
+      responses:
+        '202': {description: Workspace cleanup queued}
+        '409': {description: Task is still active}
+  /v1/tasks/{id}/messages:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get:
+      summary: Read live or saved task chat transcript
+      responses:
+        '200': {description: Ordered messages with id, direction, text, createdAt and state}
+    post:
+      summary: Send a message to a running task without waking finished tasks
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [text], properties: {text: {type: string, minLength: 1, maxLength: 20000}}}}}
+      responses:
+        '202': {description: Message queued}
+        '409': {description: Task is not running or key conflicts}
+  /v1/tasks/{id}/events:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get:
+      summary: Task lifecycle timeline
+      parameters: [{name: after, in: query, schema: {type: integer, minimum: 0}}]
+      responses:
+        '200': {description: Up to 100 events plus after cursor; event fields id, kind, text, createdAt}
+  /v1/tasks/{id}/files/{fileId}:
+    parameters:
+      - {$ref: '#/components/parameters/ID'}
+      - {name: fileId, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Download an uploaded task result file
+      responses:
+        '200': {description: Attachment, content: {application/octet-stream: {schema: {type: string, format: binary}}}}
+        '404': {description: File or task unavailable}
+  /v1/tasks/{id}/final-screenshot:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get:
+      summary: Download the desktop captured at task finish
+      responses:
+        '200': {description: PNG with X-Vbox-Captured-At, content: {image/png: {schema: {type: string, format: binary}}}}
+        '409': {description: Final capture unavailable}
+  /v1/tasks/{id}/final-terminal:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get:
+      summary: Download terminal text captured at task finish
+      responses:
+        '200': {description: Terminal text, content: {text/plain: {schema: {type: string}}}}
+        '409': {description: Final capture unavailable}
+  /v1/tasks/{id}/links:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post:
+      summary: Mint task-scoped capability links; raw URLs returned once
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/TaskLinkRequest'}}}
+      responses:
+        '201': {description: Links, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/TaskLink'}}}}}
+        '403': {description: Control capability required}
+    delete:
+      summary: Revoke all task links or one selected link
+      parameters: [{name: id, in: query, schema: {type: string}}]
+      responses:
+        '204': {description: Links revoked; streams close on revalidation}
+  /v1/task-service-credentials:
+    get:
+      summary: Owner-only service credential metadata (never raw tokens)
+      responses:
+        '200': {description: Credentials with profileIds, allowControl, expiresAt and revokedAt}
+    post:
+      summary: Owner creates a scoped service token, returned once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 100}
+                profileIds: {type: array, items: {type: string}}
+                allowControl: {type: boolean, default: false}
+                expiresAt: {type: string, format: date-time}
+      responses:
+        '201': {description: Credential metadata and one-time raw token}
+        '403': {description: Owner permission required}
+  /v1/task-service-credentials/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    delete:
+      summary: Owner revokes a task service token
+      responses:
+        '204': {description: Token revoked}
+  /v1/task-service-credentials/profiles:
+    get:
+      summary: Owner-only mapping of anonymous task profile IDs to saved names
+      responses:
+        '200': {description: id, application, label and name; service credentials are not accepted}
+  /v1/agent-desktop/task/complete:
+    post:
+      security: [{desktopAgentAuth: []}]
+      summary: Task agent records its immutable result and uploaded workspace files
+      responses:
+        '200': {description: Finished task resource}
+        '404': {description: This box is not a task}
+  /v1/agent-desktop/task/fail:
+    post:
+      security: [{desktopAgentAuth: []}]
+      summary: Task agent records why its goal cannot be completed
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [message], properties: {message: {type: string, minLength: 1, maxLength: 20000}}}}}
+      responses:
+        '200': {description: Finished task resource}
+        '404': {description: This box is not a task}
+  /v1/task-links/{token}/screenshot.png:
+    parameters: [{name: token, in: path, required: true, schema: {type: string}}]
+    get:
+      security: []
+      summary: Capability-scoped live or final desktop; never wakes a task
+      parameters: [{name: source, in: query, schema: {enum: [desktop, terminal]}}]
+      responses:
+        '200': {description: PNG, or terminal text when source=terminal}
+        '404': {description: Link unavailable}
+        '409': {description: Capture unavailable}
 components:
   securitySchemes:
-    bearerAuth: {type: http, scheme: bearer}
+    bearerAuth: {type: http, scheme: bearer, description: Owner/user token, or task service token only on /v1/tasks routes}
     desktopAgentAuth: {type: apiKey, in: header, name: Authorization, description: Private DesktopAgent credential issued to the assigned box}
   parameters:
     ID: {name: id, in: path, required: true, schema: {type: string}}
@@ -1443,3 +1618,77 @@ components:
         allowedUsers: {type: array, items: {type: string}}
         allowedChats: {type: array, items: {type: string}, description: Discord guild/channel identifiers.}
         enabled: {type: boolean, default: true}
+    TaskProfile:
+      type: object
+      required: [id, application, label]
+      properties:
+        id: {type: string, description: Random stable account-scoped ID}
+        application: {enum: [codex, claude, opencode, github]}
+        label: {type: string, description: Generated label without personal data}
+    TaskProfileRef:
+      type: object
+      required: [profileId]
+      properties:
+        profileId: {type: string}
+        model: {type: string}
+        reasoningEffort: {type: string}
+    TaskLinkRequest:
+      type: object
+      required: [kinds]
+      properties:
+        kinds: {type: array, minItems: 1, maxItems: 3, uniqueItems: true, items: {enum: [control, view, screenshot]}}
+        ttlSeconds: {type: integer, minimum: 1, maximum: 604800, default: 86400}
+    TaskLink:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        kind: {enum: [control, view, screenshot]}
+        expiresAt: {type: string, format: date-time}
+        url: {type: string, description: Secret URL present only when minted}
+    AgentGoalTaskOptions:
+      type: object
+      required: [goal]
+      properties:
+        goal: {type: string, minLength: 1, maxLength: 100000}
+        timeLimitSeconds: {type: integer, minimum: 300, maximum: 604800, default: 14400}
+        retentionSeconds: {type: integer, minimum: 3600, maximum: 604800, default: 86400}
+        links: {$ref: '#/components/schemas/TaskLinkRequest'}
+    CreateGoalTask:
+      allOf:
+        - {$ref: '#/components/schemas/AgentGoalTaskOptions'}
+        - type: object
+          required: [name, agent]
+          properties:
+            name: {type: string, minLength: 1, maxLength: 100}
+            agent: {enum: [codex, claude, opencode]}
+            loginProfiles: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/TaskProfileRef'}}
+            diskGiB: {type: integer, minimum: 1, maximum: 1000, default: 10}
+            memoryGiB: {type: integer, minimum: 1}
+            swapGiB: {type: integer, minimum: 0}
+            desktopResolution: {enum: [1024x640, 1280x720], default: 1024x640}
+            slotId: {type: string, format: uuid}
+            tools: {type: array, items: {type: string}}
+            instructions: {type: string}
+            roleIds: {type: array, maxItems: 8, items: {type: string, format: uuid}}
+    GoalTask:
+      type: object
+      required: [id, name, goal, state, box, creator, result, failure, createdAt, startedAt, finishedAt, deleteAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        goal: {type: string}
+        state: {enum: [queued, starting, running, completed, failed, timed_out, abandoned, cancelled]}
+        agent: {enum: [codex, claude, opencode]}
+        queuePosition: {type: integer, description: Approximate account queue position; only present while queued}
+        box: {type: [object, 'null'], properties: {id: {type: string}, name: {type: string}, state: {type: string}}}
+        creator: {type: object, properties: {kind: {enum: [owner, user, service, box]}, id: {type: string}, name: {type: string}}}
+        result: {type: [object, 'null'], properties: {text: {type: string}, files: {type: array, items: {type: object, properties: {id: {type: string}, name: {type: string}, mediaType: {type: string}, size: {type: integer}}}}}}
+        failure: {type: [object, 'null'], properties: {message: {type: string}, reason: {enum: [agent, timeout, abandoned, cancelled, box_error]}}}
+        timeLimitSeconds: {type: integer}
+        retentionSeconds: {type: integer}
+        createdAt: {type: string, format: date-time}
+        startedAt: {type: [string, 'null'], format: date-time}
+        finishedAt: {type: [string, 'null'], format: date-time}
+        deleteAt: {type: [string, 'null'], format: date-time}
+        boxDeletedAt: {type: [string, 'null'], format: date-time}
+        links: {type: array, items: {$ref: '#/components/schemas/TaskLink'}}

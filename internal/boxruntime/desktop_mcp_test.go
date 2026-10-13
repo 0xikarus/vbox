@@ -972,6 +972,7 @@ func TestAllowedDesktopMCPToolsFiltersAdvertisedInventory(t *testing.T) {
 
 func TestDesktopMCPInventoryMatchesRolePolicyNames(t *testing.T) {
 	want := append(append([]string{}, v1.BasicAgentMCPTools...), v1.OptionalAgentMCPTools...)
+	want = append(want, v1.TaskAgentMCPTools...)
 	got := make([]string, 0, len(desktopMCPTools()))
 	for _, tool := range desktopMCPTools() {
 		got = append(got, tool["name"].(string))

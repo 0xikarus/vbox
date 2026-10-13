@@ -16,6 +16,10 @@ const (
 
 var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_history", "chat_message", "chat_ask"}
 
+// TaskAgentMCPTools are granted only to a box bound to an active goal task.
+// They are never selectable on ordinary box roles.
+var TaskAgentMCPTools = []string{"completed_task", "failed_task"}
+
 var ComputerAgentMCPTools = []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
 
 var OptionalAgentMCPTools = []string{

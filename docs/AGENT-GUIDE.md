@@ -442,3 +442,24 @@ drafts; preserve them and keep release commits scoped. Do not treat local drafts
 as deployed code. Older factory/coworker design documents and dated verification
 reports describe previous iterations; use current routes, source and schema as
 authority. Do not reintroduce an orchestrator merely because an old plan mentions it.
+
+## Disposable goal tasks
+
+`/v1/tasks` and `/tasks` implement single-goal temporary boxes. See
+[TASKS-API.md](TASKS-API.md) for polling, profile catalog, service credentials,
+capability links and retention. `goal_task_*.go` owns admission, dispatch,
+completion and cleanup; the older `box_tasks` table remains agent chat sessions.
+
+A database account lock caps durable `slot_held` reservations at four across
+all creators. Queued tasks own no box/volume. Release the reservation only after
+the logical box has released its compute slot. Startup instructions and the task
+binding are committed with box creation. Terminal outcomes are immutable; a
+database guard blocks waking a finished task through ordinary allocation APIs.
+The normal run budget is disabled on task boxes; the task watchdog and running
+time limit own their lifecycle. Shared view links filter RFB input server-side
+and discard terminal input; all streams revalidate their task link.
+
+Use `scripts/examples/tasks_api.py` with a scoped service token for disposable
+end-to-end checks. PostgreSQL tests require `VMBOX_TEST_DATABASE_URL` pointing to
+a disposable database and create isolated schemas. The owner page maps anonymous
+profile labels; never add names or decrypted credentials to the service catalog.

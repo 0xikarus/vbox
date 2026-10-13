@@ -22,16 +22,17 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}
 	creatorID := r.PathValue("id")
 	var request struct {
-		Name          string               `json:"name"`
-		Agent         string               `json:"agent"`
-		DiskGiB       int64                `json:"diskGiB"`
-		MemoryGiB     int64                `json:"memoryGiB"`
-		SwapGiB       *int64               `json:"swapGiB"`
-		SlotID        string               `json:"slotId"`
-		Tools         []string             `json:"tools"`
-		Instructions  string               `json:"instructions"`
-		LoginProfiles []v1.LoginProfileRef `json:"loginProfiles"`
-		RoleIDs       []string             `json:"roleIds"`
+		Task          *v1.AgentGoalTaskOptions `json:"task,omitempty"`
+		Name          string                   `json:"name"`
+		Agent         string                   `json:"agent"`
+		DiskGiB       int64                    `json:"diskGiB"`
+		MemoryGiB     int64                    `json:"memoryGiB"`
+		SwapGiB       *int64                   `json:"swapGiB"`
+		SlotID        string                   `json:"slotId"`
+		Tools         []string                 `json:"tools"`
+		Instructions  string                   `json:"instructions"`
+		LoginProfiles []v1.LoginProfileRef     `json:"loginProfiles"`
+		RoleIDs       []string                 `json:"roleIds"`
 	}
 	if err := decodeJSON(r, &request); err != nil {
 		writeError(w, 400, err)
@@ -120,6 +121,10 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 			return
 		}
 	}
+	if request.Task != nil {
+		s.createBoxGoalTask(w, r, p, v1.CreateGoalTaskRequest{Name: request.Name, Goal: request.Task.Goal, Agent: request.Agent, DiskGiB: request.DiskGiB, MemoryGiB: request.MemoryGiB, SwapGiB: request.SwapGiB, SlotID: request.SlotID, Tools: request.Tools, Instructions: request.Instructions, RoleIDs: request.RoleIDs, TimeLimitSeconds: request.Task.TimeLimitSeconds, RetentionSeconds: request.Task.RetentionSeconds, Links: request.Task.Links}, request.LoginProfiles, key)
+		return
+	}
 	reservationID := uuid()
 	roleIDsJSON, _ := json.Marshal(request.RoleIDs)
 	profileJSON, _ := json.Marshal(request.LoginProfiles)
@@ -182,7 +187,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	var count int
-	if err := tx.QueryRowContext(r.Context(), `SELECT count(*) FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND (created_box_id IS NOT NULL OR completed_at IS NULL)`, p.AccountID, creatorID).Scan(&count); err != nil {
+	if err := tx.QueryRowContext(r.Context(), `SELECT (SELECT count(*) FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND (created_box_id IS NOT NULL OR completed_at IS NULL)) + (SELECT count(*) FROM goal_tasks WHERE account_id=$1 AND creator_kind='box' AND creator_id=$2::text AND (logical_box_id IS NOT NULL OR state IN ('queued','starting','running')))`, p.AccountID, creatorID).Scan(&count); err != nil {
 		writeError(w, 500, err)
 		return
 	}

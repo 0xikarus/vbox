@@ -18,6 +18,18 @@ Codex, Claude Code, and OpenCode are supported, but any harness can be used insi
 - **Manage capacity:** the Providers popup summarizes workers, slots, and host resources; the Providers page lets owners edit and delete provider configurations. Details shows RAM, swap, disk, activity, hibernation, and limits. Usage is available from the top bar.
 - **Keep work between sessions:** hibernation frees a worker slot while retaining box files. Wake the box to resume; closing a browser tab leaves a running box alone.
 
+## Disposable tasks
+
+Use **Tasks** in the controller menu to queue a goal with a saved profile and
+resource settings. At most four task boxes run per account. On completion the
+agent saves its result and files, and the controller releases the worker slot.
+The workspace and results expire after 24 hours by default. Follow-up work is a
+new task.
+
+Third-party services use scoped tokens, anonymous profile IDs and simple
+30-second polling. See [Tasks API](docs/TASKS-API.md) and the
+[Python API example](scripts/examples/tasks_api.py).
+
 ## Screenshots
 
 These screens use fictional fixture boxes, including **builder** and **reviewer**. The desktop image is synthetic.
