@@ -2,11 +2,12 @@
 
 Status: draft for review. Nothing here is implemented yet.
 
-A **task** is a box with one goal. Its agent gets two extra tools,
+A **task** is a temporary box with one goal. Its agent gets two extra tools,
 `completed_task` and `failed_task`. Calling either one records the result,
-notifies whoever created the task, hibernates the box and deletes it after the
-retention period (24 hours by default). The task record (goal, result, files,
-final screenshot, transcript) stays in task history after the box is gone.
+notifies whoever created the task and hibernates the box. After the retention
+period (24 hours by default), the controller deletes both the box and the task
+record, including its results. A finished task cannot be reopened: follow-up
+work creates a new task with a new box.
 
 While a task runs it is an ordinary box: the owner can watch it, message it,
 and control its desktop and terminal.
@@ -26,9 +27,7 @@ queued ─▶ starting ─▶ running ─┬─▶ completed   (agent: completed
                                ├─▶ timed_out   (time limit reached)
                                ├─▶ abandoned   (agent stopped without either tool)
                                └─▶ cancelled   (creator: cancel)
-any finished state ─▶ box hibernated ─▶ box deleted at deleteAt
-finished + reopen   ─▶ running        (deleteAt cleared)
-finished + keep     ─▶ box becomes a normal box; the task stays in history
+any finished state ─▶ box hibernated ─▶ box and task deleted at deleteAt
 ```
 
 - **Watchdog.** If the agent is idle or stalled (the #480 activity states) for
@@ -39,6 +38,13 @@ finished + keep     ─▶ box becomes a normal box; the task stays in history
   ends the task as `timed_out`.
 - On every finish, the controller captures a final desktop screenshot and the
   terminal text before it hibernates the box.
+- Finishing a task is final. Messages to a finished task return `409` rather
+  than waking its box. A new goal, retry or follow-up is a new task. The task
+  and its saved results remain readable only until `deleteAt`.
+- Cleanup is retried if hibernation or deletion fails. The task remains visible
+  with its finished outcome while cleanup is pending; deletion of the task
+  record follows successful box deletion.
+- After deletion, task reads return `404`; there is no permanent task history.
 
 ## Resource
 
@@ -80,16 +86,14 @@ finished + keep     ─▶ box becomes a normal box; the task stays in history
 | Method | Path | Purpose |
 | --- | --- | --- |
 | POST | `/v1/tasks` | Create and start a task. `Idempotency-Key` required. |
-| GET | `/v1/tasks` | Task history. `?state=`, `?creator=`, `?limit=`, `?cursor=`. |
+| GET | `/v1/tasks` | Recent tasks retained until deletion. `?state=`, `?creator=`, `?limit=`, `?cursor=`. |
 | GET | `/v1/tasks/{id}` | One task. `?wait=finished&timeout=60` long-polls until it finishes (max 60 s). |
 | GET | `/v1/tasks/{id}/events` | Timeline: state changes, nudges, owner messages, result. `?after=` cursor. |
-| GET | `/v1/tasks/{id}/messages` | Chat transcript; archived when the box is deleted. |
-| POST | `/v1/tasks/{id}/messages` | Message the agent. On a finished task within retention this reopens it. |
+| GET | `/v1/tasks/{id}/messages` | Chat transcript while the task is retained. |
+| POST | `/v1/tasks/{id}/messages` | Message a running task's agent; `409` after finish. |
 | POST | `/v1/tasks/{id}/cancel` | End as `cancelled`; hibernates the box. |
-| POST | `/v1/tasks/{id}/reopen` | Wake the box, clear `deleteAt`, back to `running`. Optional `{ "message": "..." }`. |
-| POST | `/v1/tasks/{id}/keep` | Turn the box into a normal box. The task record stays. |
-| DELETE | `/v1/tasks/{id}/box` | Delete the box now. |
-| DELETE | `/v1/tasks/{id}` | Remove a finished task from history (deletes its box first if needed). |
+| DELETE | `/v1/tasks/{id}/box` | Delete a finished task's box early; keep its result until `deleteAt`. |
+| DELETE | `/v1/tasks/{id}` | Delete a finished task and its box now. |
 | GET | `/v1/tasks/{id}/files/{fileId}` | Download a result file. |
 | GET | `/v1/tasks/{id}/final-screenshot` | Screenshot captured at finish. |
 | POST | `/v1/tasks/{id}/links` | Mint links: `{ "kinds": ["control","view","screenshot"], "ttlSeconds": 86400 }`. |
@@ -119,7 +123,8 @@ finished + keep     ─▶ box becomes a normal box; the task stays in history
 - Required: `name`, `goal` (1–100,000 bytes), `agent`.
 - Every other field matches box creation and is optional.
 - `timeLimitSeconds`: 300–604,800, default 14,400 (4 hours).
-- `retentionSeconds`: 0–604,800, default 86,400. 0 deletes the box right after it finishes.
+- `retentionSeconds`: 3,600–604,800, default 86,400. It applies to both the
+  box and task record so the result remains available for inspection.
 - `links` is optional; without it no links are minted.
 - `notify.webhookUrl` is optional. The controller POSTs the task JSON on finish,
   signed like inbound mail (`X-Vbox-Signature`, `X-Vbox-Timestamp`).
@@ -146,14 +151,17 @@ Rules:
 - **Expiry:** `ttlSeconds` defaults to 24 h and is capped at the task's `deleteAt`, or 7 days while it runs.
 - **Revocation:** revoked links fail at once, and open streams are closed.
 - **After deletion:** `control`/`view` links stop working when the box is
-  deleted. `screenshot` keeps serving the final screenshot until the task
-  record is deleted.
+  deleted. If the box is deleted early, `screenshot` keeps serving the final
+  screenshot until the task record is deleted. All links fail after task deletion.
 - **Page links:** `/t/{token}` exchanges the token for an HttpOnly,
   `SameSite=Strict` cookie limited to `/v1/task-links/` and that box. It then
   removes the token from the address bar, so it doesn't leak through history
   or `Referer`.
-- **Scope:** a link never gives access to secrets, browser profiles, mail, files,
-  chat, other boxes, or any `/v1/` endpoint outside `/v1/task-links/`.
+- **Scope:** a link gives no direct access to other boxes or `/v1/` endpoints
+  outside `/v1/task-links/`. A `control` link does grant input to this box's
+  terminal and desktop, including access to files and credentials readable
+  inside the box. A `view` or `screenshot` link can reveal anything displayed
+  on screen. Treat every link as a sensitive capability.
 - **Sleeping box:** a link never wakes a hibernated box; the page shows the final
   screenshot and state instead.
 - **Audit:** each link use is written to `audit_log` (kind, link id, IP).
@@ -194,9 +202,9 @@ There is no new MCP tool. `create_agent_box` takes an optional `task` object:
 ## Notifications
 
 - Owner-created: chat/push notification "Task completed: name" with the
-  result text; it opens the task page.
+  result text; it opens the task page while the task is retained.
 - Box-created: the chat message above to the creator box. The owner sees it in
-  task history.
+  the Recent Tasks list until deletion.
 - With `notify.webhookUrl`, the webhook is sent in addition to these.
 
 ## Storage
@@ -206,14 +214,15 @@ There is no new MCP tool. `create_agent_box` takes an optional `task` object:
   failure_reason, failure_message, final_screenshot, timestamps.
 - `goal_task_files`, `goal_task_links` (token_hash, kind, expires_at,
   revoked_at), `goal_task_events`.
-- `goal_task_transcripts` holds a text copy of the box chat, taken when the
-  box is deleted, because `box_messages` is removed with the box.
+- `goal_task_transcripts` holds a text copy of the box chat if the box is
+  deleted early, because `box_messages` is removed with the box. It is removed
+  with the task record at `deleteAt`.
 
 ## Build order
 
-1. Backend: tables, create/list/get/cancel/reopen/keep, the two agent tools
+1. Backend: tables, create/list/get/cancel/delete, the two agent tools
    (needs a worker update), watchdog, time limit, retention sweeper.
 2. Links: `/t/{token}` page and the stream, screenshot and state endpoints.
-3. UI: Tasks list and task page (state, result, files, final screenshot,
-   transcript, Reopen/Keep/Delete now), owner notifications.
+3. UI: Recent Tasks list and task page (state, result, files, final screenshot,
+   transcript, Create new task/Delete now), owner notifications.
 4. `create_agent_box` `task` field, the message to the creator box, webhooks.
