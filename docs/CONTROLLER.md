@@ -35,7 +35,6 @@ Optional settings:
 | --- | --- |
 | `VMBOX_DEFAULT_RUN_BUDGET` | Default run time before a box hibernates, as a Go duration such as `8h` (the default) |
 | `VMBOX_DIRECT_WORKERS` | `1` lets agent-backed workers connect to the controller directly |
-| `VMBOX_INITIAL_COMPUTE_BOX_SLOTS` | Seeds initial capacity; later owner changes win |
 | `VMBOX_BOOTSTRAP_TOKEN_HASH` | Creates the first owner from a base64url token hash when the database has no accounts |
 | `VMBOX_CHAT_INSTRUCTION` | Replaces the reply reminder appended to chat prompts; `off` disables it |
 | `VMBOX_CHAT_INSTRUCTION_EVERY` | Repeats a custom instruction only every N prompts |
@@ -52,8 +51,8 @@ Choose a worker path before allocating boxes:
 The [provider guide](PROVIDERS.md) also describes the Docker and Incus adapters.
 Provider aliases, credentials, and the default pool are managed on the controller.
 Creating or editing an alias does not deploy workers. Set capacity explicitly;
-`VMBOX_INITIAL_COMPUTE_BOX_SLOTS` can seed initial capacity but does not override
-later owner changes. Capacity changes can incur hosting charges.
+controller startup does not create a Railway pool from Railway environment
+variables. Capacity changes can incur hosting charges.
 
 ```bash
 vbox users add alice --role user

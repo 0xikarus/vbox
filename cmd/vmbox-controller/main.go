@@ -18,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/controller"
 	"github.com/0xikarus/vmbox-service/internal/procexec"
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -81,12 +80,6 @@ func run() error {
 	}
 	store.Envelope, err = secrets.New(key)
 	if err != nil {
-		return err
-	}
-	if err := seedRailwayCredentialFromEnvironment(ctx, store); err != nil {
-		return err
-	}
-	if err := seedInitialFleetFromEnvironment(ctx, store); err != nil {
 		return err
 	}
 	railwaySSHIdentity, err := materializeRailwaySSHIdentity(os.Getenv("VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64"), os.TempDir())
@@ -243,52 +236,6 @@ func bootstrapWorkload(ctx context.Context, p provider.Provider, box provider.Bo
 		Entrypoint:      entrypoint,
 	}
 	return bootstrapper.Bootstrap(ctx, box.ID, request)
-}
-
-func seedRailwayCredentialFromEnvironment(ctx context.Context, store *controller.Store) error {
-	tokenEnvironment := "RAILWAY_API_TOKEN"
-	token := strings.TrimSpace(os.Getenv(tokenEnvironment))
-	if token == "" {
-		tokenEnvironment = "RAILWAY_TOKEN"
-		token = strings.TrimSpace(os.Getenv(tokenEnvironment))
-	}
-	if token == "" {
-		return nil
-	}
-	projectID := strings.TrimSpace(os.Getenv("RAILWAY_PROJECT_ID"))
-	environmentID := strings.TrimSpace(os.Getenv("RAILWAY_ENVIRONMENT_ID"))
-	if projectID == "" || environmentID == "" {
-		return fmt.Errorf("%s requires RAILWAY_PROJECT_ID and RAILWAY_ENVIRONMENT_ID", tokenEnvironment)
-	}
-	secret, err := json.Marshal(map[string]string{"token": token})
-	if err != nil {
-		return err
-	}
-	config, err := json.Marshal(map[string]string{
-		"projectId": projectID, "environmentId": environmentID, "tokenEnvironment": tokenEnvironment,
-	})
-	if err != nil {
-		return err
-	}
-	if _, err := store.PutEnvironmentProviderCredential(ctx, "railway", "primary", v1.PutProviderCredentialRequest{Secret: secret, Config: config}); err != nil {
-		return fmt.Errorf("import %s into encrypted provider credential: %w", tokenEnvironment, err)
-	}
-	return nil
-}
-
-func seedInitialFleetFromEnvironment(ctx context.Context, store *controller.Store) error {
-	value := strings.TrimSpace(os.Getenv("VMBOX_INITIAL_COMPUTE_BOX_SLOTS"))
-	if value == "" {
-		return nil
-	}
-	slots, err := strconv.Atoi(value)
-	if err != nil {
-		return fmt.Errorf("VMBOX_INITIAL_COMPUTE_BOX_SLOTS must be an integer: %w", err)
-	}
-	if _, err := store.SeedEnvironmentFleetConfig(ctx, "railway", "primary", slots); err != nil {
-		return fmt.Errorf("seed initial Railway compute fleet: %w", err)
-	}
-	return nil
 }
 
 func providerForCredential(name string, credential controller.DecryptedProviderCredential, railwaySSHIdentity string, budgets ...railwayprovider.RequestBudget) (provider.Provider, error) {
