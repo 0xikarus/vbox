@@ -30,42 +30,6 @@ Third-party services use scoped tokens, anonymous profile IDs and simple
 30-second polling. See [Tasks API](docs/TASKS-API.md) and the
 [Python API example](scripts/examples/tasks_api.py).
 
-## Screenshots
-
-These screens use fictional fixture boxes, including **builder** and **reviewer**. The desktop image is synthetic.
-
-| Desktop chat | Mobile chat |
-| --- | --- |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui/chat-dark.webp"><img src="docs/assets/ui/chat-light.webp" alt="Chat with pinned boxes, activity, messages, and image attachments" width="900"></picture> | <img src="docs/assets/ui/chat-mobile.webp" alt="Chat on a phone" width="260"> |
-
-| Box ↔ box chat with pinned desktops | Details: resources, hibernation, and activity |
-| --- | --- |
-| <img src="docs/assets/ui/pair-desktops.webp" alt="Builder and reviewer direct chat with two pinned desktop views" width="700"> | <img src="docs/assets/ui/details-resources-activity.webp" alt="Box details with RAM, swap, disk, hibernation limits, and activity" width="700"> |
-
-| Box ↔ box handoff on desktop | The same chat on mobile |
-| --- | --- |
-| <img src="docs/assets/ui/box-chat-desktop.webp" alt="Light desktop chat between builder and reviewer with a handoff, review feedback, and quoted replies" width="700"> | <img src="docs/assets/ui/box-chat-mobile-dark.webp" alt="Dark mobile view of the builder and reviewer conversation with quoted replies" width="260"> |
-
-| Asking the owner | Chat list and activity |
-| --- | --- |
-| <img src="docs/assets/ui/owner-question.webp" alt="Builder asks the owner a multi-select question; the owner answers with a quoted reply and read ticks" width="700"> | <img src="docs/assets/ui/chat-list-activity.webp" alt="Pinned sample project chats with working and idle boxes, unread counts, and a stalled activity warning" width="700"> |
-
-| Mail inbox | Outbox approval |
-| --- | --- |
-| <img src="docs/assets/ui/mail-inbox.webp" alt="Mail inbox across fixture boxes with a message from example.test open" width="700"> | <img src="docs/assets/ui/mail-outbox-approval.webp" alt="Owner review dialog for a fictional outgoing message awaiting approval" width="700"> |
-
-| Details: Access & permissions | Tool categories and checkboxes |
-| --- | --- |
-| <img src="docs/assets/ui/details-access-overview.webp" alt="Builder details panel on Access and permissions with box management tool checkboxes" width="700"> | <img src="docs/assets/ui/details-access-permissions.webp" alt="Access and permissions showing mail and computer-use category toggles and individual tool checkboxes" width="700"> |
-
-| Providers | Workspace |
-| --- | --- |
-| <img src="docs/assets/ui/providers.webp" alt="Providers popup showing workers, slots, and host resources" width="700"> | <img src="docs/assets/ui/workspace.webp" alt="Workspace desktop beside status, resources, and power controls" width="700"> |
-
-| Image annotation |
-| --- |
-| <img src="docs/assets/ui/annotation.webp" alt="Annotating a chat image with a rectangle and arrow" width="700"> |
-
 ## Quick start
 
 You need a controller with PostgreSQL and HTTPS, plus at least one worker. Running capacity can incur hosting charges.
