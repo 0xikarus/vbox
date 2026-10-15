@@ -62,7 +62,9 @@ def main():
             and "ACK " + nonce in item.get("text", "")
             for item in messages
         )
-        if state == "delivered" and replied:
+        # Native receipts and linked replies advance the parent to "read".
+        # Neither confirmed state is a pass without the linked canary reply.
+        if state in ("delivered", "read") and replied:
             print(f"PASS {box['name']} ({box.get('defaultAgent', 'agent')}): native delivery and linked reply for {message_id}")
             return 0
         time.sleep(3)
