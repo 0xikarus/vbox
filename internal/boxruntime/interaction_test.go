@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -830,6 +831,54 @@ func TestWaitForAgentReadyUsesOpenCodeSessionAPI(t *testing.T) {
 	}
 	if attempts != 2 {
 		t.Fatalf("attempts=%d", attempts)
+	}
+}
+
+func TestWaitForOpenCodeColdStart(t *testing.T) {
+	original := openCodeReadyProbe
+	t.Cleanup(func() { openCodeReadyProbe = original })
+	synctest.Test(t, func(t *testing.T) {
+		started := time.Now()
+		openCodeReadyProbe = func(context.Context, string) (bool, error) {
+			// A fresh OpenCode 1.18.32 installation needed 63.6 seconds to
+			// load its visible bridge in the live disposable reproduction.
+			return time.Since(started) >= 65*time.Second, nil
+		}
+		if err := waitForAgentReady(context.Background(), "opencode-cold", "opencode"); err != nil {
+			t.Fatalf("cold bridge startup rejected: %v", err)
+		}
+		if elapsed := time.Since(started); elapsed < 65*time.Second || elapsed >= 90*time.Second {
+			t.Fatalf("unexpected readiness delay: %v", elapsed)
+		}
+	})
+}
+
+func TestWaitForOpenCodeReadinessBoundsBlockedProbe(t *testing.T) {
+	original := openCodeReadyProbe
+	t.Cleanup(func() { openCodeReadyProbe = original })
+	for _, callerLimit := range []time.Duration{5 * time.Second, 2 * time.Minute} {
+		t.Run(callerLimit.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), callerLimit)
+				defer cancel()
+				started := time.Now()
+				openCodeReadyProbe = func(ctx context.Context, _ string) (bool, error) {
+					<-ctx.Done()
+					return false, ctx.Err()
+				}
+				err := waitForAgentReady(ctx, "opencode-blocked", "opencode")
+				if err == nil {
+					t.Fatal("blocked bridge reported ready")
+				}
+				want := min(callerLimit, 90*time.Second)
+				if elapsed := time.Since(started); elapsed != want {
+					t.Fatalf("probe exceeded readiness budget: elapsed=%v want=%v", elapsed, want)
+				}
+				if callerLimit < 90*time.Second && !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("caller deadline not preserved: %v", err)
+				}
+			})
+		})
 	}
 }
 

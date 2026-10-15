@@ -348,6 +348,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   the box's own Chat already appear there and get no bullet.
 - A new OpenCode Agent chat starts a bare TUI, waits for the visible bridge, then
   submits its first message through the loopback API with structured image parts.
+  A fresh home can take over a minute to load the bridge; OpenCode readiness
+  allows up to 90 seconds, including health probes, and respects earlier caller
+  cancellation. Readiness alone never marks a message delivered: the exact
+  native message receipt is still required.
   Persistent OpenCode and OpenCode one-shot
   tasks start with `--auto`; explicit client deny rules still take precedence.
 - Foundry is a pinned preset. Custom tooling is trusted user-supplied Bash run

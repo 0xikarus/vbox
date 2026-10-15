@@ -41,6 +41,12 @@ var tmuxCommand = runTmuxCommand
 var captureTmuxCommand = tmuxOutput
 var agentReadyPollInterval = 200 * time.Millisecond
 var agentReadyTimeout = 20 * time.Second
+
+// A fresh OpenCode home can take over a minute to load its TUI plugins before
+// the visible bridge is available. Keep that startup wait bounded, including
+// any individual bridge health request, without extending other agents' waits.
+const openCodeReadyTimeout = 90 * time.Second
+
 var tmuxSubmitPause = waitBeforeTmuxSubmit
 var agentReadySettlePause = waitForAgentSettle
 var tmuxSubmitConfirmPause = waitBeforeTmuxSubmitConfirmation
@@ -722,10 +728,16 @@ func startTmuxTaskSession(ctx context.Context, root, session, agent string, argv
 
 func waitForAgentReady(ctx context.Context, session, agent string) error {
 	if agent == "opencode" {
-		deadline := time.NewTimer(agentReadyTimeout)
-		defer deadline.Stop()
+		readyCtx, cancel := context.WithTimeout(ctx, openCodeReadyTimeout)
+		defer cancel()
 		for {
-			ready, err := openCodeReadyProbe(ctx, session)
+			ready, err := openCodeReadyProbe(readyCtx, session)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if readyCtx.Err() != nil {
+				return fmt.Errorf("%s task session API did not become ready", agent)
+			}
 			if err != nil {
 				return err
 			}
@@ -735,7 +747,10 @@ func waitForAgentReady(ctx context.Context, session, agent string) error {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-deadline.C:
+			case <-readyCtx.Done():
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
 				return fmt.Errorf("%s task session API did not become ready", agent)
 			case <-time.After(agentReadyPollInterval):
 			}
