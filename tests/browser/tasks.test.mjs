@@ -77,6 +77,7 @@ test('owner saves, uses, edits and deletes a task profile without creating a tas
  assert.equal(calls.some(c=>c.path==='/v1/tasks'&&c.method==='POST'),false);
  await page.click('.task-profile-card button');
  assert.equal(await page.$eval('#task-settings',n=>n.disabled),true);
+ await page.setViewport({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'selected profile configuration fits a phone');
  await page.type('#create-task [name=name]','preset-job');await page.type('#create-task [name=goal]','fixture goal');
  await page.click('#create-task button[type=submit]');
  await page.waitForFunction(()=>document.querySelector('#status').textContent==='Task queued.');
