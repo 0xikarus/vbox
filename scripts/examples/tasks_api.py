@@ -28,6 +28,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--list-profiles", action="store_true")
     parser.add_argument("--profile-id")
+    parser.add_argument("--task-profile", help="saved task configuration name or ID")
+    parser.add_argument("--list-task-profiles", action="store_true")
     parser.add_argument("--agent", choices=["codex", "claude", "opencode"], default="codex")
     parser.add_argument("--count", type=int, default=1)
     parser.add_argument("--disk-gib", type=int, default=10)
@@ -68,11 +70,16 @@ def main():
                 raise RuntimeError(f"{method} {path}: request failed after retries")
             time.sleep(min(30, 2 ** attempt) + random.random())
 
+    if args.list_task_profiles:
+        print(json.dumps(request("/v1/task-profiles"), indent=2))
+        return 0
+    if args.task_profile and args.profile_id:
+        parser.error("use either --task-profile or --profile-id")
     profiles = request("/v1/tasks/profiles")
     if args.list_profiles:
         print(json.dumps(profiles, indent=2))
         return 0
-    if not args.task_id and not any(p["id"] == args.profile_id and p["application"] == args.agent for p in profiles):
+    if not args.task_id and not args.task_profile and not any(p["id"] == args.profile_id and p["application"] == args.agent for p in profiles):
         parser.error("choose an allowed matching --profile-id from --list-profiles")
     ids = list(args.task_id)
     for index in range(0 if ids else args.count):
@@ -81,9 +88,13 @@ def main():
         goal = ("Disposable API test. Create api-test-result.txt in your workspace directory containing exactly "
                 + name + ". Then call completed_task with text 'API test passed: " + name
                 + "' and files ['api-test-result.txt']. Do not create other resources.")
-        task = request("/v1/tasks", "POST", {"name": name, "goal": goal, "agent": args.agent,
-                       "loginProfiles": [{"profileId": args.profile_id}], "diskGiB": args.disk_gib,
-                       "timeLimitSeconds": 900, "retentionSeconds": 3600}, key=key)
+        body = {"name": name, "goal": goal}
+        if args.task_profile:
+            body["taskProfile"] = args.task_profile
+        else:
+            body.update({"agent": args.agent, "loginProfiles": [{"profileId": args.profile_id}],
+                         "diskGiB": args.disk_gib, "timeLimitSeconds": 900, "retentionSeconds": 3600})
+        task = request("/v1/tasks", "POST", body, key=key)
         ids.append(task["id"])
         print(f"Created {task['id']}: {task['state']}", flush=True)
     print("Resume with " + " ".join("--task-id " + i for i in ids), flush=True)

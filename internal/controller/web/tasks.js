@@ -3,12 +3,18 @@
  const $=s=>document.querySelector(s),enc=encodeURIComponent,done=s=>['completed','failed','timed_out','abandoned','cancelled'].includes(s);
  const el=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n};
  let profiles=[],owner=false,cursor='',selected=location.hash.slice(1),detailVersion='',sequence=0,requestKey,requestBody,refreshing=false;
+ let taskProfiles=[],editingProfile=null,modelVersion=0;
  const minted=new Map();
  $('#api-context').value=`vbox Tasks API
 Base URL: ${location.origin}
 Use Authorization: Bearer <TASK_SERVICE_TOKEN> on every request; obtain the scoped token separately from the owner. JSON requests use Content-Type: application/json.
 
-1. GET /v1/tasks/profiles returns allowed profiles: {id, application, label}. Select a profile matching the agent; IDs and labels hide private profile names.
+1. GET /v1/task-profiles lists reusable task presets. Create from one with:
+POST /v1/tasks (Idempotency-Key: <new UUID>)
+{"name":"job-123","goal":"Your task and input","taskProfile":"glm5.3flash"}
+The preset supplies the agent, model, resources, login profiles and tools. Supply only name, goal, taskProfile and optional links. Preset edits apply to future tasks; retries keep the original snapshot.
+
+For custom settings, GET /v1/tasks/profiles returns allowed login profiles: {id, application, label}. Select a profile matching the agent; IDs and labels hide private profile names.
 2. POST /v1/tasks with Idempotency-Key: <new UUID> and body:
 {"name":"research-example","goal":"Your goal and requested deliverables","agent":"codex","loginProfiles":[{"profileId":"<PROFILE_ID>"}],"diskGiB":10,"timeLimitSeconds":14400,"retentionSeconds":86400}
 Agents: codex, claude, opencode. Optional resources: memoryGiB, swapGiB, slotId. A successful create returns HTTP 201 with the task id. Reuse the same idempotency key and body when retrying that creation.
@@ -30,13 +36,15 @@ The agent inside the task box finishes with completed_task(text, files?) or fail
  function syncProfiles(){
   const form=$('#create-task');for(const [name,app] of [['profile',form.elements.agent.value],['github','github']]){
    const select=form.elements[name],old=select.value;select.replaceChildren(new Option(name==='github'?'None':'No saved profile',''));
-   for(const p of profiles.filter(p=>p.application===app))select.add(new Option(p.label,p.id));if([...select.options].some(o=>o.value===old))select.value=old;
+   for(const p of profiles.filter(p=>p.application===app))select.add(new Option(p.label+(p.name?' · '+p.name:''),p.id));if([...select.options].some(o=>o.value===old))select.value=old;
   }
  }
- async function catalog(){profiles=await api('/v1/tasks/profiles');syncProfiles();if(!owner)return;
+ async function catalog(){profiles=await api('/v1/tasks/profiles');syncProfiles();await loadTaskProfiles();if(!owner)return;
   const mapping=await api('/v1/task-service-credentials/profiles'),table=el('table'),head=el('tr');for(const text of ['API label','Saved profile (owner only)'])head.append(el('th',text));table.append(head);
   $('#service-profiles').replaceChildren(el('legend','Allowed profiles'));
   for(const p of mapping){const row=el('tr');row.append(el('td',p.label),el('td',p.name));table.append(row);const label=el('label'),input=el('input');input.type='checkbox';input.name='profileIds';input.value=p.id;label.append(input,document.createTextNode(p.label+' · '+p.name));$('#service-profiles').append(label)}
+  for(const p of profiles)p.name=mapping.find(m=>m.id===p.id)?.name;syncProfiles();
+  $('#new-task-profile').hidden=false;$('#task-profile-save').hidden=false;
   $('#profile-mapping').replaceChildren(table);$('#service-panel').hidden=false;
   const roles=await api('/v1/agent-roles');$('#task-roles').replaceChildren(el('legend','Roles'));for(const role of roles){const label=el('label'),input=el('input');input.type='checkbox';input.name='roleIds';input.value=role.id;label.append(input,document.createTextNode(role.name));$('#task-roles').append(label)}$('#task-roles').hidden=!roles.length;
   await services();
@@ -48,6 +56,7 @@ The agent inside the task box finishes with completed_task(text, files?) or fail
   const [t,messages,events]=await Promise.all([api(path),api(path+'/messages'),api(path+'/events')]);if(selected!==id||version!==sequence)return;
   const fingerprint=JSON.stringify([t,messages,events]);if(detailVersion===fingerprint)return;detailVersion=fingerprint;
   const previous=$('#task-message')?.value||'',root=$('#task-detail');root.replaceChildren(el('h2',t.name),el('p',t.state+(t.queuePosition?' · Queue position '+t.queuePosition:'')),el('p',t.goal));
+  if(t.taskProfile)root.append(el('p','Task profile: '+t.taskProfile));
   const controls=el('div');controls.className='task-actions';if(t.box){controls.append(link('Open box','/boxes/'+enc(t.box.id)));controls.append(link('Chat','/chat#box='+enc(t.box.id)))}
   if(!done(t.state))controls.append(action('Cancel task',async()=>{await api(path+'/cancel','POST',{});detailVersion='';await refresh()}));
   else{if(t.box)controls.append(action('Delete box now',async()=>{if(!confirm('Delete this finished task’s box? Its saved result remains until the retention period ends.'))return;await api(path+'/box','DELETE');await refresh()}));controls.append(action('Delete task and results',async()=>{if(!confirm('Delete this task, its box and all saved results?'))return;await api(path,'DELETE');status('Deletion queued.');await refresh()}))}
@@ -66,10 +75,46 @@ The agent inside the task box finishes with completed_task(text, files?) or fail
  async function refresh(){if(refreshing||$('#tasks-app').hidden)return;refreshing=true;try{await Promise.all([list(),detail()])}catch(error){status(error.message)}finally{refreshing=false}}
  async function enter(){try{const who=await api('/v1/whoami');owner=who.role==='owner';$('#login').hidden=true;$('#tasks-app').hidden=false;status('');await catalog();await refresh()}catch(error){status(error.message)}}
  $('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',undefined,{Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();await enter()}catch(error){status(error.message)}};
- $('#create-task').elements.agent.onchange=syncProfiles;
- $('#create-task').onsubmit=async e=>{e.preventDefault();const f=e.target,b=f.querySelector('button[type=submit]'),data=new FormData(f),req={name:data.get('name'),goal:data.get('goal'),agent:data.get('agent'),diskGiB:Number(data.get('diskGiB')),timeLimitSeconds:Number(data.get('minutes'))*60,retentionSeconds:Number(data.get('hours'))*3600,desktopResolution:data.get('desktopResolution'),tools:['desktop',...data.getAll('tools')],instructions:data.get('instructions'),loginProfiles:[],roleIds:data.getAll('roleIds')};
+ function configuration(form){
+  const data=new FormData(form),req={agent:data.get('agent'),diskGiB:Number(data.get('diskGiB')),timeLimitSeconds:Number(data.get('minutes'))*60,retentionSeconds:Number(data.get('hours'))*3600,desktopResolution:data.get('desktopResolution'),tools:['desktop',...data.getAll('tools')],instructions:data.get('instructions'),loginProfiles:[],roleIds:data.getAll('roleIds')};
   if(data.get('proxy'))req.tools.push(data.get('proxy'));for(const name of ['memoryGiB','swapGiB'])if(data.get(name)!=='')req[name]=Number(data.get(name));if(data.get('slotId'))req.slotId=data.get('slotId');
   if(data.get('profile'))req.loginProfiles.push({profileId:data.get('profile'),model:data.get('model')||undefined,reasoningEffort:data.get('reasoningEffort')||undefined});if(data.get('github'))req.loginProfiles.push({profileId:data.get('github')});
+  return req;
+ }
+ async function modelOptions(){
+  const version=++modelVersion,form=$('#create-task'),profile=profiles.find(p=>p.id===form.elements.profile.value);$('#task-model-options').replaceChildren();
+  if(!owner||!profile?.name)return;
+  try{const catalog=await api('/v1/login-profiles/'+enc(profile.application)+'/'+enc(profile.name)+'/models');if(version!==modelVersion)return;for(const model of catalog.models||[])$('#task-model-options').append(new Option(model.label||model.id,model.id))}catch{/* Manual model entry remains available. */}
+ }
+ function fillConfiguration(settings){
+  const f=$('#create-task').elements;f.agent.value=settings.agent;syncProfiles();
+  for(const [name,value] of Object.entries({diskGiB:settings.diskGiB,memoryGiB:settings.memoryGiB||'',swapGiB:settings.swapGiB??'',minutes:settings.timeLimitSeconds/60,hours:settings.retentionSeconds/3600,desktopResolution:settings.desktopResolution,instructions:settings.instructions||'',slotId:settings.slotId||''}))f[name].value=value;
+  const agent=(settings.loginProfiles||[]).find(ref=>profiles.find(p=>p.id===ref.profileId)?.application===settings.agent),github=(settings.loginProfiles||[]).find(ref=>profiles.find(p=>p.id===ref.profileId)?.application==='github');
+  for(const [name,ref] of [['profile',agent],['github',github]]){if(ref&&![...f[name].options].some(o=>o.value===ref.profileId))f[name].add(new Option('Unavailable login profile',ref.profileId));f[name].value=ref?.profileId||''}
+  f.model.value=agent?.model||'';f.reasoningEffort.value=agent?.reasoningEffort||'';f.proxy.value=(settings.tools||[]).find(t=>['tor-socks5','cloudflare-warp'].includes(t))||'';
+  $('#create-task').querySelectorAll('input[name=tools]').forEach(i=>i.checked=(settings.tools||[]).includes(i.value));$('#task-roles').querySelectorAll('input').forEach(i=>i.checked=(settings.roleIds||[]).includes(i.value));void modelOptions();
+ }
+ function resetProfileEditor(){editingProfile=null;$('#task-profile-name').value='';$('#task-profile-name').readOnly=false;$('#save-task-profile').textContent='Save task profile';$('#cancel-profile-edit').hidden=true}
+ function selectTaskProfile(){
+  resetProfileEditor();const ref=$('#create-task').elements.taskProfile.value,profile=taskProfiles.find(p=>p.name===ref);if(profile)fillConfiguration(profile.settings);$('#task-settings').disabled=!!profile;$('#task-profile-save').hidden=!owner||!!profile;
+ }
+ async function loadTaskProfiles(){
+  taskProfiles=await api('/v1/task-profiles');const select=$('#create-task').elements.taskProfile,old=select.value;select.replaceChildren(new Option('Custom settings',''));for(const p of taskProfiles)select.add(new Option(p.name,p.name));select.value=taskProfiles.some(p=>p.name===old)?old:'';
+  $('#task-profiles-list').replaceChildren();if(!taskProfiles.length)$('#task-profiles-list').append(el('p','No task profiles yet.'));
+  for(const p of taskProfiles){const card=el('article'),cfg=p.settings;card.className='task-profile-card';card.append(el('h3',p.name));const model=(cfg.loginProfiles||[]).find(r=>r.model);card.append(el('p',cfg.agent+(model?' · '+model.model+(model.reasoningEffort?' · '+model.reasoningEffort:''):'')+' · '+(cfg.memoryGiB?cfg.memoryGiB+' GiB RAM':'Default RAM')+' · '+(cfg.swapGiB!==undefined?cfg.swapGiB+' GiB swap':'Default swap')+' · '+cfg.diskGiB+' GiB disk'));
+   const github=(cfg.loginProfiles||[]).some(r=>profiles.find(p=>p.id===r.profileId)?.application==='github'),tools=(cfg.tools||[]).filter(t=>t!=='desktop');card.append(el('p',(github?'GitHub login attached':'No GitHub login')+' · '+(tools.length?tools.join(', '):'No optional tools')));
+   const actions=el('div');actions.className='task-actions';actions.append(action('Use profile',()=>{select.value=p.name;selectTaskProfile();$('#create-panel').open=true;$('#create-task').elements.name.focus()}));
+   if(owner){actions.append(action('Edit',()=>{select.value='';$('#task-settings').disabled=false;fillConfiguration(cfg);editingProfile=p;$('#task-profile-name').value=p.name;$('#task-profile-name').readOnly=true;$('#save-task-profile').textContent='Update task profile';$('#cancel-profile-edit').hidden=false;$('#task-profile-save').hidden=false;$('#create-panel').open=true;$('#task-profile-name').scrollIntoView({block:'center'})}));actions.append(action('Delete',async()=>{if(!confirm('Delete task profile '+p.name+'? Existing tasks keep their settings.'))return;await api('/v1/task-profiles/'+enc(p.id),'DELETE');await loadTaskProfiles();selectTaskProfile()}))}
+   card.append(actions);$('#task-profiles-list').append(card);
+  }
+ }
+ $('#create-task').elements.agent.onchange=()=>{syncProfiles();$('#create-task').elements.model.value='';$('#create-task').elements.reasoningEffort.value='';void modelOptions()};
+ $('#create-task').elements.profile.onchange=()=>{ $('#create-task').elements.model.value='';$('#create-task').elements.reasoningEffort.value='';void modelOptions()};
+ $('#create-task').elements.taskProfile.onchange=selectTaskProfile;
+ $('#new-task-profile').onclick=()=>{$('#create-task').elements.taskProfile.value='';$('#task-settings').disabled=false;resetProfileEditor();$('#task-profile-save').hidden=false;$('#create-panel').open=true;$('#task-profile-name').focus()};
+ $('#cancel-profile-edit').onclick=resetProfileEditor;
+ $('#save-task-profile').onclick=async()=>{const b=$('#save-task-profile');b.disabled=true;try{const req={name:$('#task-profile-name').value.trim(),settings:configuration($('#create-task'))};await api('/v1/task-profiles'+(editingProfile?'/'+enc(editingProfile.id):''),editingProfile?'PUT':'POST',req);resetProfileEditor();await loadTaskProfiles();status('Task profile saved. Use its name in the API.')}catch(error){status(error.message)}finally{b.disabled=false}};
+ $('#create-task').onsubmit=async e=>{e.preventDefault();const f=e.target,b=f.querySelector('button[type=submit]'),ref=f.elements.taskProfile.value,req={name:f.elements.name.value,goal:f.elements.goal.value,...(ref?{taskProfile:ref}:configuration(f))};
   const serialized=JSON.stringify(req);if(requestBody!==serialized){requestBody=serialized;requestKey=crypto.randomUUID()}b.disabled=true;try{const t=await api('/v1/tasks','POST',req,{'Idempotency-Key':requestKey});requestBody=requestKey=null;$('#create-panel').open=false;location.hash=t.id;status('Task queued.');await refresh()}catch(error){status(error.message)}finally{b.disabled=false}};
  $('#service-form').onsubmit=async e=>{e.preventDefault();const f=e.target,b=f.querySelector('button'),data=new FormData(f);b.disabled=true;try{const c=await api('/v1/task-service-credentials','POST',{name:data.get('name'),profileIds:data.getAll('profileIds'),allowControl:data.get('allowControl')==='on',expiresAt:data.get('expiresAt')?new Date(data.get('expiresAt')).toISOString():undefined});$('#new-token textarea').value=c.token;$('#new-token').hidden=false;await services()}catch(error){status(error.message)}finally{b.disabled=false}};
  $('#clear-token').onclick=()=>{$('#new-token textarea').value='';$('#new-token').hidden=true};$('#refresh').onclick=refresh;$('#state-filter').onchange=()=>void refresh();$('#load-more').onclick=()=>void list(true).catch(e=>status(e.message));

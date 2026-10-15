@@ -40,6 +40,7 @@ func (s *Server) registerGoalTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/agent-desktop/task/complete", s.desktopAgentAuth(s.completeGoalTaskHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/task/fail", s.desktopAgentAuth(s.completeGoalTaskHandler))
 	s.registerGoalTaskLinkRoutes(mux)
+	s.registerGoalTaskProfileRoutes(mux)
 }
 
 func goalTaskHTTPError(w http.ResponseWriter, err error) {
@@ -68,6 +69,39 @@ func (s *Server) createGoalTaskHandler(w http.ResponseWriter, r *http.Request, a
 		writeError(w, 400, err)
 		return
 	}
+	var requested []v1.CreateGoalTaskRequest
+	if req.TaskProfile != "" {
+		original := req
+		if req.Links != nil {
+			links := *req.Links
+			links.Kinds = append([]string(nil), req.Links.Kinds...)
+			original.Links = &links
+		}
+		requested = append(requested, original)
+		// Replays use the original request, even after the profile changes.
+		if id, found, replayErr := s.Store.replayTaskProfileRequest(r.Context(), a, req, key); replayErr != nil {
+			goalTaskHTTPError(w, replayErr)
+			return
+		} else if found {
+			task, e := s.Store.goalTask(r.Context(), a, id)
+			if e != nil {
+				goalTaskHTTPError(w, e)
+				return
+			}
+			w.Header().Set("Idempotency-Replayed", "true")
+			writeJSON(w, 201, task)
+			return
+		}
+		req, err = s.Store.expandTaskProfile(r.Context(), a, req)
+		if err != nil {
+			if errors.Is(err, errGoalTaskProfileOverrides) {
+				writeError(w, 400, err)
+			} else {
+				taskProfileError(w, err)
+			}
+			return
+		}
+	}
 	if err = normalizeGoalTask(&req); err != nil {
 		writeError(w, 400, err)
 		return
@@ -92,7 +126,7 @@ func (s *Server) createGoalTaskHandler(w http.ResponseWriter, r *http.Request, a
 		writeError(w, 400, err)
 		return
 	}
-	id, reused, err := s.Store.createGoalTask(r.Context(), a, req, key)
+	id, reused, err := s.Store.createGoalTask(r.Context(), a, req, key, requested...)
 	if err != nil {
 		goalTaskHTTPError(w, err)
 		return

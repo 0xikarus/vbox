@@ -1263,6 +1263,17 @@ CREATE TABLE IF NOT EXISTS goal_tasks (
 );
 CREATE INDEX IF NOT EXISTS goal_tasks_queue ON goal_tasks(account_id,created_at,id) WHERE state='queued';
 CREATE INDEX IF NOT EXISTS goal_tasks_box ON goal_tasks(logical_box_id) WHERE logical_box_id IS NOT NULL;
+-- Keep original requests for idempotent replay after a preset is edited/deleted.
+ALTER TABLE goal_tasks ADD COLUMN IF NOT EXISTS requested_settings jsonb;
+CREATE TABLE IF NOT EXISTS goal_task_profiles (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ name text NOT NULL,
+ settings jsonb NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(account_id,name)
+);
 CREATE TABLE IF NOT EXISTS goal_task_events (
  sequence bigserial PRIMARY KEY,
  task_id uuid NOT NULL REFERENCES goal_tasks(id) ON DELETE CASCADE,

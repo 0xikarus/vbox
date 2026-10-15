@@ -159,6 +159,77 @@ profile gives it a new ID. A task creation request can use only IDs returned
 for its caller; the controller resolves them within that account and rechecks
 access at creation time.
 
+### Reusable task profiles
+
+Owners can save a complete configuration in **Tasks → Task profiles → New task
+profile**. Choose the agent/login profile, model and reasoning effort, RAM,
+swap, disk, optional GitHub login, tools, instructions and time/retention limits,
+then **Save task profile**. Saving a profile creates no task or box. **Use
+profile** selects it for a task; **Edit** changes future tasks only.
+
+Task profiles are different from login profiles: `/v1/tasks/profiles` lists
+anonymous saved logins, while `/v1/task-profiles` lists reusable configurations.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/v1/task-profiles` | List configurations usable by the caller. |
+| GET | `/v1/task-profiles/{name-or-id}` | Get one configuration. |
+| POST | `/v1/task-profiles` | Owner only: create `{ "name": "...", "settings": {...} }`. |
+| PUT | `/v1/task-profiles/{name-or-id}` | Owner only: replace settings; name stays fixed. |
+| DELETE | `/v1/task-profiles/{name-or-id}` | Owner only: delete the preset; existing tasks are unaffected. |
+
+`settings` accepts the configuration fields in the custom create request below,
+except `name`, `goal`, `links`, and `taskProfile`. Names use 1–63 letters, digits,
+dots, underscores or hyphens, and must be unique within the account. Duplicate
+creation returns 409. Deleting a saved login leaves its task profile visible to
+the owner for repair, but unusable until its login selection is fixed.
+
+Example configuration (substitute an allowed OpenRouter login ID):
+
+```json
+{
+  "name": "glm5.3flash",
+  "settings": {
+    "agent": "opencode",
+    "loginProfiles": [{"profileId":"lp_...","model":"openrouter/z-ai/glm-5.3-flash"}],
+    "memoryGiB": 2,
+    "swapGiB": 1,
+    "diskGiB": 4,
+    "tools": ["desktop"]
+  }
+}
+```
+
+That selects no GitHub login or optional Blender installation. The base desktop
+preset remains required for task MCP tools and final captures. Task profiles
+hold references to existing logins, never copies of their credentials.
+
+Create a task with only its name, goal and task profile:
+
+```http
+POST /v1/tasks
+Authorization: Bearer <TASK_SERVICE_TOKEN>
+Content-Type: application/json
+Idempotency-Key: <unique-job-UUID>
+```
+
+```json
+{"name":"job-123","goal":"Process the supplied input and return a report.","taskProfile":"glm5.3flash"}
+```
+
+`taskProfile` accepts a name or ID. Only optional `links` can accompany these
+fields; configuration overrides are rejected. Each task stores a snapshot of
+the profile settings. Edits/deletion do not change queued or running tasks, and
+retrying the original request with the same idempotency key returns the original
+task even after a profile edit or deletion. The returned task includes the
+selected profile name as `taskProfile`.
+
+Service tokens must already allow **every login profile** referenced by the task
+profile. Selecting a preset grants no extra credential or role permissions;
+presets with roles are owner-only. Unauthorized presets return 404 and are
+omitted from the list. Profile names and settings are visible to allowed callers,
+so use descriptive names without private account information.
+
 ### Create request
 
 ```json
@@ -179,7 +250,8 @@ access at creation time.
 }
 ```
 
-- Required: `name`, `goal` (1–100,000 bytes), `agent`.
+- For custom configuration, required: `name`, `goal` (1–100,000 bytes), `agent`.
+  With `taskProfile`, supply `name`, `goal`, and the preset reference instead.
 - `diskGiB` sets the task box's workspace volume size (1–1,000 GiB, default
   10 GiB). `memoryGiB` and `swapGiB` set per-box limits where the selected
   container-isolated shared worker supports them; omit them to use normal box

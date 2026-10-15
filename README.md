@@ -26,6 +26,10 @@ agent saves its result and files, and the controller releases the worker slot.
 The workspace and results expire after 24 hours by default. Follow-up work is a
 new task.
 
+Save reusable configurations under **Tasks → Task profiles** and create tasks
+with `{"name":"job-123","goal":"Your goal","taskProfile":"your-preset"}`.
+Profiles include model, resources, saved logins and tools; edits affect future tasks.
+
 Third-party services use scoped tokens, anonymous profile IDs and simple
 30-second polling. See [Tasks API](docs/TASKS-API.md) and the
 [Python API example](scripts/examples/tasks_api.py).

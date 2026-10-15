@@ -16,9 +16,10 @@ type TaskLinkRequest struct {
 }
 
 type CreateGoalTaskRequest struct {
-	Name              string           `json:"name"`
-	Goal              string           `json:"goal"`
-	Agent             string           `json:"agent"`
+	TaskProfile       string           `json:"taskProfile,omitempty"`
+	Name              string           `json:"name,omitempty"`
+	Goal              string           `json:"goal,omitempty"`
+	Agent             string           `json:"agent,omitempty"`
 	LoginProfiles     []TaskProfileRef `json:"loginProfiles,omitempty"`
 	Tools             []string         `json:"tools,omitempty"`
 	Instructions      string           `json:"instructions,omitempty"`
@@ -31,6 +32,16 @@ type CreateGoalTaskRequest struct {
 	TimeLimitSeconds  int              `json:"timeLimitSeconds,omitempty"`
 	RetentionSeconds  int              `json:"retentionSeconds,omitempty"`
 	Links             *TaskLinkRequest `json:"links,omitempty"`
+}
+
+// GoalTaskProfile stores reusable task settings, with opaque login references.
+// Settings excludes task-specific name, goal, links and taskProfile fields.
+type GoalTaskProfile struct {
+	ID        string                `json:"id"`
+	Name      string                `json:"name"`
+	Settings  CreateGoalTaskRequest `json:"settings"`
+	CreatedAt time.Time             `json:"createdAt"`
+	UpdatedAt time.Time             `json:"updatedAt"`
 }
 
 type GoalTaskCreator struct {
@@ -70,6 +81,7 @@ type GoalTaskLink struct {
 }
 
 type GoalTask struct {
+	TaskProfile      string           `json:"taskProfile,omitempty"`
 	ID               string           `json:"id"`
 	Name             string           `json:"name"`
 	Goal             string           `json:"goal"`
