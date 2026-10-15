@@ -9,7 +9,7 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
-func (s *Server) validateGoalTaskAdmission(ctx context.Context, a goalTaskActor, req v1.CreateGoalTaskRequest) error {
+func (s *Server) validateGoalTaskConfiguration(ctx context.Context, a goalTaskActor, req v1.CreateGoalTaskRequest) error {
 	profiles, err := s.Store.resolveGoalTaskProfiles(ctx, a, req)
 	if err != nil {
 		return err
@@ -22,6 +22,13 @@ func (s *Server) validateGoalTaskAdmission(ctx context.Context, a goalTaskActor,
 		if err = s.Store.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM agent_roles WHERE account_id=$1 AND id::text=$2)`, a.AccountID, role).Scan(&exists); err != nil || !exists {
 			return fmt.Errorf("selected role is unavailable")
 		}
+	}
+	return nil
+}
+
+func (s *Server) validateGoalTaskAdmission(ctx context.Context, a goalTaskActor, req v1.CreateGoalTaskRequest) error {
+	if err := s.validateGoalTaskConfiguration(ctx, a, req); err != nil {
+		return err
 	}
 	if req.SlotID == "" && req.MemoryGiB == 0 {
 		return nil

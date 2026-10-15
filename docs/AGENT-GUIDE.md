@@ -463,3 +463,9 @@ Use `scripts/examples/tasks_api.py` with a scoped service token for disposable
 end-to-end checks. PostgreSQL tests require `VMBOX_TEST_DATABASE_URL` pointing to
 a disposable database and create isolated schemas. The owner page maps anonymous
 profile labels; never add names or decrypted credentials to the service catalog.
+
+Reusable task configurations live in `goal_task_profiles` and `/v1/task-profiles`;
+`goal_task_presets.go` owns their owner-only writes and permission-filtered reads.
+Expand `taskProfile` before admission, then persist the settings snapshot. Keep
+`requested_settings` for idempotency after preset edits/deletion. A preset never
+grants access to a login or role that the caller could not use directly.

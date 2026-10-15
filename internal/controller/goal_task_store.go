@@ -126,10 +126,17 @@ func (s *Store) resolveGoalTaskProfiles(ctx context.Context, a goalTaskActor, re
 	return result, nil
 }
 
-func (s *Store) createGoalTask(ctx context.Context, a goalTaskActor, req v1.CreateGoalTaskRequest, key string) (string, bool, error) {
+func (s *Store) createGoalTask(ctx context.Context, a goalTaskActor, req v1.CreateGoalTaskRequest, key string, original ...v1.CreateGoalTaskRequest) (string, bool, error) {
 	raw, err := json.Marshal(req)
 	if err != nil {
 		return "", false, err
+	}
+	requestRaw := raw
+	if len(original) > 0 {
+		requestRaw, err = json.Marshal(original[0])
+		if err != nil {
+			return "", false, err
+		}
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -142,7 +149,7 @@ func (s *Store) createGoalTask(ctx context.Context, a goalTaskActor, req v1.Crea
 	}
 	var id string
 	var same bool
-	err = tx.QueryRowContext(ctx, `SELECT id::text,settings=$5::jsonb FROM goal_tasks WHERE account_id=$1 AND creator_kind=$2 AND creator_id=$3 AND idempotency_key=$4`, a.AccountID, a.Kind, a.ID, key, raw).Scan(&id, &same)
+	err = tx.QueryRowContext(ctx, `SELECT id::text,COALESCE(requested_settings,settings)=$5::jsonb FROM goal_tasks WHERE account_id=$1 AND creator_kind=$2 AND creator_id=$3 AND idempotency_key=$4`, a.AccountID, a.Kind, a.ID, key, requestRaw).Scan(&id, &same)
 	if err == nil {
 		if !same {
 			return "", false, errGoalTaskIdempotency
@@ -170,7 +177,7 @@ func (s *Store) createGoalTask(ctx context.Context, a goalTaskActor, req v1.Crea
 		}
 	}
 	id = uuid()
-	_, err = tx.ExecContext(ctx, `INSERT INTO goal_tasks(id,account_id,user_id,creator_kind,creator_id,creator_name,name,goal,agent,settings,idempotency_key,time_limit_seconds,retention_seconds) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, id, a.AccountID, a.UserID, a.Kind, a.ID, a.Name, req.Name, req.Goal, req.Agent, raw, key, req.TimeLimitSeconds, req.RetentionSeconds)
+	_, err = tx.ExecContext(ctx, `INSERT INTO goal_tasks(id,account_id,user_id,creator_kind,creator_id,creator_name,name,goal,agent,settings,idempotency_key,time_limit_seconds,retention_seconds,requested_settings) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, id, a.AccountID, a.UserID, a.Kind, a.ID, a.Name, req.Name, req.Goal, req.Agent, raw, key, req.TimeLimitSeconds, req.RetentionSeconds, requestRaw)
 	if err != nil {
 		return "", false, err
 	}
@@ -180,13 +187,13 @@ func (s *Store) createGoalTask(ctx context.Context, a goalTaskActor, req v1.Crea
 	return id, false, tx.Commit()
 }
 
-const goalTaskColumns = `g.id::text,g.name,g.goal,g.state,g.result,g.failure,g.creator_kind,g.creator_id,g.creator_name,g.agent,g.time_limit_seconds,g.retention_seconds,g.created_at,g.started_at,g.finished_at,g.delete_at,g.box_deleted_at,COALESCE(b.id::text,''),COALESCE(b.name,''),COALESCE(b.state,''),CASE WHEN g.state='queued' THEN (SELECT count(*) FROM goal_tasks q WHERE q.account_id=g.account_id AND q.state='queued' AND (q.created_at,q.id)<=(g.created_at,g.id)) ELSE 0 END`
+const goalTaskColumns = `COALESCE(g.settings->>'taskProfile',''),g.id::text,g.name,g.goal,g.state,g.result,g.failure,g.creator_kind,g.creator_id,g.creator_name,g.agent,g.time_limit_seconds,g.retention_seconds,g.created_at,g.started_at,g.finished_at,g.delete_at,g.box_deleted_at,COALESCE(b.id::text,''),COALESCE(b.name,''),COALESCE(b.state,''),CASE WHEN g.state='queued' THEN (SELECT count(*) FROM goal_tasks q WHERE q.account_id=g.account_id AND q.state='queued' AND (q.created_at,q.id)<=(g.created_at,g.id)) ELSE 0 END`
 
 func scanGoalTask(row interface{ Scan(...any) error }) (v1.GoalTask, error) {
 	var t v1.GoalTask
 	var result, failure []byte
 	var box v1.GoalTaskBox
-	err := row.Scan(&t.ID, &t.Name, &t.Goal, &t.State, &result, &failure, &t.Creator.Kind, &t.Creator.ID, &t.Creator.Name, &t.Agent, &t.TimeLimitSeconds, &t.RetentionSeconds, &t.CreatedAt, &t.StartedAt, &t.FinishedAt, &t.DeleteAt, &t.BoxDeletedAt, &box.ID, &box.Name, &box.State, &t.QueuePosition)
+	err := row.Scan(&t.TaskProfile, &t.ID, &t.Name, &t.Goal, &t.State, &result, &failure, &t.Creator.Kind, &t.Creator.ID, &t.Creator.Name, &t.Agent, &t.TimeLimitSeconds, &t.RetentionSeconds, &t.CreatedAt, &t.StartedAt, &t.FinishedAt, &t.DeleteAt, &t.BoxDeletedAt, &box.ID, &box.Name, &box.State, &t.QueuePosition)
 	if err != nil {
 		return t, err
 	}
@@ -353,4 +360,25 @@ func (s *Store) deliverGoalTaskNotices(ctx context.Context) error {
  ON CONFLICT(account_id,idempotency_key) DO NOTHING
  ) DELETE FROM goal_task_notices WHERE task_id IN (SELECT task_id FROM ready)`)
 	return err
+}
+
+// Profile requests are compared before resolving the current preset or credentials.
+func (s *Store) replayTaskProfileRequest(ctx context.Context, a goalTaskActor, req v1.CreateGoalTaskRequest, key string) (string, bool, error) {
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return "", false, err
+	}
+	var id string
+	var same bool
+	err = s.DB.QueryRowContext(ctx, `SELECT id::text,COALESCE(requested_settings,settings)=$5::jsonb FROM goal_tasks WHERE account_id=$1 AND creator_kind=$2 AND creator_id=$3 AND idempotency_key=$4`, a.AccountID, a.Kind, a.ID, key, raw).Scan(&id, &same)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if !same {
+		return "", false, errGoalTaskIdempotency
+	}
+	return id, true, nil
 }

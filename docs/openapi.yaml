@@ -970,6 +970,43 @@ paths:
       responses:
         '200': {description: No saved names, email addresses or credentials, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/TaskProfile'}}}}}
         '401': {description: Invalid owner, user or task service authentication}
+  /v1/task-profiles:
+    get:
+      summary: List reusable task configurations permitted by the caller's login-profile grants
+      responses:
+        '200': {description: Available task presets, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/GoalTaskProfile'}}}}}
+    post:
+      summary: Owner creates a reusable task configuration without creating a box
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SaveGoalTaskProfile'}}}
+      responses:
+        '201': {description: Profile saved, content: {application/json: {schema: {$ref: '#/components/schemas/GoalTaskProfile'}}}}
+        '400': {description: Invalid configuration or login selection}
+        '403': {description: Owner access required}
+        '409': {description: Profile name already exists}
+  /v1/task-profiles/{profile}:
+    parameters:
+      - {name: profile, in: path, required: true, schema: {type: string}, description: Account-scoped task profile name or ID}
+    get:
+      summary: Read a permitted task configuration
+      responses:
+        '200': {description: Task profile, content: {application/json: {schema: {$ref: '#/components/schemas/GoalTaskProfile'}}}}
+        '404': {description: Missing or unauthorized profile}
+    put:
+      summary: Owner replaces configuration for future tasks; name cannot change
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SaveGoalTaskProfile'}}}
+      responses:
+        '200': {description: Profile updated, content: {application/json: {schema: {$ref: '#/components/schemas/GoalTaskProfile'}}}}
+        '400': {description: Invalid settings or changed name}
+        '404': {description: Profile not found}
+    delete:
+      summary: Owner deletes a profile; existing task snapshots are unaffected
+      responses:
+        '204': {description: Profile deleted}
+        '404': {description: Profile not found}
   /v1/tasks:
     post:
       summary: Queue a disposable single-goal task
@@ -1653,27 +1690,59 @@ components:
         timeLimitSeconds: {type: integer, minimum: 300, maximum: 604800, default: 14400}
         retentionSeconds: {type: integer, minimum: 3600, maximum: 604800, default: 86400}
         links: {$ref: '#/components/schemas/TaskLinkRequest'}
-    CreateGoalTask:
+    GoalTaskProfileSettings:
+      type: object
+      required: [agent]
+      properties:
+        agent: {enum: [codex, claude, opencode]}
+        loginProfiles: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/TaskProfileRef'}}
+        diskGiB: {type: integer, minimum: 1, maximum: 1000, default: 10}
+        memoryGiB: {type: integer, minimum: 1}
+        swapGiB: {type: integer, minimum: 0}
+        desktopResolution: {enum: [1024x640, 1280x720], default: 1024x640}
+        slotId: {type: string, format: uuid}
+        tools: {type: array, items: {type: string}}
+        instructions: {type: string}
+        roleIds: {type: array, maxItems: 8, items: {type: string, format: uuid}}
+        timeLimitSeconds: {type: integer, minimum: 300, maximum: 604800, default: 14400}
+        retentionSeconds: {type: integer, minimum: 3600, maximum: 604800, default: 86400}
+    SaveGoalTaskProfile:
+      type: object
+      required: [name, settings]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 63, pattern: '^[a-zA-Z0-9._-]+$'}
+        settings: {$ref: '#/components/schemas/GoalTaskProfileSettings'}
+    GoalTaskProfile:
       allOf:
-        - {$ref: '#/components/schemas/AgentGoalTaskOptions'}
+        - {$ref: '#/components/schemas/SaveGoalTaskProfile'}
         - type: object
-          required: [name, agent]
           properties:
-            name: {type: string, minLength: 1, maxLength: 100}
-            agent: {enum: [codex, claude, opencode]}
-            loginProfiles: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/TaskProfileRef'}}
-            diskGiB: {type: integer, minimum: 1, maximum: 1000, default: 10}
-            memoryGiB: {type: integer, minimum: 1}
-            swapGiB: {type: integer, minimum: 0}
-            desktopResolution: {enum: [1024x640, 1280x720], default: 1024x640}
-            slotId: {type: string, format: uuid}
-            tools: {type: array, items: {type: string}}
-            instructions: {type: string}
-            roleIds: {type: array, maxItems: 8, items: {type: string, format: uuid}}
+            id: {type: string, format: uuid}
+            createdAt: {type: string, format: date-time}
+            updatedAt: {type: string, format: date-time}
+    CreateGoalTask:
+      oneOf:
+        - allOf:
+            - {$ref: '#/components/schemas/GoalTaskProfileSettings'}
+            - {$ref: '#/components/schemas/AgentGoalTaskOptions'}
+            - type: object
+              required: [name]
+              not: {required: [taskProfile]}
+              properties:
+                name: {type: string, minLength: 1, maxLength: 63}
+        - type: object
+          additionalProperties: false
+          required: [name, goal, taskProfile]
+          properties:
+            name: {type: string, minLength: 1, maxLength: 63}
+            goal: {type: string, minLength: 1, maxLength: 100000}
+            taskProfile: {type: string, description: Task profile name or ID; settings are snapshotted at creation}
+            links: {$ref: '#/components/schemas/TaskLinkRequest'}
     GoalTask:
       type: object
       required: [id, name, goal, state, box, creator, result, failure, createdAt, startedAt, finishedAt, deleteAt]
       properties:
+        taskProfile: {type: string, description: Selected task profile name when created from a preset}
         id: {type: string, format: uuid}
         name: {type: string}
         goal: {type: string}

@@ -8,11 +8,13 @@ import puppeteer from 'puppeteer-core';
 async function fixture(t,{history=false}={}){
  const task={id:'fixture-task',name:'queued-example',goal:'fixture goal',state:'queued',queuePosition:2,box:null,links:[],createdAt:new Date().toISOString()};
  const past={...task,id:'finished-task',name:'finished-example',state:'completed',queuePosition:undefined,finishedAt:new Date().toISOString()};
- const calls=[],services=[];const errors=[];
+ const calls=[],services=[],presets=[];const errors=[];
  const server=http.createServer(async(req,res)=>{
   const u=new URL(req.url,'http://localhost'),path=u.pathname;
   if(!path.startsWith('/v1/')){try{const name=path==='/tasks'?'tasks.html':path.slice(1);res.setHeader('Content-Type',extname(name)==='.js'?'text/javascript':extname(name)==='.css'?'text/css':'text/html');return res.end(await readFile('internal/controller/web/'+name))}catch{res.statusCode=404;return res.end()}}
   let body='';for await(const chunk of req)body+=chunk;const data=body?JSON.parse(body):null;calls.push({method:req.method,path,data,key:req.headers['idempotency-key']});res.setHeader('Content-Type','application/json');
+  if(path==='/v1/task-profiles'){if(req.method==='POST'){const p={id:'preset-'+(presets.length+1),...data};presets.push(p);res.statusCode=201;return res.end(JSON.stringify(p))}return res.end(JSON.stringify(presets))}
+  if(path.startsWith('/v1/task-profiles/')){const index=presets.findIndex(p=>p.id===path.split('/').pop());if(index<0){res.statusCode=404;return res.end('{}')}if(req.method==='DELETE'){presets.splice(index,1);res.statusCode=204;return res.end()}if(req.method==='PUT')Object.assign(presets[index],data);return res.end(JSON.stringify(presets[index]))}
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
   if(path==='/v1/tasks/profiles')return res.end(JSON.stringify([{id:'lp_fixture',application:'codex',label:'codex · ABCD'}]));
   if(path==='/v1/task-service-credentials/profiles')return res.end(JSON.stringify([{id:'lp_fixture',application:'codex',label:'codex · ABCD',name:'private@example.test'}]));
@@ -56,4 +58,34 @@ test('task list switches between all, current and historical tasks',async t=>{
  await page.select('#state-filter','');
  await page.waitForFunction(()=>document.querySelectorAll('.task-card').length===2);
  assert.deepEqual(errors,[]);
+});
+
+test('owner saves, uses, edits and deletes a task profile without creating a task while saving',async t=>{
+ const {page,calls,errors}=await fixture(t);
+ await page.click('#new-task-profile');
+ await page.$eval('#task-profile-name',n=>n.value='codex-test');
+ await page.select('#create-task [name=profile]','lp_fixture');
+ await page.$eval('#create-task [name=diskGiB]',n=>n.value='4');
+ await page.$eval('#create-task [name=memoryGiB]',n=>n.value='2');
+ await page.$eval('#create-task [name=swapGiB]',n=>n.value='1');
+ await page.$eval('#create-task [name=model]',n=>n.value='gpt-6-sol');
+ await page.$eval('#create-task [name=reasoningEffort]',n=>n.value='high');
+ await page.click('#save-task-profile');await page.waitForSelector('.task-profile-card');
+ const saved=calls.find(c=>c.path==='/v1/task-profiles'&&c.method==='POST').data;
+ assert.equal(saved.name,'codex-test');assert.equal(saved.settings.diskGiB,4);assert.equal(saved.settings.memoryGiB,2);assert.equal(saved.settings.swapGiB,1);
+ assert.deepEqual(saved.settings.tools,['desktop']);assert.deepEqual(saved.settings.loginProfiles,[{profileId:'lp_fixture',model:'gpt-6-sol',reasoningEffort:'high'}]);
+ assert.equal(calls.some(c=>c.path==='/v1/tasks'&&c.method==='POST'),false);
+ await page.click('.task-profile-card button');
+ assert.equal(await page.$eval('#task-settings',n=>n.disabled),true);
+ await page.type('#create-task [name=name]','preset-job');await page.type('#create-task [name=goal]','fixture goal');
+ await page.click('#create-task button[type=submit]');
+ await page.waitForFunction(()=>document.querySelector('#status').textContent==='Task queued.');
+ assert.deepEqual(calls.find(c=>c.path==='/v1/tasks'&&c.method==='POST').data,{name:'preset-job',goal:'fixture goal',taskProfile:'codex-test'});
+ await page.$$eval('.task-profile-card button',buttons=>buttons.find(b=>b.textContent==='Edit').click());
+ assert.equal(await page.$eval('#task-settings',n=>n.disabled),false);assert.equal(await page.$eval('#task-profile-name',n=>n.readOnly),true);
+ await page.$eval('#create-task [name=diskGiB]',n=>n.value='8');await page.click('#save-task-profile');
+ await page.waitForFunction(()=>document.querySelector('.task-profile-card').textContent.includes('8 GiB disk'));
+ assert.equal(calls.find(c=>c.path==='/v1/task-profiles/preset-1'&&c.method==='PUT').data.settings.diskGiB,8);
+ page.once('dialog',dialog=>dialog.accept());await page.$$eval('.task-profile-card button',buttons=>buttons.find(b=>b.textContent==='Delete').click());
+ await page.waitForFunction(()=>document.querySelector('#task-profiles-list').textContent.includes('No task profiles yet.'));assert.deepEqual(errors,[]);
 });
