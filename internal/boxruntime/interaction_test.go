@@ -441,7 +441,10 @@ func TestStartOpenCodeChatStartsBareAndSubmitsStructuredPrompt(t *testing.T) {
 		tmuxCommand, openCodeReadyProbe, agentReadySettlePause, openCodeVisibleClient, openCodeBridgeHealth, http.DefaultTransport = originalCommand, originalProbe, originalSettle, originalVisible, originalHealth, originalTransport
 	})
 	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
-	agentReadySettlePause = func(context.Context) error { return nil }
+	agentReadySettlePause = func(context.Context) error {
+		t.Fatal("healthy OpenCode bridge incurred a terminal settle delay")
+		return nil
+	}
 	openCodeVisibleClient = func(context.Context, string, string) (*http.Client, error) { return &http.Client{}, nil }
 	openCodeBridgeHealth = func(context.Context, *http.Client, string) (openCodeBridgeIdentity, error) {
 		return openCodeBridgeIdentity{Instance: "bridge-1", SessionID: "session-1"}, nil
@@ -495,7 +498,7 @@ func TestStartOpenCodeChatStartsBareAndSubmitsStructuredPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(calls, "\n")
-	if !strings.Contains(joined, "opencode\n--auto\n--hostname\n127.0.0.1") || strings.Contains(joined, "--prompt") {
+	if !strings.Contains(joined, "OPENCODE_DISABLE_AUTOUPDATE=1\nopencode\n--auto") || strings.Contains(joined, "--prompt") || strings.Contains(joined, "--port") || strings.Contains(joined, "--hostname") {
 		t.Fatalf("OpenCode startup arguments were incomplete: %v", calls)
 	}
 	if !submitted {

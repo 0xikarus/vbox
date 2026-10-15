@@ -12,12 +12,11 @@ import (
 )
 
 func TestInteractiveShellUsesSpecsWelcome(t *testing.T) {
-	port := fmt.Sprintf("%d", OpenCodeChatPort("managed-session"))
 	for agent, want := range map[string][]string{
 		"shell":    {"vmbox-runtime", "welcome"},
 		"codex":    {"codex", "--remote", codexTUIProxyURL("managed-session"), "-c", "check_for_update_on_startup=false", "-c", "suppress_unstable_features_warning=true", "-c", "notice.hide_rate_limit_model_nudge=true"},
 		"claude":   {"env", "VMBOX_CHAT_SESSION=managed-session", "DISABLE_AUTOUPDATER=1", "claude", "--add-dir", "/data/home/.local/share/vmbox/chat", "--dangerously-load-development-channels", "server:vmbox-desktop"},
-		"opencode": {"env", "VMBOX_CHAT_SESSION=managed-session", "opencode", "--auto", "--hostname", "127.0.0.1", "--port", port},
+		"opencode": {"env", "VMBOX_CHAT_SESSION=managed-session", "OPENCODE_DISABLE_AUTOUPDATE=1", "opencode", "--auto"},
 	} {
 		got, err := interactiveArgv("managed-session", agent)
 		if err != nil || !reflect.DeepEqual(got, want) {

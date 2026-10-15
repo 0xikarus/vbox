@@ -22,7 +22,7 @@ import (
 )
 
 // CodexChatPort maps a tmux session to the loopback port its app server listens
-// on, the way OpenCodeChatPort does. Codex drives the agent through that server
+// on. Codex drives the agent through that server
 // and the terminal attaches to it with --remote, so the box shows exactly the
 // thread chat is talking to.
 func CodexChatPort(session string) int {

@@ -792,12 +792,15 @@ func waitForAgentReady(ctx context.Context, session, agent string) error {
 // conversation. Require the prompt to remain ready through a settle interval;
 // if another dialog appears, answer it and start a fresh settle interval.
 func settleAgentReadiness(ctx context.Context, session, agent string) error {
+	// OpenCode readiness is a live bridge health check, not a terminal prompt
+	// heuristic. Its structured delivery rechecks the bridge identity and native
+	// receipt, so waiting for a startup dialog to settle adds only latency.
+	if agent == "opencode" {
+		return ctx.Err()
+	}
 	for attempt := 0; attempt < 4; attempt++ {
 		if err := agentReadySettlePause(ctx); err != nil {
 			return err
-		}
-		if agent == "opencode" {
-			return nil
 		}
 		content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-S", "-80", "-t", session)
 		if err == nil {
