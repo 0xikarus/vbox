@@ -273,7 +273,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   input in the same pane. This materializes the new thread before Chat uses
   app-server queueing: an idle thread may be absent from the recent-thread list
   while an older saved thread remains there. Claude uses its
-  experimental `claude/channel`, or OpenCode's loopback session API. A Codex
+  experimental `claude/channel`, or OpenCode's visible TUI plugin over a private
+  Unix socket. OpenCode uses its internal SDK transport without an extra TCP
+  listener; managed launches disable CLI update checks because the controller
+  installs the selected version. A healthy bridge needs no terminal settle
+  delay. The bounded 90-second cold-start wait and native receipt checks still
+  apply. A Codex
   queue or steer acknowledgement is not a delivery receipt: Chat advances only
   after the exact user item appears in Codex's native history. Each pending
   message records the visible thread it targeted. If its turn ends without
@@ -438,6 +443,18 @@ secure environment configuration, check `/grid` and `/v1/grid-boxes`, and compar
 eligibility with actual account state. Do not create/resume worker boxes just to
 populate a screenshot without authorization. Opening a grid must itself make no
 allocation, session-creation, hibernation or deletion requests.
+
+To measure OpenCode bridge startup, run
+`python3 scripts/opencode-startup-benchmark.py --opencode /absolute/path/to/opencode`
+and repeat with `--baseline` for the former TCP listener. Update checks are
+disabled in both modes so the benchmark cannot upgrade the installed CLI. Run comparisons
+serially on the same host; each sample uses a fresh home and isolated tmux
+server, imports no login, and sends no model prompt. Inside a disposable box,
+pass `--temp-dir /data/tmp` so OpenTUI can load its temporary native library.
+The measurement ends at a healthy bridge, excluding CLI installation, desktop
+preparation, the former two-second settle pause, and model response latency.
+CPU contention and VM steal time can dominate these results; this benchmark
+does not replace the linked Chat reply canary above.
 
 ## Working safely in this repository
 

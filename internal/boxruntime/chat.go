@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	imagepkg "image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -480,12 +479,6 @@ func NameCodexChatThread(ctx context.Context, root, session string) error {
 		return err
 	}
 	return os.WriteFile(marker, []byte("named\n"), 0600)
-}
-
-func OpenCodeChatPort(session string) int {
-	hash := fnv.New32a()
-	_, _ = hash.Write([]byte(session))
-	return 20_000 + int(hash.Sum32()%10_000)
 }
 
 var openCodeReadyProbe = func(ctx context.Context, session string) (bool, error) {
