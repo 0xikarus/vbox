@@ -183,6 +183,10 @@ func (s *Store) saveContactImages(ctx context.Context, accountID string, images 
 }
 
 func (s *Server) pullChatEvent(ctx context.Context, prov provider.Provider, serviceID string, task v1.BoxTask) (boxruntime.ChatEvent, bool, error) {
+	// An outbox read is small. Do not let a stalled transport hold the shared
+	// drain gate for the reply watcher's entire ten-minute lifetime.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	var event boxruntime.ChatEvent
 	result, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "chat-pull", task.Session}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.Stdout) == "" {
@@ -310,6 +314,11 @@ func replyNotifiesOwner(target v1.BoxMessage) bool {
 }
 
 func (s *Server) pullStructuredAgentReply(ctx context.Context, prov provider.Provider, serviceID, accountID string, task v1.BoxTask, request v1.BoxMessage) (bool, error) {
+	key := accountID + ":" + task.ID
+	if !s.claimChatDrain(key) {
+		return false, nil
+	}
+	defer s.finishChatDrain(key)
 	for drained := 0; drained < chatDrainLimit; drained++ {
 		event, found, err := s.pullChatEvent(ctx, prov, serviceID, task)
 		if err != nil || !found {
@@ -336,6 +345,11 @@ func (s *Server) drainAgentChat(ctx context.Context, accountID string, task v1.B
 	if task.Agent == "shell" {
 		return nil
 	}
+	key := accountID + ":" + task.ID
+	if !s.claimChatDrain(key) {
+		return nil
+	}
+	defer s.finishChatDrain(key)
 	box, err := s.Store.LogicalBox(ctx, taskPrincipal(accountID, task), task.LogicalBoxID)
 	if err != nil || box.State != v1.LogicalBoxRunning {
 		return err
@@ -423,25 +437,38 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 	return result.Message.ID, "", nil
 }
 
-// claimChatDrain rate limits outbox polling per task so that an open chat
-// window cannot hammer the provider.
+type chatDrainState struct {
+	running  bool
+	finished time.Time
+}
+
+// Every outbox reader shares this gate: reply watchers, browser reads, ready
+// notifications and reconciliation. A slow drain stays exclusive until it
+// finishes; the cooldown starts then, so overload cannot create overlapping
+// docker exec calls for every outstanding message of the same task.
 func (s *Server) claimChatDrain(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.chatDrains == nil {
-		s.chatDrains = map[string]time.Time{}
+		s.chatDrains = map[string]chatDrainState{}
 	}
 	now := time.Now()
-	for existing, at := range s.chatDrains {
-		if now.Sub(at) > time.Minute {
+	for existing, state := range s.chatDrains {
+		if !state.running && now.Sub(state.finished) > time.Minute {
 			delete(s.chatDrains, existing)
 		}
 	}
-	if at, ok := s.chatDrains[key]; ok && now.Sub(at) < chatDrainInterval {
+	if state, ok := s.chatDrains[key]; ok && (state.running || now.Sub(state.finished) < chatDrainInterval) {
 		return false
 	}
-	s.chatDrains[key] = now
+	s.chatDrains[key] = chatDrainState{running: true}
 	return true
+}
+
+func (s *Server) finishChatDrain(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.chatDrains[key] = chatDrainState{finished: time.Now()}
 }
 
 // drainBoxChat polls the active chat tasks of a box. It is best effort: a
@@ -460,9 +487,6 @@ func (s *Server) drainBoxChat(ctx context.Context, p Principal, box v1.LogicalBo
 			return
 		}
 		if task.State != "active" || task.Agent == "shell" {
-			continue
-		}
-		if !s.claimChatDrain(p.AccountID + ":" + task.ID) {
 			continue
 		}
 		claimed++

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	desktopprotocol "github.com/0xikarus/vmbox-service/internal/desktop"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 	"github.com/coder/websocket"
@@ -51,7 +52,7 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 	defer func() { s.mu.Lock(); s.webStreams--; s.mu.Unlock() }()
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Hour)
 	defer cancel()
-	inv, err := s.observeSessions(ctx, p, r.PathValue("id"))
+	inv, err := s.observeViewer(ctx, p, r.PathValue("id"), desktop)
 	if err != nil {
 		writeError(w, 502, err)
 		return
@@ -182,6 +183,33 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 		return
 	}
 	_ = ws.Close(websocket.StatusNormalClosure, "Terminal detached")
+}
+
+// Desktop streams do not select a tmux session. Avoid a separate worker exec
+// to enumerate every session before opening VNC; desktop-stream itself checks
+// the live runtime assignment, and the controller still fences and revalidates
+// the connection. Terminal streams need the exact live session incarnation.
+func (s *Server) observeViewer(ctx context.Context, p Principal, id string, desktop bool) (v1.SessionInventory, error) {
+	if !desktop {
+		return s.observeSessions(ctx, p, id)
+	}
+	a, err := s.Store.assignment(ctx, p.AccountID, id)
+	if err != nil {
+		return v1.SessionInventory{}, err
+	}
+	if a.Box.State != v1.LogicalBoxRunning {
+		return v1.SessionInventory{}, fmt.Errorf("resume the box before connecting")
+	}
+	if a.Box.Provider == "shared-worker" {
+		prov, err := s.provider(ctx, p.AccountID, a.Box.Provider, a.Box.ProviderCredential)
+		if err != nil {
+			return v1.SessionInventory{}, err
+		}
+		if err := s.recoverSharedWorkspace(ctx, a, prov); err != nil {
+			return v1.SessionInventory{}, err
+		}
+	}
+	return v1.SessionInventory{LogicalBoxID: id, Assignment: nativeFence(a)}, nil
 }
 
 // revalidationTolerated reports whether one more transient store failure may be

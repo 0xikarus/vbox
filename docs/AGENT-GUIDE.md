@@ -116,6 +116,13 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 
 ## Other recently established behavior
 
+- Viewer reconnects reuse live interactive sessions before runtime staging or
+  taking a box write lock. Desktop streams skip the extra tmux inventory probe;
+  runtime assignment checks and stream revalidation still apply. Outbox polls
+  from reply watchers, browser reads, ready notifications and reconciliation
+  share one in-flight drain per account/task, with a two-second cooldown after
+  completion. Individual reply watchers continue checking durable reply state.
+
 - Live workspace streams (web terminal and VNC desktop) revalidate themselves
   periodically: the controller stream rechecks the assignment and browser
   session every 5 seconds, the direct-worker stream rechecks its binding every

@@ -3766,11 +3766,11 @@ function pairTileStatus(tile,mode,label){
   if(pending)return pending;
   const start=(async()=>{
    try{
-    await api(boxPath(box.id)+'/desktop','POST',{});
+    await api(boxPath(box.id)+'/desktop','POST',{},{},90000);
    }catch(e){
     if(!/components unavailable|enable the desktop/i.test(e.message||''))throw e;
     await api(boxPath(box.id)+'/desktop/enable','POST',{},{},190000);
-    await api(boxPath(box.id)+'/desktop','POST',{});
+    await api(boxPath(box.id)+'/desktop','POST',{},{},90000);
    }
   })();
   desktopStartRequests.set(box.id,start);

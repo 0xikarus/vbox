@@ -372,6 +372,25 @@ func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
+	// Attaching a viewer to an existing session is read-only. Do this before
+	// taking the box's write lock or uploading the runtime: those operations
+	// can stall behind chat delivery and needlessly transfer a whole binary.
+	if req.ReuseExisting {
+		prov, err := s.provider(ctx, p.AccountID, box.Provider, box.ProviderCredential)
+		if err != nil {
+			writeError(w, 502, err)
+			return
+		}
+		name, err := s.existingInteractiveSession(ctx, p, a, prov)
+		if err != nil {
+			writeError(w, 409, err)
+			return
+		}
+		if name != "" {
+			writeJSON(w, 200, map[string]string{"session": name})
+			return
+		}
+	}
 	tx, err := s.Store.DB.BeginTx(ctx, nil)
 	if err != nil {
 		writeError(w, 500, err)
