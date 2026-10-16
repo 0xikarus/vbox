@@ -37,7 +37,7 @@ type Server struct {
 	profileLogins        *profileLoginManager
 	webStreams           int
 	replyWatches         map[string]struct{}
-	chatDrains           map[string]time.Time
+	chatDrains           map[string]chatDrainState
 	activeCreations      map[string]struct{}
 	PublicURL            string
 	DefaultImage         string

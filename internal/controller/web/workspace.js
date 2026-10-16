@@ -80,7 +80,7 @@ function hasBlender(box){
 }
 async function startAndAttachDesktop(version){
  $('#desktop-status').textContent='Starting desktop…';
- await api(bp+'/desktop','POST',{});if(!workspaceCurrent(version))return false;
+ await api(bp+'/desktop','POST',{}, {},90000);if(!workspaceCurrent(version))return false;
  closeDesktop();desktopAttached=true;recordViewer('desktop',{state:'connecting',ping:null});
  const dispose=openWorkspaceDesktop(boxID,message=>{if(workspaceCurrent(version))$('#desktop-status').textContent=message},{onMetrics:value=>{if(!$('#workspace').hidden)recordViewer('desktop',value)}});
  closeDesktop=()=>{desktopAttached=false;recordViewer('desktop',{state:'disconnected',ping:null});dispose()};
