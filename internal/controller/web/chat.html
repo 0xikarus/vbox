@@ -168,6 +168,17 @@
     <button id="attach" type="button" title="Attach files" aria-label="Attach files">+</button>
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" multiple hidden>
     <textarea id="chat-input" rows="1" maxlength="100000" placeholder="Message" aria-label="Message"></textarea>
+    <div id="heartbeat-command" hidden>
+     <div class="heartbeat-command-help" id="heartbeat-parameter-help" role="status">count · How many messages to send (1–1000).</div>
+     <div class="heartbeat-command-fields">
+      <strong>/heartbeat</strong>
+      <label class="heartbeat-argument">count <input id="heartbeat-count" type="number" min="1" max="1000" step="1" required disabled aria-label="Heartbeat count" aria-describedby="heartbeat-parameter-help" placeholder="1–1000"></label>
+      <label class="heartbeat-argument">interval <input id="heartbeat-interval" type="number" min="1" max="1440" step="1" required disabled aria-label="Heartbeat interval in minutes" aria-describedby="heartbeat-parameter-help" placeholder="minutes"><span aria-hidden="true">min</span></label>
+      <label class="heartbeat-argument heartbeat-message-argument">message <textarea id="heartbeat-message" rows="1" maxlength="100000" required disabled aria-label="Heartbeat message" aria-describedby="heartbeat-parameter-help" placeholder="Message to send each time"></textarea></label>
+      <button id="heartbeat-cancel" type="button" title="Cancel command" aria-label="Cancel heartbeat command">×</button>
+     </div>
+     <small>First message after the interval. Pauses while the box sleeps. Replaces this box’s current chat heartbeat.</small>
+    </div>
     <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button>
     <button id="send" type="submit" title="Send" aria-label="Send" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
    </form>

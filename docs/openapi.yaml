@@ -1175,6 +1175,61 @@ paths:
         '200': {description: PNG, or terminal text when source=terminal}
         '404': {description: Link unavailable}
         '409': {description: Capture unavailable}
+  /v1/logical-boxes/{id}/active-tools:
+    get:
+      summary: List active owner-created chat heartbeats for this box
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Active heartbeat timers; paused is true while the box is not running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  heartbeats:
+                    type: array
+                    items: {$ref: '#/components/schemas/ChatHeartbeat'}
+        '403': {description: Owner access required}
+        '404': {description: Box not found in this account}
+  /v1/logical-boxes/{id}/heartbeats:
+    post:
+      summary: Start or replace an owner-created chat heartbeat
+      description: Requires owner access. Each tick sends the exact message through normal user chat delivery. First tick is after the interval. Sleeping boxes pause without consuming ticks. A new key replaces the current timer; retrying the same key never resets it.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, maxLength: 128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [count, intervalMinutes, message]
+              properties:
+                count: {type: integer, minimum: 1, maximum: 1000}
+                intervalMinutes: {type: integer, minimum: 1, maximum: 1440}
+                message: {type: string, minLength: 1, description: Nonblank ordinary chat text, at most 100000 UTF-8 bytes; /silent notes are not accepted}
+      responses:
+        '201':
+          description: Persisted heartbeat or idempotent replay
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatHeartbeat'}
+        '400': {description: Invalid parameters or conflicting idempotency key}
+        '403': {description: Owner access required}
+  /v1/logical-boxes/{id}/heartbeats/{heartbeat}:
+    delete:
+      summary: Stop this exact chat heartbeat
+      description: Prevents future ticks. A message already queued may still be delivered. A stale timer ID never stops a replacement timer.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: heartbeat, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Stopped or already stopped}
+        '403': {description: Owner access required}
+        '404': {description: Box or heartbeat not found in this account}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, description: Owner/user token, or task service token only on /v1/tasks routes}
@@ -1185,6 +1240,18 @@ components:
     ProviderQuery: {name: provider, in: query, required: true, schema: {type: string}}
     ProviderCredentialQuery: {name: providerCredential, in: query, schema: {type: string}}
   schemas:
+    ChatHeartbeat:
+      type: object
+      required: [id, count, intervalMinutes, message, remaining, nextAt, paused, active]
+      properties:
+        id: {type: string, format: uuid}
+        count: {type: integer}
+        intervalMinutes: {type: integer}
+        message: {type: string}
+        remaining: {type: integer}
+        nextAt: {type: string, format: date-time}
+        paused: {type: boolean}
+        active: {type: boolean}
     ChatSidebarLayout:
       type: object
       required: [groups, members]
