@@ -2550,6 +2550,7 @@ function pairTileStatus(tile,mode,label){
   renderRows();
  }
  async function openPair(key,preview=false){
+  cancelHeartbeatCommand(false);
   navSettleEnd?.();
   const pair=pairs.get(key);if(!pair)return;
   const intent=++openIntent,cacheKey='pair:'+key;
@@ -2650,7 +2651,7 @@ function pairTileStatus(tile,mode,label){
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
   if(selected!==id||selectedPair)replyParentMisses.clear();
-  if(selected!==id)cancelReply();clearInspectMemory();selected=id;resourceRequest++;resourceSnapshot=null;renderResourceCard();scheduleResources(0);lastSignature='';hideComposerPicker();
+  if(selected!==id){cancelHeartbeatCommand(false);cancelReply()}clearInspectMemory();selected=id;resourceRequest++;resourceSnapshot=null;renderResourceCard();scheduleResources(0);lastSignature='';hideComposerPicker();
   selectedUsageProfile=null;renderChatUsage();if(owner)void loadChatUsageProfile(id);
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
@@ -2688,6 +2689,77 @@ function pairTileStatus(tile,mode,label){
  const maxComposerHeight=()=>Math.min(150,Math.max(96,innerHeight*0.35));
  function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,maxComposerHeight())+'px'}
  const composerPicker=$('#composer-picker'),mentionCache=new Map();
+ let heartbeatCommandBox='',heartbeatSaving=false,heartbeatStartKey='',activeToolsRequest=0;
+ const heartbeatCommand=$('#heartbeat-command'),heartbeatFields=[$('#heartbeat-count'),$('#heartbeat-interval'),$('#heartbeat-message')];
+ const heartbeatHelp=['count · How many messages to send (1–1000).','interval · Minutes between messages (1–1440).','message · The exact text sent as a normal chat message on every tick.'];
+ heartbeatFields.forEach((field,index)=>{
+  field.onfocus=()=>{$('#heartbeat-parameter-help').textContent=heartbeatHelp[index]};
+  field.oninput=()=>{heartbeatStartKey='';field.setCustomValidity('')};
+  field.addEventListener('keydown',event=>{
+   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelHeartbeatCommand();return}
+   if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){
+    if(index===2&&enterInsertsNewline())return;
+    event.preventDefault();if(index<2)heartbeatFields[index+1].focus();else composer.requestSubmit();
+   }
+  });
+ });
+ $('#heartbeat-cancel').onclick=()=>cancelHeartbeatCommand();
+ function beginHeartbeatCommand(){
+  if(!owner||!selected||selectedPair)return;
+  if((attachmentDrafts.get(selected)||[]).length){statusEl.textContent='Remove attachments before scheduling a heartbeat.';return}
+  heartbeatCommandBox=selected;heartbeatSaving=false;heartbeatStartKey='';$('#heartbeat-cancel').disabled=false;
+  inputEl.value='/heartbeat';inputEl.hidden=true;heartbeatCommand.hidden=false;composer.classList.add('heartbeat-mode');
+  heartbeatFields.forEach(field=>{field.disabled=false;field.value='';field.setCustomValidity('')});
+  $('#attach').disabled=true;hideComposerPicker();updateSendState();heartbeatFields[0].focus();
+ }
+ function cancelHeartbeatCommand(focus=true){
+  if(!heartbeatCommandBox)return;
+  delete inputDrafts[heartbeatCommandBox];saveInputDrafts();
+  heartbeatCommandBox='';heartbeatStartKey='';heartbeatSaving=false;heartbeatCommand.hidden=true;composer.classList.remove('heartbeat-mode');inputEl.hidden=false;inputEl.value='';
+  heartbeatFields.forEach(field=>field.disabled=true);$('#attach').disabled=false;grow();updateSendState();if(focus)inputEl.focus();
+ }
+ async function submitHeartbeatCommand(){
+  if(heartbeatSaving)return;
+  const boxID=heartbeatCommandBox;
+  if(!owner||boxID!==selected)return;
+  const [count,interval,message]=heartbeatFields;
+  if(!message.value.trim()){message.setCustomValidity('Enter the heartbeat message.');message.reportValidity();return}
+  if(!composer.reportValidity())return;
+  heartbeatSaving=true;heartbeatStartKey ||= crypto.randomUUID();updateSendState();
+  const key=heartbeatStartKey,body={count:Number(count.value),intervalMinutes:Number(interval.value),message:message.value};
+  heartbeatFields.forEach(field=>field.disabled=true);$('#heartbeat-cancel').disabled=true;
+  try{
+   const timer=await api(boxPath(boxID)+'/heartbeats','POST',{'Idempotency-Key':key},body);
+   if(heartbeatCommandBox===boxID&&heartbeatStartKey===key){
+    cancelHeartbeatCommand();delete inputDrafts[boxID];saveInputDrafts();statusEl.textContent=timer.active===false?'This heartbeat has already completed or been stopped.':'Heartbeat started: '+body.count+' messages, every '+body.intervalMinutes+' minutes. Manage it in Details → Active Tools.';
+   }
+   if(selected===boxID&&inspectPrototypePage==='activeTools')void loadActiveTools();
+  }catch(e){if(selected===boxID)statusEl.textContent=e.message}
+  finally{if(heartbeatCommandBox===boxID&&heartbeatStartKey===key){$('#heartbeat-cancel').disabled=false;heartbeatSaving=false;heartbeatFields.forEach(field=>field.disabled=false);updateSendState()}}
+ }
+ async function loadActiveTools(){
+  const boxID=selected,request=++activeToolsRequest,root=inspectPrototypePages.get('activeTools');
+  if(!root||!owner||!boxID)return;
+  const current=()=>request===activeToolsRequest&&selected===boxID&&inspectPrototypePage==='activeTools';
+  if(root.dataset.boxId!==boxID){root.replaceChildren(mk('p','Loading active tools…'));root.dataset.boxId=boxID}
+  try{
+   const data=await api(boxPath(boxID)+'/active-tools');if(!current())return;
+   root.replaceChildren(mk('p','Chat heartbeats send your message as ordinary chat. Messages already queued can still arrive after Stop.'));
+   const timers=Array.isArray(data.heartbeats)?data.heartbeats:[];
+   if(!timers.length)root.append(mk('p','No active chat heartbeats. Use /heartbeat in the composer to start one.'));
+   for(const timer of timers){
+    const card=mk('section');card.className='heartbeat-tool';card.dataset.heartbeatId=timer.id;
+    const title=mk('strong','Heartbeat'),detail=mk('p',timer.remaining+' of '+timer.count+' remaining · every '+timer.intervalMinutes+' min');
+    const next=mk('p',timer.paused?'Paused until this box is running.':'Next: '+new Date(timer.nextAt).toLocaleString());
+    const message=mk('p',timer.message);message.className='heartbeat-tool-message';
+    const stop=mk('button','Stop heartbeat');stop.type='button';stop.className='ip-page-action';
+    stop.onclick=async()=>{stop.disabled=true;try{await api(boxPath(boxID)+'/heartbeats/'+encodeURIComponent(timer.id),'DELETE');if(selected===boxID)await loadActiveTools()}catch(e){if(current())root.append(mk('p',e.message));stop.disabled=false}};
+    card.append(title,detail,next,message,stop);root.append(card);
+   }
+  }catch(e){if(current())root.replaceChildren(mk('p',e.message))}
+ }
+ setInterval(()=>{if(!document.hidden&&inspectOpen&&inspectPrototypePage==='activeTools')void loadActiveTools()},10000);
+
  let pickerItems=[],pickerIndex=0,pickerRange=null,pickerRequest=0,acceptingComposerSuggestion=false;
  function expandChatCommands(text){
   const commands=new Map(chatCommands.map(command=>[command.name,command.prompt]));
@@ -2723,8 +2795,9 @@ function pairTileStatus(tile,mode,label){
   if(!owner||!boxID||!token){hideComposerPicker();return}
   if(token.kind==='/'){
    const items=[];
+   if(token.start===0&&'heartbeat'.startsWith(token.query))items.push({kind:'/',name:'heartbeat',detail:'count · interval (minutes) · message',command:'heartbeat'});
    if(compactEligible(boxes.get(boxID))&&'compact'.startsWith(token.query))items.push({kind:'/',name:'compact',detail:'Summarize older context',command:'compact'});
-   items.push(...chatCommands.filter(command=>command.name.startsWith(token.query)).map(command=>({kind:'/',name:command.name,detail:command.prompt})));
+   items.push(...chatCommands.filter(command=>command.name!=='heartbeat'&&command.name.startsWith(token.query)).map(command=>({kind:'/',name:command.name,detail:command.prompt})));
    renderComposerPicker(items,token);
    return;
   }
@@ -2736,6 +2809,7 @@ function pairTileStatus(tile,mode,label){
  }
  function chooseComposerSuggestion(index){
   const item=pickerItems[index],range=pickerRange;if(!item||!range)return;
+  if(item.command==='heartbeat'){beginHeartbeatCommand();return}
   if(item.command==='compact'){
    inputEl.value=inputEl.value.slice(0,range.start)+inputEl.value.slice(range.end);grow();updateSendState();hideComposerPicker();showCompactChip();inputEl.focus();
    return;
@@ -2755,6 +2829,7 @@ function pairTileStatus(tile,mode,label){
   return [...ids];
  }
  function updateSendState(){
+  if(heartbeatCommandBox===selected&&selected){$('#send').disabled=heartbeatSaving;$('#send').title='Start heartbeat';$('#send').setAttribute('aria-label','Start heartbeat');$('#send-blocked-reason').hidden=true;return}
   const drafts=attachmentDrafts.get(selected)||[];
   const hasContent=!!inputEl.value.trim()||drafts.length>0;
   const send=$('#send'),box=boxes.get(selected),running=box?.state==='running'&&!box?.resumeCandidate&&!box?.resumeCheckPending;send.disabled=!hasContent||!running;
@@ -2781,7 +2856,7 @@ function pairTileStatus(tile,mode,label){
    if(event.key==='Escape'){event.preventDefault();hideComposerPicker();return}
    if(event.key==='Tab'&&!event.shiftKey&&pickerRange?.kind==='/'){
     event.preventDefault();chooseComposerSuggestion(pickerIndex);
-    if(!$('#send').disabled){hideComposerPicker();$('#send').focus()}
+    if(!heartbeatCommandBox&&!$('#send').disabled){hideComposerPicker();$('#send').focus()}
     return;
    }
    if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chooseComposerSuggestion(pickerIndex);return}
@@ -2868,6 +2943,8 @@ function pairTileStatus(tile,mode,label){
   event.preventDefault();
   if(!selected)return;
   const boxID=selected,box=boxes.get(boxID);
+  if(heartbeatCommandBox===boxID){await submitHeartbeatCommand();return}
+  if(/^\/heartbeat\s*$/i.test(inputEl.value.trim())){beginHeartbeatCommand();return}
   if(box?.resumeCheckPending){statusEl.textContent='Checking for a saved conversation…';updateSendState();return}
   if(box?.resumeCandidate){statusEl.textContent='Choose whether to restore the saved '+agentLabel(box)+' session first.';updateSendState();return}
   if(/^\/compact\s*$/i.test(inputEl.value.trim())){
@@ -3448,7 +3525,7 @@ function pairTileStatus(tile,mode,label){
    finally{form.querySelector('button').disabled=false;updateWarning()}
   };
  }
- const inspectPrototypeTitles={power:'Hibernation & limits',instructions:'Instructions',credentials:'Credentials',contacts:'Contacts',access:'Access & permissions',attachments:'Attachments',technical:'Technical details',resources:'Adjust resources',mail:'Mail',mailDetail:'Email'};
+ const inspectPrototypeTitles={power:'Hibernation & limits',instructions:'Instructions',credentials:'Credentials',contacts:'Contacts',access:'Access & permissions',attachments:'Attachments',technical:'Technical details',activeTools:'Active Tools',resources:'Adjust resources',mail:'Mail',mailDetail:'Email'};
  const inspectPrototypePages=new Map();
  let inspectPrototypeReady=false,inspectPrototypePage='',inspectPrototypeReturnFocus=null,inspectMail=null;
  function inspectPrototypeRow(key,icon,title,value,onClick,danger=false){
@@ -3488,11 +3565,12 @@ function pairTileStatus(tile,mode,label){
   const permissionHome=$('#inspect-inline-permissions');permissionHome.append($('#role-editor-inline'));permissionLayout.manage.querySelector('input[value=create_agent_box]').closest('label').after($('#inspect-create-limit'));
   $('#inspect-access').open=true;
   page('attachments','Storage used by this box and its chat uploads.').append($('#inspect-attachment-storage'));
+  page('activeTools','Chat heartbeats send your message through ordinary chat delivery. Stopping prevents future ticks; a message already queued may still arrive.');
   const technical=page('technical','Tap an ID to copy it in full.');technical.append($('#ip-technical-table'));
   for(const [key,icon,title] of [
    ['power','timer','Hibernation & limits'],['instructions','file-text','Instructions'],['credentials','key','Credentials'],
    ['contacts','users','Contacts'],['access','shield-check','Access & permissions'],['attachments','paperclip','Attachments'],
-   ['technical','settings','Technical details'],
+   ['activeTools','activity','Active Tools'],['technical','settings','Technical details'],
   ])$('#ip-settings').append(inspectPrototypeRow(key,icon,title,'',()=>showInspectPrototypePage(key)));
   if(window.VBoxMail)inspectMail=window.VBoxMail.mount({page,row:inspectPrototypeRow,navigate:showInspectPrototypePage,getBox:()=>boxes.get(selected),isOwner:()=>owner,request:(path,method='GET',body)=>api(path,method,{},body),openBox});
   const dangerous=[
@@ -3527,10 +3605,12 @@ function pairTileStatus(tile,mode,label){
   if(subpage){$('#inspect-prototype-page').scrollTop=0;if(key==='resources'){const box=boxes.get(selected);if(box)mountInspectMemory(box)}if(key==='credentials'){const box=boxes.get(selected);if(box)void openBoxCredentials(box)}if(key==='access'&&owner&&selected)void openBoxPolicyEditor(selected)}
   const box=boxes.get(selected);if(box)renderInspectPrototype(box);
   inspectMail?.onShow(key);
+  if(key==='activeTools')void loadActiveTools();
   if(subpage)$('#inspect-prototype-back').focus({preventScroll:true});
   else{inspectPrototypeReturnFocus=null;if(restoreFocus&&returnFocus?.isConnected&&!returnFocus.hidden)returnFocus.focus({preventScroll:true})}
  }
  function renderInspectPrototype(box){
+  if(inspectPrototypePage==='activeTools'&&inspectPrototypePages.get('activeTools')?.dataset.boxId!==box.id)void loadActiveTools();
   if(!inspectPrototypeReady)return;
   $('#inspect-title').textContent=inspectPrototypeTitles[inspectPrototypePage]||'Details';
   if(inspectPrototypePage==='access'&&owner&&$('#role-editor-form').elements.id.value!==box.id)void openBoxPolicyEditor(box.id);
@@ -4426,6 +4506,7 @@ function pairTileStatus(tile,mode,label){
   try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){showLogin(e.message)}
  };
  $('#logout').onclick=async()=>{
+  cancelHeartbeatCommand(false);
   await flushReadMarkers();clearInterval(readSyncTimer);
   groupStorageKey='';activityGeneration++;activityPending=null;resourceRequest++;resourceSnapshot=null;clearInspectMemory();
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(resourceTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();

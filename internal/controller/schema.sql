@@ -1341,3 +1341,23 @@ CREATE TABLE IF NOT EXISTS goal_task_notices (
  body text NOT NULL,
  created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Owner-scheduled chat heartbeats. Completed rows retain retry idempotency;
+-- deleting their logical box removes them. Sleeping boxes do not consume ticks.
+CREATE TABLE IF NOT EXISTS chat_heartbeats (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+ user_id uuid NOT NULL REFERENCES users(id),
+ count integer NOT NULL CHECK(count BETWEEN 1 AND 1000),
+ interval_minutes integer NOT NULL CHECK(interval_minutes BETWEEN 1 AND 1440),
+ message text NOT NULL CHECK(length(message)>0),
+ remaining integer NOT NULL CHECK(remaining>=0 AND remaining<=count),
+ next_at timestamptz NOT NULL,
+ stopped_at timestamptz,
+ idempotency_key text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(account_id,box_id,idempotency_key)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS chat_heartbeats_one_active ON chat_heartbeats(box_id) WHERE stopped_at IS NULL AND remaining>0;
+CREATE INDEX IF NOT EXISTS chat_heartbeats_due ON chat_heartbeats(next_at) WHERE stopped_at IS NULL AND remaining>0;

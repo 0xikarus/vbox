@@ -340,6 +340,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/terminal", s.auth(s.terminalSnapshotHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/terminal/input", s.auth(s.terminalInputHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages", s.auth(s.directBoxMessageHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/active-tools", s.owner(s.activeToolsHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/heartbeats", s.owner(s.startChatHeartbeatHandler))
+	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/heartbeats/{heartbeat}", s.owner(s.stopChatHeartbeatHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages/clear-context", s.auth(s.clearBoxContextHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages/compact", s.auth(s.compactBoxContextHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/messages", s.auth(s.boxMessageHistory))
@@ -770,6 +773,7 @@ func (s *Server) applyLifecycle(ctx context.Context, p Principal, runID string, 
 }
 
 func (s *Server) StartReconciler(ctx context.Context) error {
+	s.startChatHeartbeatReconciler(ctx)
 	s.startGoalTaskReconciler(ctx)
 	// This independent loop must keep running when infrastructure reconciliation
 	// waits behind the shared Railway request budget.

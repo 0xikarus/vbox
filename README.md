@@ -18,6 +18,16 @@ Codex, Claude Code, and OpenCode are supported, but any harness can be used insi
 - **Manage capacity:** the Providers popup summarizes workers, slots, and host resources; the Providers page lets owners edit and delete provider configurations. Details shows RAM, swap, disk, activity, hibernation, and limits. Usage is available from the top bar.
 - **Keep work between sessions:** hibernation frees a worker slot while retaining box files. Wake the box to resume; closing a browser tab leaves a running box alone.
 
+## Chat heartbeats
+
+In a box chat, select `/heartbeat` and fill in **count**, **interval** (minutes), and
+**message** directly in the composer. Each tick sends that text as a normal user
+chat message. The first tick runs after the interval; sleeping boxes pause the
+timer until they are running again. Open **Details → Settings → Active Tools** to
+see the remaining count and stop a chat heartbeat. Starting another replaces the
+current chat heartbeat for that box. This owner control does not require the
+agent’s MCP heartbeat permission.
+
 ## Disposable tasks
 
 Use **Tasks** in the controller menu to queue a goal with a saved profile and

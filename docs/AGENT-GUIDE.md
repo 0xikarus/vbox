@@ -497,3 +497,24 @@ Reusable task configurations live in `goal_task_profiles` and `/v1/task-profiles
 Expand `taskProfile` before admission, then persist the settings snapshot. Keep
 `requested_settings` for idempotency after preset edits/deletion. A preset never
 grants access to a login or role that the caller could not use directly.
+
+## Owner chat heartbeats
+
+`/heartbeat` in Chat opens inline required count, interval (minutes) and message
+fields. `chat_heartbeat.go` and `chat_heartbeats` store owner-created timers;
+`POST /v1/logical-boxes/{id}/heartbeats` requires an Idempotency-Key and JSON
+`{ "count": 5, "intervalMinutes": 10, "message": "Check progress." }`. Counts are
+1–1000 and intervals 1–1440 minutes. One chat heartbeat is active per box; a new
+start replaces the old one. `GET .../active-tools` lists it and
+`DELETE .../heartbeats/{heartbeat}` stops that exact timer. All three routes are
+owner-only and account-scoped. The UI's Active Tools panel currently manages
+these chat heartbeats; the existing MCP-local heartbeat remains independent.
+
+The reconciler uses the ordinary `routeBoxMessage` path, with the creating user's
+identity and a stable per-tick idempotency key. It retains the row lock until
+that message has been persisted and the tick counted. A crash after persistence
+replays the same chat key, rather than sending twice. Sleeping boxes and disabled
+or demoted owners do not deliver or consume ticks. There is no catch-up burst:
+a resumed box sends one due tick, then schedules the next interval. Stop waits
+for an in-flight routing operation; it does not retract already queued messages.
+The browser does not drive the timer, and controller restarts preserve it.
