@@ -19,6 +19,7 @@ test('long healthy work stays neutral; stalled work warns and offers the existin
   const payloads=JSON.parse(await readFile(fixturePath,'utf8'));
   assert.equal(payloads.longHealthy[0].statusSource,'fallback');
   assert.equal(payloads.longStalled[0].statusSource,'stale');
+  let startupFailure=false;
   let mode='longHealthy',role='owner',hibernated=false,interrupts=0,interactive=0,allocations=0;
   const initial=new Date(Date.now()-192*60000).toISOString();
   const messages=[{id:'request',direction:'user',state:'delivered',text:'Run the task.',createdAt:initial,updatedAt:initial}];
@@ -28,7 +29,7 @@ test('long healthy work stays neutral; stalled work warns and offers the existin
    if(assets[url]){res.setHeader('Content-Type',url.endsWith('.css')?'text/css':'text/javascript');return res.end(assets[url])}
    res.setHeader('Content-Type','application/json');
    if(url==='/v1/whoami')return res.end(JSON.stringify({role}));
-   if(url==='/v1/logical-boxes'||url==='/v1/grid-boxes')return res.end(JSON.stringify([{id:'builder',name:'Builder',state:hibernated?'hibernated':'running',defaultAgent:'codex'}]));
+   if(url==='/v1/logical-boxes'||url==='/v1/grid-boxes')return res.end(JSON.stringify([{id:'builder',name:'Builder',state:startupFailure?'failed':hibernated?'hibernated':'running',restorationState:startupFailure?'creation-failed':undefined,failureReason:startupFailure?'selected OpenCode model is unavailable <script>unsafe</script>':undefined,defaultAgent:'codex'}]));
    if(url==='/v1/box-activity')return res.end(JSON.stringify(payloads[mode]));
    if(url==='/v1/tool-presets'||url==='/v1/box-conversations')return res.end('[]');
    if(url==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
@@ -123,6 +124,11 @@ test('long healthy work stays neutral; stalled work warns and offers the existin
   mode='longStalled';await page.$eval('#refresh',el=>el.click());
   await page.waitForFunction(()=>document.querySelector('#chat-banner')?.dataset.kind==='stalled',{timeout:9000});
   assert.equal(await page.$('#chat-banner .chat-banner-actions'),null,'non-owner has no recovery actions');
+  startupFailure=true;await page.reload();
+  await page.waitForFunction(()=>document.querySelector('#chat-banner')?.textContent.startsWith('Startup failed:'));
+  assert.match(await page.$eval('#chat-banner',el=>el.textContent),/selected OpenCode model is unavailable <script>unsafe<\/script>/);
+  assert.equal(await page.$('#chat-banner script'),null,'failure text is escaped');
+  assert.equal(await page.$('#chat-banner .chat-banner-actions'),null,'creation failure does not offer an unsafe restart');
   await page.close();
  }finally{
   if(browser)await browser.close();

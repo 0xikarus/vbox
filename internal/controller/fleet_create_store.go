@@ -264,14 +264,18 @@ func (s *Store) CompleteLogicalBoxCreation(ctx context.Context, creation logical
 	return tx.Commit()
 }
 
-func (s *Store) FailLogicalBoxCreation(ctx context.Context, creation logicalBoxCreation, reason string) error {
+func (s *Store) FailLogicalBoxCreation(ctx context.Context, creation logicalBoxCreation, reason string, terminal bool) error {
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, "UPDATE logical_boxes SET failure_reason=$5,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4", creation.AccountID, creation.Assignment.Box.ID, creation.Assignment.Box.AssignmentGeneration, creation.Assignment.FencingToken, reason); err != nil {
+	result, err := tx.ExecContext(ctx, "UPDATE logical_boxes SET failure_reason=$5,state=CASE WHEN $6 THEN 'failed' ELSE state END,restoration_state=CASE WHEN $6 THEN 'creation-failed' ELSE restoration_state END,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state='attaching'", creation.AccountID, creation.Assignment.Box.ID, creation.Assignment.Box.AssignmentGeneration, creation.Assignment.FencingToken, reason, terminal)
+	if err != nil {
 		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("stale logical-box creation failure fence")
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE compute_slots SET state='draining',failure_reason=$5,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4", creation.AccountID, creation.Assignment.Slot.ID, creation.Assignment.Box.AssignmentGeneration, creation.Assignment.FencingToken, reason); err != nil {
 		return err

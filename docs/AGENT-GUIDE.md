@@ -518,3 +518,14 @@ or demoted owners do not deliver or consume ticks. There is no catch-up burst:
 a resumed box sends one due tick, then schedules the next interval. Stop waits
 for an in-flight routing operation; it does not retract already queued messages.
 The browser does not drive the timer, and controller restarts preserve it.
+
+### Creation profile failures
+
+A completed login/provider preflight that rejects the selected profile or model
+ends creation with `state=failed`, `restorationState=creation-failed`, and a safe
+failure reason. The fenced slot stays draining and the volume is retained;
+reconciliation must not reinstall the CLI and replay this failed creation.
+Transport interruptions remain recoverable. OpenCode model-not-found diagnostics
+are classified from a fixed marker without returning raw CLI output. Chat shows
+the failure reason. Choose a working profile/model before creating a replacement;
+failed creations are not ordinary sleeping boxes that can be woken.
