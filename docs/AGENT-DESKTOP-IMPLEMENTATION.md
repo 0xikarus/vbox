@@ -48,7 +48,7 @@ Reconnecting refreshes this configuration, including after reassignment.
 
 MCP screenshot images (including saved files, window captures and remote control
 results) have a 24-pixel header added above the captured content. It shows
-`Cursor: X Y` at the top left, using the actual pointer sampled at capture time
+`Cursor: Xpx Ypx` at the top left, using the actual pointer sampled at capture time
 in original desktop coordinates. No desktop pixels are covered. The header is
 added after thumbnail reduction or window cropping so its text remains readable;
 very narrow window captures gain right-hand padding to fit the label. If the
