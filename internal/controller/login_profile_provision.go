@@ -217,11 +217,23 @@ func (s *Server) transferProfileFilesForSlots(ctx context.Context, tx *sql.Tx, p
 	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != fmt.Sprintf("%x", sha256.Sum256(payload)) {
 		return fmt.Errorf("selected credential transfer failed integrity verification")
 	}
+	// Check the effective copied model (including per-box overrides), not
+	// just the saved profile's default or an optional selection field.
+	openCodeFiles := make(map[string][]byte)
+	for _, file := range request.Files {
+		switch file.Path {
+		case "/data/home/.config/opencode/opencode.json":
+			openCodeFiles["opencode.json"] = file.Data
+		case "/data/home/.config/opencode/opencode.jsonc":
+			openCodeFiles["opencode.jsonc"] = file.Data
+		}
+	}
+	model := loginprofile.Model("opencode", openCodeFiles)
 	for _, ref := range refs {
 		if slots != nil && !slots[profileRefSlot(ref)] {
 			continue
 		}
-		if err := verifyProvisionedLogin(ctx, prov, serviceID, ref.Application, githubHost, githubUser); err != nil {
+		if err := verifyProvisionedLogin(ctx, prov, serviceID, ref.Application, githubHost, githubUser, model); err != nil {
 			return err
 		}
 	}

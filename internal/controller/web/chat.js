@@ -2365,6 +2365,7 @@
  function updateBanner(){
   if(reconnecting)return setBanner('Reconnecting to the controller…');
   const box=boxes.get(selected);if(!box)return setBanner('');
+  if(box.state==='failed'&&box.failureReason)return setBanner('Startup failed: '+box.failureReason,'stalled');
   if(canWakeBox(box))return setBanner('This box is '+box.state+'. Wake it to chat again. Files and chat history are saved; the agent starts a fresh live session.');
   const hint=deriveStallHint(box,Date.now(),pendingSends.get(box.id)?.at);
   if(hint?.kind==='stalled')return setBanner('No activity for '+elapsedLabel(hint.inactiveMs)+' — may be stuck','stalled',owner);
@@ -4154,7 +4155,7 @@ function pairTileStatus(tile,mode,label){
   if(key)moveChatToGroup(key,target.id);else renderRows();
  };
  const wakingBoxes=new Set();
- const canWakeBox=box=>box&&['hibernated','detached','failed'].includes(box.state);
+ const canWakeBox=box=>box&&['hibernated','detached','failed'].includes(box.state)&&!(box.state==='failed'&&box.restorationState==='creation-failed');
  function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('touch-mode');menuBackdrop.hidden=true}
  function positionRowMenu(point){
   if(rowMenu.classList.contains('touch-mode')){rowMenu.style.left='';rowMenu.style.top='';rowMenu.style.maxWidth='';rowMenu.style.maxHeight='';return}

@@ -518,3 +518,24 @@ or demoted owners do not deliver or consume ticks. There is no catch-up burst:
 a resumed box sends one due tick, then schedules the next interval. Stop waits
 for an in-flight routing operation; it does not retract already queued messages.
 The browser does not drive the timer, and controller restarts preserve it.
+
+### Creation profile failures
+
+A completed login/provider preflight that rejects the selected profile or model
+ends creation with `state=failed`, `restorationState=creation-failed`, and a safe
+failure reason. The fenced slot stays draining and the volume is retained;
+reconciliation must not reinstall the CLI and replay this failed creation.
+Transport interruptions remain recoverable. OpenCode validates the effective copied model against `opencode models`; it
+does not generate an answer during setup. This catches unavailable model IDs
+without blocking box startup on inference latency. Provider credit/quota and
+request failures remain visible when the agent is used. Raw CLI output is never
+returned in verification errors. Chat shows
+the failure reason. Choose a working profile/model before creating a replacement;
+failed creations are not ordinary sleeping boxes that can be woken.
+
+For an explicit operator repair of a failed initial creation, preserve its box,
+volume, and assignment fences and first verify the exact provider attachment.
+An authorized corrected attempt may set the internal metadata timestamp
+`creationAttemptStartedAt` when rearming creation; the 30-minute guard uses that
+attempt timestamp, falling back to `created_at` for original attempts. Never
+change the original creation date or leave automatic retries resetting this clock.

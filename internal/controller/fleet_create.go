@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -188,7 +189,14 @@ func (s *Server) finishLogicalBoxCreationActive(ctx context.Context, creation lo
 	}
 	started := time.Now()
 	fail := func(err error) error {
-		_ = s.Store.FailLogicalBoxCreation(ctx, creation, err.Error())
+		var rejected *loginVerificationError
+		// A bounded recovery pass may have expired. Persist its result with a
+		// fresh deadline instead of silently losing the failure to cancellation.
+		failureCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if saveErr := s.Store.FailLogicalBoxCreation(failureCtx, creation, err.Error(), errors.As(err, &rejected)); saveErr != nil {
+			s.Logger.Error("persist logical box creation failure", "box", creation.Assignment.Box.ID, "error", saveErr)
+		}
 		s.Logger.Error("logical box creation phase failed", "box", creation.Request.Name, "phase", creation.Assignment.Box.RestorationState, "elapsed", time.Since(started), "error", err)
 		return err
 	}
@@ -294,6 +302,12 @@ func (s *Server) finishLogicalBoxCreationActive(ctx context.Context, creation lo
 			if installed.ExitCode != 0 {
 				return fail(fmt.Errorf("agent CLI installation failed: %s", strings.TrimSpace(installed.Stderr)))
 			}
+		}
+		if len(creation.Request.LoginProfiles) > 0 {
+			if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-verifying-profiles"); err != nil {
+				return fail(err)
+			}
+			creation.Assignment.Box.RestorationState = "creation-verifying-profiles"
 		}
 		if err := s.provisionCreationProfiles(ctx, prov, creation); err != nil {
 			return fail(err)
