@@ -48,6 +48,10 @@ func desktopMCPTools() []map[string]any {
 	integer := map[string]any{"type": "integer", "minimum": 0}
 	point := map[string]any{"x": integer, "y": integer}
 	makeTool := func(name, description string, properties map[string]any, required ...string) map[string]any {
+		switch name {
+		case "take_screenshot", "capture_window", "get_agent_box_screenshot", "remote_control_box":
+			description += " The PNG has a 24-pixel header above the captured content showing Cursor: X Y in original desktop coordinates (or unavailable). For clicks, exclude the header from image Y, then undo thumbnail scaling or add window offsets; never add the header to desktop coordinates."
+		}
 		if required == nil {
 			required = []string{}
 		}
@@ -842,6 +846,10 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if err != nil {
 			return nil, err
 		}
+		pixels, err = screenshotWithCursorHeader(pixels)
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{"content": []map[string]any{{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(pixels)}}}, nil
 	}
 	if name == "remote_control_box" {
@@ -851,6 +859,10 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		delete(values, "box")
 		pixels, err := desktopAgentImageRequest(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes/"+url.PathEscape(box)+"/control", values)
+		if err != nil {
+			return nil, err
+		}
+		pixels, err = screenshotWithCursorHeader(pixels)
 		if err != nil {
 			return nil, err
 		}
@@ -1129,9 +1141,13 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if err != nil {
 			return nil, fmt.Errorf("window capture unavailable: %w", err)
 		}
+		pixels, err := screenshotWithCursorHeader(captured.Bytes())
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{"content": []map[string]any{
 			{"type": "text", "text": fmt.Sprintf("Desktop coordinates: x=%d, y=%d, width=%d, height=%d. Capture includes any overlapping windows.", bounds.Min.X, bounds.Min.Y, bounds.Dx(), bounds.Dy())},
-			{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(captured.Bytes())},
+			{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(pixels)},
 		}}, nil
 	}
 	if name == "take_screenshot" {
@@ -1145,14 +1161,18 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if err := CaptureDesktop(ctx, assignment, &png); err != nil {
 			return nil, fmt.Errorf("desktop capture unavailable; check that this box's desktop is running")
 		}
+		pixels, err := screenshotWithCursorHeader(png.Bytes())
+		if err != nil {
+			return nil, err
+		}
 		if output == "file" {
-			path, err := saveDesktopScreenshot(png.Bytes())
+			path, err := saveDesktopScreenshot(pixels)
 			if err != nil {
 				return nil, fmt.Errorf("save desktop capture: %w", err)
 			}
 			return map[string]any{"content": []map[string]any{{"type": "text", "text": "Screenshot saved to " + path + ". Pass this absolute path to chat_message files when the user should receive it."}}}, nil
 		}
-		return map[string]any{"content": []map[string]any{{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(png.Bytes())}}}, nil
+		return map[string]any{"content": []map[string]any{{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(pixels)}}}, nil
 	}
 	var action DesktopAction
 	if err := json.Unmarshal(args, &action); err != nil {

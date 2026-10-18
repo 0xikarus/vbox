@@ -84,6 +84,7 @@ func CaptureWindow(ctx context.Context, assignment, requestedID string, output i
 	if err := CaptureDesktop(ctx, assignment, &desktopPNG); err != nil {
 		return image.Rectangle{}, err
 	}
+	cursor := capturePNGCursor(desktopPNG.Bytes())
 	frame, err := png.Decode(&desktopPNG)
 	if err != nil {
 		return image.Rectangle{}, err
@@ -98,5 +99,5 @@ func CaptureWindow(ctx context.Context, assignment, requestedID string, output i
 	if _, err := NativeSessions(ctx, assignment); err != nil {
 		return image.Rectangle{}, err
 	}
-	return bounds, png.Encode(output, view)
+	return bounds, encodeCapture(output, view, cursor)
 }

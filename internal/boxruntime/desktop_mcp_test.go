@@ -276,7 +276,8 @@ func TestAgentBoxScreenshotToolReturnsControllerPNG(t *testing.T) {
 	var imageBytes bytes.Buffer
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	img.Set(0, 0, color.RGBA{R: 255, A: 255})
-	if err := png.Encode(&imageBytes, img); err != nil {
+	cursor := image.Pt(650, 500)
+	if err := encodeCapture(&imageBytes, img, &cursor); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -313,9 +314,10 @@ func TestAgentBoxScreenshotToolReturnsControllerPNG(t *testing.T) {
 		t.Fatalf("screenshot content=%v", content)
 	}
 	decoded, err := base64.StdEncoding.DecodeString(content[0]["data"].(string))
-	if err != nil || !bytes.Equal(decoded, imageBytes.Bytes()) {
-		t.Fatalf("screenshot image invalid: %v", err)
+	if err != nil {
+		t.Fatal(err)
 	}
+	assertScreenshotPixelsPreserved(t, imageBytes.Bytes(), decoded)
 }
 
 func TestRemoteControlBoxToolPostsActionAndReturnsFreshPNG(t *testing.T) {
@@ -363,9 +365,10 @@ func TestRemoteControlBoxToolPostsActionAndReturnsFreshPNG(t *testing.T) {
 	}
 	content := result["content"].([]map[string]any)
 	decoded, err := base64.StdEncoding.DecodeString(content[0]["data"].(string))
-	if err != nil || !bytes.Equal(decoded, imageBytes.Bytes()) {
-		t.Fatalf("remote screenshot invalid: %v", err)
+	if err != nil {
+		t.Fatal(err)
 	}
+	assertScreenshotPixelsPreserved(t, imageBytes.Bytes(), decoded)
 }
 
 func TestAgentBoxConfigToolUsesExplicitMode(t *testing.T) {
