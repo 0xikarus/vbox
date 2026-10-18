@@ -17,7 +17,7 @@ func (e *loginVerificationError) Error() string { return e.message }
 
 // Checks execute as the workload user through the provider's Exec transport.
 // Never include CLI output in errors: auth tools may print account/token details.
-func verifyProvisionedLogin(ctx context.Context, p provider.Provider, service, app, host, user string) error {
+func verifyProvisionedLogin(ctx context.Context, p provider.Provider, service, app, host, user, model string) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	var argv []string
@@ -50,29 +50,36 @@ func verifyProvisionedLogin(ctx context.Context, p provider.Provider, service, a
 		}
 		return &loginVerificationError{fmt.Sprintf("%s authentication failed inside the box; refresh the local login and save a new profile (credential contents withheld)", app)}
 	}
-	// Claude's login-status result is enough to provision its interactive TUI.
-	// A one-shot -p request uses a separate path and can fail for a temporary or
-	// model-specific reason even when the imported login is usable in chat.
-	// Codex and OpenCode still verify provider access with a bounded one-shot.
-	if app == "codex" || app == "opencode" {
-		prompt := "Reply briefly to confirm this connection. Do not use tools, read files, or make changes."
-		// This short provider preflight is not the managed chat session. Provider
-		// exec has no interactive permission prompt, so use non-interactive mode.
-		command := []string{"opencode", "run", "--auto", "--print-logs", "--", prompt}
-		if app == "codex" {
-			command = []string{"codex", "exec", "--skip-git-repo-check", prompt}
+	// OpenCode's local model inventory detects invalid provider/model selections
+	// without generating a paid answer or waiting behind provider rate limits.
+	// Model existence does not establish provider credit/quota availability;
+	// that is checked when the managed agent actually sends a request.
+	if app == "opencode" && model != "" {
+		r, err = p.Exec(ctx, service, []string{"opencode", "models"}, provider.ExecOptions{})
+		if err != nil || r.ExitCode != 0 || strings.TrimSpace(r.Stdout) == "" {
+			return fmt.Errorf("OpenCode model availability check could not complete; retry when the worker is reachable")
 		}
-		r, err = p.Exec(ctx, service, command, provider.ExecOptions{})
+		found := false
+		for _, id := range strings.Split(r.Stdout, "\n") {
+			if strings.TrimSpace(id) == model {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return &loginVerificationError{"selected OpenCode model is unavailable; choose an available provider/model in the profile settings"}
+		}
+	}
+	// Claude's auth status is sufficient for its interactive TUI. Codex keeps
+	// its bounded provider preflight; OpenCode uses the inventory check above.
+	if app == "codex" {
+		prompt := "Reply briefly to confirm this connection. Do not use tools, read files, or make changes."
+		r, err = p.Exec(ctx, service, []string{"codex", "exec", "--skip-git-repo-check", prompt}, provider.ExecOptions{})
 		if err != nil {
-			return fmt.Errorf("%s provider access check could not complete; retry when the worker and provider are reachable", app)
+			return fmt.Errorf("codex provider access check could not complete; retry when the worker and provider are reachable")
 		}
 		if r.ExitCode != 0 {
-			// OpenCode's public response can hide this behind UnknownError.
-			// Inspect only a fixed diagnostic marker; never expose CLI logs.
-			if app == "opencode" && strings.Contains(r.Stdout+"\n"+r.Stderr, "ProviderModelNotFoundError") {
-				return &loginVerificationError{"selected OpenCode model is unavailable; choose an available provider/model in the profile settings"}
-			}
-			return &loginVerificationError{fmt.Sprintf("%s provider access check failed inside the box; check model availability, login, subscription/API credits, and connectivity; retry with a working profile", app)}
+			return &loginVerificationError{"codex provider access check failed inside the box; check model availability, login, subscription/API credits, and connectivity; retry with a working profile"}
 		}
 	}
 	if app == "github" {

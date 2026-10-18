@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -246,6 +247,18 @@ func TestLoginProfilesPostgres(t *testing.T) {
 		}
 	}
 
+	// A box override must be checked instead of accepting the saved default.
+	creation.Request.LoginProfiles[0].Model = "provider/missing"
+	err = server.provisionCreationProfiles(ctx, &profileTestTransport{volume: storage.ID}, creation)
+	var rejected *loginVerificationError
+	if !errors.As(err, &rejected) {
+		t.Fatalf("missing per-box model was accepted: %v", err)
+	}
+	creation.Request.LoginProfiles[0].Model = "provider/override"
+	if err = server.provisionCreationProfiles(ctx, &profileTestTransport{volume: storage.ID}, creation); err != nil {
+		t.Fatalf("available override rejected: %v", err)
+	}
+
 	refreshed := v1.SaveLoginProfileRequest{Files: map[string][]byte{"auth.json": []byte(`{"OPENAI_API_KEY":"synthetic-refreshed-profile"}`)}, ReplaceExisting: true}
 	replaced, err := s.SaveLoginProfile(ctx, p, "codex", "work", refreshed)
 	if err != nil || !replaced.CreatedAt.Equal(listed[1].CreatedAt) {
@@ -338,7 +351,10 @@ func (p *profileTestTransport) Exec(ctx context.Context, _ string, argv []string
 	if len(argv) >= 3 && argv[0] == "gh" && argv[1] == "auth" && argv[2] == "setup-git" {
 		return provider.ExecResult{}, nil
 	}
-	if strings.Join(argv, " ") == "opencode auth list" || (len(argv) > 1 && argv[0] == "opencode" && argv[1] == "run") || strings.Join(argv, " ") == "codex login status" || (len(argv) > 1 && argv[0] == "codex" && argv[1] == "exec") {
+	if strings.Join(argv, " ") == "opencode models" {
+		return provider.ExecResult{Stdout: "provider/test-model\nprovider/override\n"}, nil
+	}
+	if strings.Join(argv, " ") == "opencode auth list" || strings.Join(argv, " ") == "codex login status" || (len(argv) > 1 && argv[0] == "codex" && argv[1] == "exec") {
 		return provider.ExecResult{}, nil
 	}
 	if len(argv) == 2 && argv[1] == "prepare-hibernate" {

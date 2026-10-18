@@ -89,4 +89,14 @@ func TestCreationFailurePostgres(t *testing.T) {
 	if state != "draining" || failure != reason {
 		t.Fatalf("slot state=%s reason=%s", state, failure)
 	}
+	// An operator can retry a corrected initial creation without falsifying
+	// the box's original creation time. Each explicit attempt gets 30 minutes.
+	exec(`UPDATE logical_boxes SET state='attaching',restoration_state='creation-verifying-profiles',created_at=now()-interval '2 hours',metadata=jsonb_set(metadata,'{creationAttemptStartedAt}',to_jsonb(now())) WHERE id=$1`, boxID)
+	if n, err := store.FailTimedOutAttaches(ctx); err != nil || n != 0 {
+		t.Fatalf("fresh retry expired: count=%d err=%v", n, err)
+	}
+	exec(`UPDATE logical_boxes SET metadata=jsonb_set(metadata,'{creationAttemptStartedAt}',to_jsonb(now()-interval '31 minutes')) WHERE id=$1`, boxID)
+	if n, err := store.FailTimedOutAttaches(ctx); err != nil || n != 1 {
+		t.Fatalf("old retry did not expire: count=%d err=%v", n, err)
+	}
 }

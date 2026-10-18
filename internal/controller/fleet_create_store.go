@@ -292,7 +292,7 @@ func (s *Store) FailTimedOutAttaches(ctx context.Context) (int, error) {
 	err := s.DB.QueryRowContext(ctx, `WITH expired AS (
 		UPDATE logical_boxes b SET state='failed',restoration_state='attach-timed-out',failure_reason=$1,lease_owner=NULL,lease_expires_at=NULL,updated_at=now()
 		WHERE b.state='attaching' AND b.slot_id IS NOT NULL AND (
-			(b.restoration_state LIKE 'creation-%' AND b.created_at < now()-interval '30 minutes'
+			(b.restoration_state LIKE 'creation-%' AND COALESCE((b.metadata->>'creationAttemptStartedAt')::timestamptz,b.created_at) < now()-interval '30 minutes'
 				AND NOT EXISTS (SELECT 1 FROM allocation_requests r WHERE r.logical_box_id=b.id))
 			OR EXISTS (SELECT 1 FROM allocation_requests r WHERE r.logical_box_id=b.id AND r.state='attaching' AND r.phase IS DISTINCT FROM 'waiting-for-host-load'
 				AND COALESCE(r.attach_started_at,r.created_at) < now()-interval '30 minutes')
