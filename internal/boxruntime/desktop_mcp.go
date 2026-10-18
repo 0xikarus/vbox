@@ -50,7 +50,7 @@ func desktopMCPTools() []map[string]any {
 	makeTool := func(name, description string, properties map[string]any, required ...string) map[string]any {
 		switch name {
 		case "take_screenshot", "capture_window", "get_agent_box_screenshot", "remote_control_box":
-			description += " The PNG has a 24-pixel header above the captured content showing Cursor: X Y in original desktop coordinates (or unavailable). For clicks, exclude the header from image Y, then undo thumbnail scaling or add window offsets; never add the header to desktop coordinates."
+			description += " The PNG has a 24-pixel header above the captured content showing Cursor: Xpx Ypx in original desktop coordinates (or unavailable). For clicks, exclude the header from image Y, then undo thumbnail scaling or add window offsets; never add the header to desktop coordinates."
 		}
 		if required == nil {
 			required = []string{}

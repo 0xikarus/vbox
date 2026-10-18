@@ -117,7 +117,7 @@ func screenshotWithCursorHeader(pixels []byte) ([]byte, error) {
 	}
 	label := "Cursor: unavailable"
 	if cursor := capturePNGCursor(pixels); cursor != nil {
-		label = fmt.Sprintf("Cursor: %d %d", cursor.X, cursor.Y)
+		label = fmt.Sprintf("Cursor: %dpx %dpx", cursor.X, cursor.Y)
 	}
 	width := max(frame.Bounds().Dx(), font.MeasureString(basicfont.Face7x13, label).Ceil()+16)
 	result := image.NewRGBA(image.Rect(0, 0, width, frame.Bounds().Dy()+screenshotHeaderHeight))
