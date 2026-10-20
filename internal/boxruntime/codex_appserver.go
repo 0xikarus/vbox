@@ -97,12 +97,20 @@ type codexClient struct {
 	nextID atomic.Int64
 }
 
+// codexMessageReadLimit bounds one app-server message. History replies inline
+// every screenshot a thread has seen, so long desktop sessions exceed 50 MiB.
+const codexMessageReadLimit = 512 << 20
+
 func dialCodexAppServer(ctx context.Context, session string) (*codexClient, error) {
-	conn, _, err := websocket.Dial(ctx, codexAppServerURL(session), &websocket.DialOptions{HTTPClient: &http.Client{Timeout: 20 * time.Second}})
+	return dialCodexAppServerURL(ctx, codexAppServerURL(session))
+}
+
+func dialCodexAppServerURL(ctx context.Context, url string) (*codexClient, error) {
+	conn, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPClient: &http.Client{Timeout: 20 * time.Second}})
 	if err != nil {
 		return nil, fmt.Errorf("codex app server unavailable: %w", err)
 	}
-	conn.SetReadLimit(32 << 20)
+	conn.SetReadLimit(codexMessageReadLimit)
 	client := &codexClient{conn: conn}
 	if err := client.handshake(ctx); err != nil {
 		client.Close()

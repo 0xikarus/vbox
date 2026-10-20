@@ -117,7 +117,9 @@ func ServeCodexTUIProxy(ctx context.Context, root, session string) error {
 		}
 		defer terminal.CloseNow()
 		terminal.SetReadLimit(32 << 20)
-		upstream.SetReadLimit(32 << 20)
+		// The TUI hydrates history with thread/read includeTurns, which can be
+		// far larger than any request it sends.
+		upstream.SetReadLimit(codexMessageReadLimit)
 		generation := state.begin()
 		defer state.end(generation)
 		proxyCtx, cancel := context.WithCancel(r.Context())

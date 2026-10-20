@@ -1,11 +1,17 @@
 package boxruntime
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 func TestFindCodexResumeCandidateUsesPreHibernateInteractiveThread(t *testing.T) {
@@ -75,5 +81,57 @@ func TestFindCodexResumeCandidateUsesPreHibernateInteractiveThread(t *testing.T)
 	candidate, err = FindCodexResumeCandidate(root, home, "codex-test")
 	if err != nil || candidate != nil {
 		t.Fatalf("fresh visible TUI candidate = %+v, %v", candidate, err)
+	}
+}
+
+func TestCodexResumeCheckExcludesTurnsAndReadsLargeReplies(t *testing.T) {
+	var resumeParams map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		for {
+			_, raw, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var request struct {
+				ID     *int64         `json:"id"`
+				Method string         `json:"method"`
+				Params map[string]any `json:"params"`
+			}
+			if err := json.Unmarshal(raw, &request); err != nil {
+				t.Error(err)
+				return
+			}
+			if request.ID == nil {
+				continue
+			}
+			result := map[string]any{}
+			if request.Method == "thread/resume" {
+				resumeParams = request.Params
+				// A reply past the old 32 MiB limit, like a screenshot-heavy thread.
+				result["thread"] = map[string]any{"id": "thread-1", "preview": strings.Repeat("x", 40<<20)}
+			}
+			response, _ := json.Marshal(map[string]any{"id": *request.ID, "result": result})
+			if err := conn.Write(r.Context(), websocket.MessageText, response); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	client, err := dialCodexAppServerURL(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := checkCodexThreadResumable(context.Background(), client, "thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if resumeParams["threadId"] != "thread-1" || resumeParams["excludeTurns"] != true {
+		t.Fatalf("resume params=%v", resumeParams)
 	}
 }

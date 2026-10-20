@@ -148,10 +148,10 @@ func RestoreCodexConversation(ctx context.Context, root, session string, expecte
 	if err != nil {
 		return err
 	}
-	_, err = client.call(ctx, "thread/resume", map[string]any{"threadId": candidate.SessionID})
+	err = checkCodexThreadResumable(ctx, client, candidate.SessionID)
 	client.Close()
 	if err != nil {
-		return fmt.Errorf("saved Codex thread unavailable: %w", err)
+		return err
 	}
 	argv := codexRemoteResumeArgv(session, candidate.SessionID)
 	if _, err := tmuxCommand(ctx, "", "respawn-pane", "-k", "-t", "="+session+":0.0", "-c", WorkspaceDirectory(), shellJoin(argv)); err != nil {
@@ -164,6 +164,16 @@ func RestoreCodexConversation(ctx context.Context, root, session string, expecte
 		return err
 	}
 	return writeTextAtomic(codexResetPendingFile(root, session), candidate.SessionID+"\n", 0600)
+}
+
+// checkCodexThreadResumable proves the app server can load the thread before
+// the visible pane is replaced. The TUI loads the history itself, so turns are
+// excluded here; with them the reply carries every screenshot in the thread.
+func checkCodexThreadResumable(ctx context.Context, client *codexClient, threadID string) error {
+	if _, err := client.call(ctx, "thread/resume", map[string]any{"threadId": threadID, "excludeTurns": true}); err != nil {
+		return fmt.Errorf("saved Codex thread unavailable: %w", err)
+	}
+	return nil
 }
 
 func codexRemoteResumeArgv(session, threadID string) []string {
