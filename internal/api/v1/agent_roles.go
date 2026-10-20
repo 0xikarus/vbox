@@ -24,7 +24,7 @@ var ComputerAgentMCPTools = []string{"take_screenshot", "capture_window", "move_
 
 var OptionalAgentMCPTools = []string{
 	"heartbeat",
-	"list_agent_boxes", "get_agent_box", "get_agent_box_screenshot", "remote_control_box", "create_agent_box", "get_agent_box_configs", "get_available_workers", "set_agent_box_tags", "set_agent_box_run_budget", "restart_agent_box", "wake_agent_box", "clear_agent_box_context", "compact_agent_box_context", "delete_agent_box",
+	"list_agent_boxes", "get_agent_box", "get_agent_box_screenshot", "remote_control_box", "create_agent_box", "create_agent_task", "get_agent_box_configs", "get_available_workers", "set_agent_box_tags", "set_agent_box_run_budget", "restart_agent_box", "wake_agent_box", "clear_agent_box_context", "compact_agent_box_context", "delete_agent_box",
 	"secret_request", "generate_password", "type_secret", "take_screenshot", "capture_window", "move_mouse", "click_mouse",
 	"drag_mouse", "scroll_mouse", "type_text", "press_keys",
 	"list_mail_addresses", "list_emails", "read_email", "mark_email_read", "download_email_attachment", "subscribe_inbox", "unsubscribe_inbox",
