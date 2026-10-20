@@ -477,6 +477,10 @@ authority. Do not reintroduce an orchestrator merely because an old plan mention
 [TASKS-API.md](TASKS-API.md) for polling, profile catalog, service credentials,
 capability links and retention. `goal_task_*.go` owns admission, dispatch,
 completion and cleanup; the older `box_tasks` table remains agent chat sessions.
+Agent MCP advertises `create_agent_box` for persistent boxes and
+`create_agent_task` for explicitly requested disposable tasks. Both use the
+same create grant. The controller still accepts older runtimes that send a
+`task` object through `create_agent_box`.
 
 A database account lock caps durable `slot_held` reservations at four across
 all creators. Queued tasks own no box/volume. Release the reservation only after

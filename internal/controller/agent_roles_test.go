@@ -171,7 +171,7 @@ func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "get_agent_box_screenshot", "set_agent_box_tags", "create_agent_box", "get_agent_box_configs", "get_available_workers"} {
+	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "get_agent_box_screenshot", "set_agent_box_tags", "create_agent_box", "create_agent_task", "get_agent_box_configs", "get_available_workers"} {
 		if !slices.Contains(tools, name) {
 			t.Fatalf("expected %s in %v", name, tools)
 		}

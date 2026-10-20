@@ -340,7 +340,10 @@ and `…/fail` with the box's desktop-agent auth.
 
 ## Tasks created by boxes
 
-There is no new MCP tool. `create_agent_box` takes an optional `task` object:
+Use `create_agent_task` only when the requester explicitly wants a disposable,
+one-goal task. Ordinary requests to create or delegate to another box use
+`create_agent_box`, which creates a persistent box. `create_agent_task` accepts
+the same creation settings plus a required `task` object:
 
 ```json
 { "name": "…", "agent": "codex", "idempotencyKey": "…",
@@ -348,6 +351,8 @@ There is no new MCP tool. `create_agent_box` takes an optional `task` object:
 ```
 
 - The same create grant and limits apply (`maxBoxes`, `maxDiskGiB`, allowed agents).
+- Older runtimes can still send `task` through `create_agent_box`; current
+  runtimes advertise separate tools so the persistent choice is clear.
 - A box can mint `control`/`view` links only with the `control` grant, and
   `screenshot` links only with `inspect`.
 - The creator box is a contact of the task box, as with normal creation. On

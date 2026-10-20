@@ -147,6 +147,84 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 	t.Fatal("create_agent_box tool is missing")
 }
 
+func TestAgentCreationToolsSeparatePersistentBoxesAndDisposableTasks(t *testing.T) {
+	tools := map[string]map[string]any{}
+	for _, tool := range desktopMCPTools() {
+		tools[tool["name"].(string)] = tool
+	}
+	box := tools["create_agent_box"]
+	task := tools["create_agent_task"]
+	if box == nil || task == nil {
+		t.Fatalf("creation tools missing: box=%t task=%t", box != nil, task != nil)
+	}
+	boxSchema := box["inputSchema"].(map[string]any)
+	taskSchema := task["inputSchema"].(map[string]any)
+	if _, ok := boxSchema["properties"].(map[string]any)["task"]; ok {
+		t.Fatal("persistent creation tool still advertises a disposable task option")
+	}
+	if _, ok := taskSchema["properties"].(map[string]any)["task"]; !ok || !slices.Contains(taskSchema["required"].([]string), "task") {
+		t.Fatal("disposable creation tool must require task options")
+	}
+	if !strings.Contains(box["description"].(string), "persistent") || !strings.Contains(task["description"].(string), "disposable") {
+		t.Fatal("creation tool descriptions do not explain the lifetime difference")
+	}
+	if _, err := callDesktopTool(context.Background(), "assignment", "create_agent_box", json.RawMessage(`{"name":"builder","agent":"codex","idempotencyKey":"box-1","task":{"goal":"build"}}`)); err == nil {
+		t.Fatalf("task passed to persistent creation: %v", err)
+	}
+	if _, err := callDesktopTool(context.Background(), "assignment", "create_agent_task", json.RawMessage(`{"name":"builder","agent":"codex","idempotencyKey":"task-1"}`)); err == nil {
+		t.Fatalf("task creation without goal: %v", err)
+	}
+}
+
+func TestAgentCreationToolsRouteSelectedLifetime(t *testing.T) {
+	requests := make(chan map[string]any, 2)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/agent-desktop/boxes" {
+			http.NotFound(w, r)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		requests <- body
+		_, _ = io.WriteString(w, `{"id":"created"}`)
+	}))
+	defer server.Close()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	certFile := filepath.Join(home, "test-ca.pem")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSL_CERT_FILE", certFile)
+	configPath := filepath.Join(home, ".config", "vmbox", "desktop-agent.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	config, _ := json.Marshal(DesktopAgentConfig{Controller: server.URL, Assignment: "assignment", Token: strings.Repeat("a", 64)})
+	if err := os.WriteFile(configPath, config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, args string
+		wantTask   bool
+	}{
+		{"create_agent_box", `{"name":"builder","agent":"codex","idempotencyKey":"box-1"}`, false},
+		{"create_agent_task", `{"name":"review","agent":"codex","idempotencyKey":"task-1","task":{"goal":"Review the change"}}`, true},
+	} {
+		if _, err := callDesktopTool(context.Background(), "assignment", tc.name, json.RawMessage(tc.args)); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		body := <-requests
+		_, hasTask := body["task"].(map[string]any)
+		if hasTask != tc.wantTask {
+			t.Fatalf("%s sent task=%#v", tc.name, body["task"])
+		}
+	}
+}
+
 func TestAgentBoxLifecycleToolRequiresTargetConfirmationAndRetryKey(t *testing.T) {
 	for _, name := range []string{"wake_agent_box", "clear_agent_box_context", "compact_agent_box_context"} {
 		found := false
