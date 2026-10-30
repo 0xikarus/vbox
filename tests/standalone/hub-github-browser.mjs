@@ -18,10 +18,10 @@ test('GitHub upload remains independent of the agent and is attached explicitly'
   let body='';for await(const part of req)body+=part;
   if(path==='/api/status')return res.end(JSON.stringify({allocated:{running:0,cpus:0,memoryMiB:0},host:{availableMiB:4096,diskFreeMiB:8192},policy:{maxRunning:2,cpus:1,memoryMiB:2048},defaults:{agent:'claude',cpu:.25,memoryMiB:256}}));
   if(path==='/api/profiles'&&req.method==='POST'){uploaded=JSON.parse(body);const p={id:'hp-github',name:uploaded.name,agent:'github'};profiles.push(p);return res.end(JSON.stringify(p))}
-  if(path==='/api/profiles/hp-agent/models')return res.end(JSON.stringify({source:'Fixture profile',models:['sonnet','opus']}));
+  if(path==='/api/profiles/hp-agent/models')return res.end(JSON.stringify({source:'Fixture profile',models:['sonnet']}));
   if(path==='/api/profiles')return res.end(JSON.stringify(profiles));
   if(path==='/api/boxes'&&req.method==='POST'){created=JSON.parse(body);res.statusCode=202;return res.end(JSON.stringify({id:'hb-fixture',state:'queued'}))}
-  if(path==='/api/boxes')return res.end('[]');
+  if(path==='/api/boxes')return res.end(JSON.stringify([{id:'hb-queued',spec:{name:'Queued box',cpu:.25,memoryMiB:256,agent:'claude'},state:'queued',desired:'running',url:'/boxes/hb-queued/'},{id:'hb-stopped',spec:{name:'Stopped box',cpu:.25,memoryMiB:256,agent:'claude'},state:'stopped',desired:'stopped',url:'/boxes/hb-stopped/'}]));
   res.statusCode=404;res.end('{}');
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -29,6 +29,7 @@ test('GitHub upload remains independent of the agent and is attached explicitly'
   browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
   const page=await browser.newPage();page.setDefaultTimeout(8000);page.on('pageerror',e=>console.error('Fixture page error:',e.message));await page.goto('http://127.0.0.1:'+server.address().port);
   await page.waitForFunction(()=>document.querySelector('#create-form').elements.agent.value==='claude');
+  assert.equal(await page.$$eval('#boxes a',nodes=>nodes.filter(n=>n.textContent==='Open chat').length),2,'queued and stopped boxes need workspace links');
   await page.evaluate(()=>document.querySelector('#profiles').open=true);
   await page.select('#profile-upload select[name=agent]','github');
   await page.type('#profile-upload input[name=name]','GitHub fixture');

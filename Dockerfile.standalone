@@ -37,6 +37,6 @@ ENV VMBOX_CHROMIUM_NO_SANDBOX=true
 WORKDIR /data/workspace
 
 FROM standalone-base AS standalone
-COPY --from=standalone-build /out/ /usr/local/bin/
+COPY --from=standalone-build --chmod=755 /out/ /usr/local/bin/
 ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/usr/local/bin/vmbox-entrypoint"]
 CMD ["vmbox-standalone"]

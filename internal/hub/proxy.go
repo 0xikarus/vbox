@@ -174,6 +174,10 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	if owner && r.Method == "GET" && suffix == "/" && b.State != "running" {
+		s.pendingWorkspace(w, r, b)
+		return
+	}
 	if suffix == "/password" || strings.HasPrefix(suffix, "/auth/") {
 		http.Error(w, "manage the hub password at /password", 403)
 		return

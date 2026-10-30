@@ -12,6 +12,7 @@ cat > /tmp/vmbox-standalone <<'PY'
 #!/usr/bin/env python3
 import os
 assert os.getuid()==10001
+assert os.access('/usr/local/bin/vmbox-standalone', os.X_OK), 'standalone runtime must be executable by the workload user'
 assert os.environ['VMBOX_WEB_BASE_PATH']=='/boxes/hb-012345678901234567890123'
 assert os.environ['VMBOX_HUB_MANAGED']=='true'
 assert os.environ['VMBOX_BOX_NAME']=='fixture'
