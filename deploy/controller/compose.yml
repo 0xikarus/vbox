@@ -40,7 +40,7 @@ services:
     memswap_limit: 1024m
     pids_limit: 512
     read_only: true
-    tmpfs: [/tmp:rw,nosuid,size=256m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,size=256m,mode=1777"]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     healthcheck:
