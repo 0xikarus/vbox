@@ -1,0 +1,28 @@
+# Controller-only image: workers retain the separate desktop/tooling image.
+FROM golang:1.26-bookworm AS build
+ARG TARGETOS TARGETARCH
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd ./cmd
+COPY internal ./internal
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-controller ./cmd/vmbox-controller \
+ && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-runtime ./cmd/vmbox-runtime \
+ && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-worker-agent ./cmd/vmbox-worker-agent
+
+FROM node:22-bookworm-slim
+ARG VMBOX_CODEX_VERSION=0.157.0
+ARG VMBOX_CLAUDE_VERSION=2.1.282
+ARG VMBOX_OPENCODE_VERSION=1.18.32
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install --global @openai/codex@$VMBOX_CODEX_VERSION @anthropic-ai/claude-code@$VMBOX_CLAUDE_VERSION opencode-ai@$VMBOX_OPENCODE_VERSION \
+ && rm -rf /root/.npm /root/.cache /root/.config /tmp/* \
+ && groupadd --gid 10001 vbox \
+ && useradd --uid 10001 --gid vbox --home-dir /tmp --no-create-home vbox
+COPY --from=build /out/ /usr/local/bin/
+ENV HOME=/tmp VMBOX_CONTROLLER_LISTEN=:8080
+USER 10001:10001
+EXPOSE 8080
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/vmbox-controller"]

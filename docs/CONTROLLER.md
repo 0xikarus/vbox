@@ -5,6 +5,10 @@ allocation, and lifecycle state. It uses PostgreSQL and serves the web UI and AP
 the CLI connects to the same controller. See the [API specification](openapi.yaml)
 and [architecture guide](AGENT-GUIDE.md) for the detailed contracts.
 
+For the def1dashboard deployment, bounded automatic updates and PostgreSQL
+backups, see the [self-hosted controller runbook](../deploy/controller/README.md).
+`Dockerfile.controller` packages the controller without desktop/Blender workers.
+
 ## Configure the controller
 
 ```text

@@ -1,0 +1,4 @@
+vbox.def1.sh {
+	encode zstd gzip
+	reverse_proxy vbox-controller:8080
+}

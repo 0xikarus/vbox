@@ -1,0 +1,8 @@
+[Unit]
+Description=Back up the vbox controller database
+After=docker.service
+[Service]
+Type=oneshot
+ExecStart=/opt/vbox-controller/src/deploy/controller/backup.sh
+TimeoutStartSec=15min
+Nice=10

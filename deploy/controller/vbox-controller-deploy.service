@@ -1,0 +1,9 @@
+[Unit]
+Description=Build and deploy the vbox controller from main
+After=docker.service network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/opt/vbox-controller/src/deploy/controller/deploy.sh
+TimeoutStartSec=45min
+Nice=10

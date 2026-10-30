@@ -1,0 +1,8 @@
+[Unit]
+Description=Check vbox controller main for updates
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+RandomizedDelaySec=15s
+[Install]
+WantedBy=timers.target
