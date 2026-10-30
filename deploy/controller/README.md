@@ -13,7 +13,8 @@ moved with DNS; clients must connect to the new URL.
 
 ## Layout and isolation
 
-- `/opt/vbox-controller/src`: public `0xikarus/vbox`, branch `main`.
+- `/opt/vbox-controller/src`: canonical `0xikarus/vmbox-service`, branch `main`.
+  Its host-specific GitHub deploy key is read-only and stays on this server.
 - `/opt/vbox-controller/controller.env`: original `VMBOX_*` settings and the new
   private `DATABASE_URL`; root-owned mode 0600. Preserve the encryption key.
 - `/opt/vbox-controller/database.env`: new database login; root-owned mode 0600.
@@ -32,7 +33,12 @@ and 768 MiB. Image builds are capped at half a CPU and 1 GiB RAM.
 ## Installation and updates
 
 1. Stage root-only environment files; never add them to the checkout or image.
-2. Clone `https://github.com/0xikarus/vbox.git` into the source directory.
+2. Generate a host-specific read-only deploy key, add its public half under the
+   canonical repository’s deploy keys, and clone
+   `git@github.com-vbox-controller:0xikarus/vmbox-service.git` into the source
+   directory. The SSH alias uses `/root/.ssh/vbox-controller-deploy`, pins
+   GitHub’s official host keys and enables strict host checking. Public or
+   forked installations can use their own repository URL instead.
 3. Build `Dockerfile.controller`; it includes the controller, matching worker
    transport binaries and the native agent CLIs used for profile login/catalogs.
 4. Start **only** the new database and restore a source backup with
