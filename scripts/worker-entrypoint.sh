@@ -84,7 +84,7 @@ if [[ $# -gt 0 ]]; then
 	if [[ "${1##*/}" == vmbox-standalone ]]; then
 		# sudo intentionally strips inherited credentials. Forward only the
 		# standalone instance's explicit, non-secret launcher settings.
-		for setting in VMBOX_TOOLS VMBOX_AGENT VMBOX_MODEL_URL VMBOX_MODEL VMBOX_MODEL_VISION VMBOX_CHROMIUM_NO_SANDBOX VMBOX_WEB_BASE_PATH VMBOX_HUB_MANAGED; do
+		for setting in VMBOX_TOOLS VMBOX_AGENT VMBOX_BOX_NAME VMBOX_MODEL_URL VMBOX_MODEL VMBOX_MODEL_VISION VMBOX_AGENT_MODEL VMBOX_AGENT_REASONING_EFFORT VMBOX_CHROMIUM_NO_SANDBOX VMBOX_WEB_BASE_PATH VMBOX_HUB_MANAGED; do
 			if [[ -v "$setting" ]]; then standalone_env+=("$setting=${!setting}"); fi
 		done
 	fi

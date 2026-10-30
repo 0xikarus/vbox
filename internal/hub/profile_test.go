@@ -126,3 +126,30 @@ func TestBrowserProfileUploadNeverReturnsCredentials(t *testing.T) {
 		t.Fatal("private login not stored")
 	}
 }
+
+func TestGitHubProfileUploadsAlongsideAgentWithoutExposingCredentials(t *testing.T) {
+	s, cookie := authenticated(t)
+	payload, _ := json.Marshal(map[string]any{"name": "GitHub", "agent": "github", "files": map[string][]byte{"hosts.yml": []byte("github.com:\n  user: fixture\n  oauth_token: fixture-gh-private\n")}})
+	w := call(s, "POST", "/api/profiles", cookie, string(payload))
+	if w.Code != 201 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var p Profile
+	if json.Unmarshal(w.Body.Bytes(), &p) != nil || p.Agent != "github" {
+		t.Fatal("wrong profile metadata")
+	}
+	if bytes.Contains(w.Body.Bytes(), []byte("fixture-gh-private")) || strings.Contains(call(s, "GET", "/api/profiles", cookie, "").Body.String(), "fixture-gh-private") {
+		t.Fatal("credential exposed")
+	}
+	b, err := s.Manager.Create(Spec{Name: "With GitHub", Agent: "claude", Profiles: []string{p.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archives, err := s.Manager.Store.Archive(b.Spec.Profiles)
+	if err != nil || !bytes.Contains(archives[0], []byte(".config/gh/hosts.yml")) {
+		t.Fatal("GitHub profile not attached")
+	}
+	if _, err = ProfileFilesArchive("github", map[string][]byte{"config.yml": []byte("aliases: unsafe")}); err == nil {
+		t.Fatal("unsupported GitHub settings accepted")
+	}
+}

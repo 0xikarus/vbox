@@ -133,7 +133,7 @@ func (a *App) standaloneHost(ctx context.Context, args []string) error {
 		mode := fs.String("mode", "vm", "vm or container")
 		agent := fs.String("agent", "opencode", "managed agent: opencode, claude or codex")
 		var profileSources stringList
-		fs.Var(&profileSources, "profile", "import APP=PATH; repeat for additional applications")
+		fs.Var(&profileSources, "profile", "import APP=PATH or github=HOST:USER; repeat for additional applications")
 		image := fs.String("image", "vbox-standalone:dev", "prebuilt standalone application image")
 		directory := fs.String("storage", "", "dedicated manifest directory on the target host")
 		cpu := fs.Float64("cpus", 2, "CPU limit")
@@ -229,8 +229,9 @@ func (a *App) standaloneHost(ctx context.Context, args []string) error {
 			if discoverErr != nil {
 				return discoverErr
 			}
+			profiles = append(profiles, a.standaloneGitHubProfiles(ctx)...)
 			for _, p := range profiles {
-				if p.Component != "claude" && p.Component != "codex" && p.Component != "opencode" {
+				if p.Component != "claude" && p.Component != "codex" && p.Component != "opencode" && p.Component != "github" {
 					continue
 				}
 				field := &formField{Label: p.Component + " / " + p.Name, Value: "Skip", Choices: []string{"Skip", "Import"}, Checkbox: true, Detail: p.Directory}
@@ -269,7 +270,7 @@ func (a *App) standaloneHost(ctx context.Context, args []string) error {
 						profileSources = append(profileSources, p.app+"="+p.path)
 					}
 				}
-				archive, err := standaloneProfileArchive(profileSources)
+				archive, err := a.standaloneProfileArchive(ctx, profileSources)
 				clear(archive)
 				if err != nil {
 					return err
@@ -316,7 +317,7 @@ func (a *App) standaloneHost(ctx context.Context, args []string) error {
 		if err := os.MkdirAll(registry, 0700); err != nil {
 			return err
 		}
-		profileArchive, err := standaloneProfileArchive(profileSources)
+		profileArchive, err := a.standaloneProfileArchive(ctx, profileSources)
 		if err != nil {
 			return err
 		}
@@ -341,7 +342,7 @@ func (a *App) standaloneHost(ctx context.Context, args []string) error {
 		}
 		p := a.standaloneProvider(i)
 		owner := provider.Owner{AccountID: "standalone", BoxID: i.ID, Lease: i.ID}
-		_, err = p.Provision(ctx, provider.CreateRequest{Name: i.ID, Image: i.Image, Owner: owner, Resources: i.Resources, Env: map[string]string{"VMBOX_TOOLS": strings.Join(chosenTools, ","), "VMBOX_MODEL_URL": *endpoint, "VMBOX_MODEL": *model, "VMBOX_MODEL_VISION": strconv.FormatBool(*vision), "VMBOX_AGENT": *agent}, Command: []string{"vmbox-standalone"}}, profileArchive, passwordArchive)
+		_, err = p.Provision(ctx, provider.CreateRequest{Name: i.ID, Image: i.Image, Owner: owner, Resources: i.Resources, Env: map[string]string{"VMBOX_TOOLS": strings.Join(chosenTools, ","), "VMBOX_MODEL_URL": *endpoint, "VMBOX_MODEL": *model, "VMBOX_MODEL_VISION": strconv.FormatBool(*vision), "VMBOX_AGENT": *agent, "VMBOX_BOX_NAME": i.Name}, Command: []string{"vmbox-standalone"}}, profileArchive, passwordArchive)
 		if err != nil {
 			i.State = "create-failed"
 			_ = standaloneSave(path, i)

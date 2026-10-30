@@ -11,3 +11,8 @@ var Desktop embed.FS
 //
 //go:embed vbox-tokens.css fonts.css chat.css vbox-c.css inter-latin-wght-normal.woff2 vbox-logo.png vbox-logo-dark.png
 var ChatStyle embed.FS
+
+// Shared controls and safe Markdown rendering for hub and standalone views.
+//
+//go:embed model-picker.js markdown.js chat.html
+var ChatControls embed.FS

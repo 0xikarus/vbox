@@ -40,6 +40,9 @@ func TestNewBoxToolGuidanceFollowsSelectedOptions(t *testing.T) {
 		t.Fatalf("Foundry-only guidance is wrong: %q", foundry)
 	}
 	blender := newBoxToolGuidance([]string{"blender"})
+	if !strings.Contains(blender, "Blender 5.1.2") || !strings.Contains(blender, "Do not install") || !strings.Contains(blender, "MCP server named `blender`") {
+		t.Fatal("controller creation lacks installed Blender guidance")
+	}
 	if !strings.Contains(blender, "~/bin/blender") || !strings.Contains(blender, "Chromium") || !strings.Contains(blender, "~/.config/vmbox/chromium") {
 		t.Fatalf("Blender must include Blender and desktop guidance: %q", blender)
 	}

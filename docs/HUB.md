@@ -117,6 +117,22 @@ source paths before importing. `--profile APP=PATH` supports explicit imports.
 Profile archives are sanitized, stored privately, and selected later by opaque
 IDs. Uploading a profile does not run its host hooks.
 
+GitHub CLI profiles are independent of the selected agent. Upload `hosts.yml`
+under **Saved profiles → Application → GitHub CLI**, then choose it in the
+creation form's **GitHub profile** field alongside your agent profile. Only the
+active account's credentials are retained; host aliases and SSH settings are
+excluded. The worker configures `gh` and HTTPS Git authentication automatically.
+For an OS-keyring login, export the selected account through the CLI instead:
+
+```sh
+vbox hub profile upload github=github.com:YOUR_USER --name GitHub --host home-server
+vbox hub create coding --agent claude --profile-id CLAUDE_PROFILE_ID --profile-id GITHUB_PROFILE_ID --host home-server --no-dialog
+```
+
+An explicit file import also works: `github=/path/to/.config/gh`. GitHub is never
+selected implicitly; attaching a profile grants that box the account's access.
+
+
 Shutdown stops the hub manager, retaining worker containers and data. Use
 `vbox hub up --host home-server` to resume it without rebuilding or changing its
 autostart policy. Deleting a box removes only resources whose ownership
@@ -258,3 +274,25 @@ reconfigured. Both imported Codex profiles also started native sessions with
 managed MCP and auto mode in a separate disposable registry, without inference.
 The test registry, copied credentials, workers and temporary bridge-only model
 forwarder were removed afterwards; the three owner profiles remained installed.
+
+
+## Model selection and workspace
+
+Box creation uses the controller's model picker for Claude, Codex and OpenCode.
+Saved agent profiles supply their default model. You can choose a different
+model or enter an exact model ID and, where supported, reasoning effort. A
+per-box override modifies only the copied configuration, retaining provider
+credentials and leaving the reusable profile unchanged. Custom OpenCode
+endpoints load their `/models` list on demand; endpoint fields remain exclusive
+to custom mode. Exact IDs remain available when a catalog is unavailable.
+
+API creation accepts `agentModel` and `agentReasoningEffort` alongside `profiles`.
+CLI creation accepts `--agent-model ID --reasoning-effort LEVEL`.
+`GET /api/profiles/PROFILE_ID/models` returns saved model IDs without credentials;
+`GET /api/models?endpoint=URL` queries a custom OpenAI-compatible endpoint.
+
+Workspaces open on chat, using the controller's chat styles, shared desktop and
+terminal controls, and safe Markdown renderer, with no chat-list sidebar.
+Desktop and TMUX open together in one panel from the header; closing the panel
+detaches both viewers without stopping the box. The box retains the standalone
+API and permissions rather than gaining fleet-controller APIs.

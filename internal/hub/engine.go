@@ -97,6 +97,13 @@ func (e *DockerEngine) Provision(ctx context.Context, b Box, archives [][]byte) 
 	}
 	defer clear(pw)
 	env := map[string]string{"VMBOX_AGENT": b.Spec.Agent, "VMBOX_MODEL_URL": b.Spec.ModelURL, "VMBOX_MODEL": b.Spec.Model, "VMBOX_MODEL_VISION": strconv.FormatBool(b.Spec.Vision != nil && *b.Spec.Vision), "VMBOX_TOOLS": strings.Join(b.Spec.Tools, ","), "VMBOX_WEB_BASE_PATH": "/boxes/" + b.ID, "VMBOX_HUB_MANAGED": "true"}
+	env["VMBOX_BOX_NAME"] = b.Spec.Name
+	if b.Spec.AgentModel != "" {
+		env["VMBOX_AGENT_MODEL"] = b.Spec.AgentModel
+	}
+	if b.Spec.AgentReasoningEffort != "" {
+		env["VMBOX_AGENT_REASONING_EFFORT"] = b.Spec.AgentReasoningEffort
+	}
 	if b.Spec.Agent != "opencode" || b.Spec.ModelSource == "profile" {
 		delete(env, "VMBOX_MODEL_URL")
 		delete(env, "VMBOX_MODEL")

@@ -20,6 +20,7 @@ func Serve(ctx context.Context, dir, listen string) error {
 		return err
 	}
 	c.PasswordRequired = true
+	c.Name = os.Getenv("VMBOX_BOX_NAME")
 	c.BasePath = os.Getenv("VMBOX_WEB_BASE_PATH")
 	if c.BasePath != "" && !regexp.MustCompile(`^/boxes/hb-[0-9a-f]{24}$`).MatchString(c.BasePath) {
 		return fmt.Errorf("invalid standalone base path")
@@ -60,6 +61,12 @@ func Serve(ctx context.Context, dir, listen string) error {
 	}
 	if agent != "opencode" && agent != "claude" && agent != "codex" {
 		return fmt.Errorf("standalone agent must be opencode, claude or codex")
+	}
+	if err := configureGitHub(ctx, home); err != nil {
+		return err
+	}
+	if err := applyAgentModel(home, agent, os.Getenv("VMBOX_AGENT_MODEL"), os.Getenv("VMBOX_AGENT_REASONING_EFFORT")); err != nil {
+		return err
 	}
 	if err := installSelectedTools(ctx, home); err != nil {
 		return err

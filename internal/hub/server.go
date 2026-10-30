@@ -281,6 +281,8 @@ func (s *Server) Handler() http.Handler {
 		}
 		output(w, 200, p)
 	}))
+	mux.HandleFunc("GET /api/profiles/{id}/models", s.guard(s.profileModels))
+	mux.HandleFunc("GET /api/models", s.guard(s.localModels))
 	mux.HandleFunc("DELETE /api/profiles/{id}", s.guard(func(w http.ResponseWriter, r *http.Request) {
 		s.Manager.mu.Lock()
 		defer s.Manager.mu.Unlock()

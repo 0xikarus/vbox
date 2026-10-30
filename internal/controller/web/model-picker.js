@@ -217,7 +217,7 @@
   effort.addEventListener('change',()=>{renderEffort();displayPreview()});
   apply.addEventListener('click',()=>{input.value=selectedModel;effortInput.value=effort.value;display();input.dispatchEvent(new Event('change',{bubbles:true}));dialog.close();openButton.focus()});
   dialog.addEventListener('keydown',event=>{if(event.key==='Escape')event.stopPropagation()});
-  dialog.addEventListener('close',()=>{requestVersion++;openButton.focus()});
+  dialog.addEventListener('close',()=>{requestVersion++;if(document.activeElement===document.body||dialog.contains(document.activeElement))openButton.focus()});
   dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close()});
   display();
   return {

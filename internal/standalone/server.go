@@ -26,6 +26,7 @@ import (
 )
 
 type Config struct {
+	Name       string `json:"name,omitempty"`
 	BasePath   string `json:"basePath,omitempty"`
 	HubManaged bool   `json:"hubManaged,omitempty"`
 	// The default unprotected dashboard exposes the browser entry points.

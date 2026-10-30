@@ -133,11 +133,13 @@ the local vbox MCP and applies the existing managed-agent defaults. The agent
 can access the credentials imported into its own instance.
 
 The homepage reuses the controller’s chat styles, with no chat-list sidebar.
-The conversation has the same message bubbles and multiline composer. Desktop
-sits directly above TMUX in a shared workspace beside chat, in one HTML document.
+The conversation fills the workspace with the same message bubbles and multiline composer.
+Open Desktop or Terminal from the chat header to show one panel with Desktop
+directly above TMUX. Viewers connect only while that panel is open. Closing it
+detaches the viewers and leaves the box running.
 Both viewers use the same width. The desktop terminal mirror does not constrain
 the web terminal’s column count or resize it when focus changes. On small screens
-the workspace stacks below chat. The live-view link opens separately for read-only viewing.
+the combined panel fills the screen. The live-view link opens separately for read-only viewing.
 
 Desktop, TMUX and chat require the instance password. Passwords have no minimum length or complexity requirement; an empty password is
 also accepted. The creation wizard has a masked password field; for automation use `--password-file /private/path`.
@@ -250,3 +252,28 @@ tokens). This lets OpenCode compact long tool/vision conversations before they
 exceed the server capacity. Explicit imported model limits are preserved.
 A retained Blender MCP pipx environment is repaired if a new image’s Python
 interpreter can no longer launch it; workspace data and MCP configuration remain.
+
+
+## GitHub CLI login
+
+Import a selected local `gh` account alongside the agent profile:
+
+```sh
+vbox standalone create coding --mode container --agent claude \
+  --profile claude=/path/to/.claude --profile github=github.com:YOUR_USER
+```
+
+The wizard lists discovered GitHub accounts for explicit selection. Exporting
+with `HOST:USER` also supports tokens stored in the OS keyring. Alternatively,
+use `--profile github=/path/to/.config/gh` for a portable `hosts.yml` containing
+its active account's token. Only active HTTPS credentials are copied, privately;
+local aliases, SSH keys, and unrelated accounts are excluded. The standalone
+image includes `gh` and configures its Git credential helper at startup. Existing
+images need rebuilding to gain this support. For reusable uploads and browser
+selection, see the [hub guide](HUB.md).
+
+
+With the Blender preset selected, managed `AGENTS.md` / `CLAUDE.md` instructions
+name the detected installed Blender version and pinned Blender MCP version,
+require the existing `blender` MCP server, and prohibit replacement installs.
+Owner instructions are retained, and repeated setup updates one managed block.

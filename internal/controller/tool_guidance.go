@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/boxruntime"
 )
 
 // The selected presets are installed before a new box becomes usable. Persist
@@ -23,7 +24,7 @@ func newBoxToolGuidance(tools []string) string {
 		lines = append(lines, "- vbox MCP: exact tool schemas and examples in `~/.config/vmbox/mcp-tools.md`.")
 	}
 	if selected["blender"] {
-		lines = append(lines, "- Blender: `~/bin/blender`; Blender MCP.")
+		lines = append(lines, boxruntime.BlenderAgentGuidance())
 	}
 	if selected["foundry"] {
 		lines = append(lines, "- Foundry: `~/bin/forge`, `~/bin/cast`, `~/bin/anvil`, and `~/bin/chisel`.")

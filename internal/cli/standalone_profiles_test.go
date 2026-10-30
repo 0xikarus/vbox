@@ -3,12 +3,15 @@ package cli
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/0xikarus/vmbox-service/internal/procexec"
 )
 
 func TestStandaloneProfileImportIsPortableAndPrivate(t *testing.T) {
@@ -69,6 +72,64 @@ func TestStandaloneProfileImportIsPortableAndPrivate(t *testing.T) {
 	}
 	if count != 3 {
 		t.Fatalf("copied %d profile files", count)
+	}
+}
+
+func TestStandaloneGitHubImportUsesSelectedKeyringAccount(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte("selected-fixture-token\n")}}}
+	a := &App{Runner: runner}
+	archive, err := a.standaloneProfileArchive(context.Background(), []string{"github=github.com:chosen"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(runner.Calls[0].Argv, " "); got != "gh auth token --hostname github.com --user chosen" {
+		t.Fatal("wrong account exported")
+	}
+	tr := tar.NewReader(bytes.NewReader(archive))
+	found := false
+	for {
+		h, e := tr.Next()
+		if e == io.EOF {
+			break
+		}
+		if e != nil {
+			t.Fatal(e)
+		}
+		if h.Typeflag == tar.TypeReg {
+			data, _ := io.ReadAll(tr)
+			if h.Name != ".config/gh/hosts.yml" || h.Mode != 0600 || h.Uid != 10001 || !bytes.Contains(data, []byte("selected-fixture-token")) {
+				t.Fatal("incorrect private GitHub import")
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("missing GitHub configuration")
+	}
+}
+
+func TestStandaloneGitHubFileImportExcludesAliasesAndRejectsLinks(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "hosts.yml")
+	if err := os.WriteFile(file, []byte("github.com:\n  user: fixture\n  oauth_token: fixture-token\n  aliases:\n    evil: '!host-command'\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := standaloneProfileArchive([]string{"github=" + dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(archive, []byte("host-command")) {
+		t.Fatal("host alias imported")
+	}
+	link := filepath.Join(dir, "link.yml")
+	if err = os.Symlink(file, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = standaloneProfileArchive([]string{"github=" + link}); err == nil {
+		t.Fatal("symlink accepted")
+	}
+	if _, err = standaloneProfileArchive([]string{"github=" + dir, "github=" + dir}); err == nil {
+		t.Fatal("duplicate GitHub accounts accepted")
 	}
 }
 func TestStandaloneProfileImportRejectsDuplicateApplications(t *testing.T) {

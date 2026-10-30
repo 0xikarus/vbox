@@ -32,17 +32,19 @@ type Config struct {
 	Defaults Spec                    `json:"defaults"`
 }
 type Spec struct {
-	Name        string   `json:"name"`
-	Agent       string   `json:"agent"`
-	CPU         float64  `json:"cpu"`
-	MemoryMiB   int64    `json:"memoryMiB"`
-	ModelSource string   `json:"modelSource,omitempty"`
-	ModelURL    string   `json:"modelURL,omitempty"`
-	Model       string   `json:"model,omitempty"`
-	Vision      *bool    `json:"vision,omitempty"`
-	Tools       []string `json:"tools,omitempty"`
-	Profiles    []string `json:"profiles,omitempty"`
-	Goal        string   `json:"goal,omitempty"`
+	Name                 string   `json:"name"`
+	Agent                string   `json:"agent"`
+	CPU                  float64  `json:"cpu"`
+	MemoryMiB            int64    `json:"memoryMiB"`
+	ModelSource          string   `json:"modelSource,omitempty"`
+	ModelURL             string   `json:"modelURL,omitempty"`
+	Model                string   `json:"model,omitempty"`
+	AgentModel           string   `json:"agentModel,omitempty"`
+	AgentReasoningEffort string   `json:"agentReasoningEffort,omitempty"`
+	Vision               *bool    `json:"vision,omitempty"`
+	Tools                []string `json:"tools,omitempty"`
+	Profiles             []string `json:"profiles,omitempty"`
+	Goal                 string   `json:"goal,omitempty"`
 }
 type Box struct {
 	Usage    *Usage `json:"usage,omitempty"`

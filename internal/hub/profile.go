@@ -22,7 +22,7 @@ func sanitizeArchive(data []byte) ([]byte, error) {
 	tw := tar.NewWriter(&out)
 	count := 0
 	seen := map[string]bool{}
-	allowed := map[string]bool{".claude": true, ".codex": true, ".config": true, ".config/opencode": true, ".local": true, ".local/share": true, ".local/share/opencode": true}
+	allowed := map[string]bool{".claude": true, ".codex": true, ".config": true, ".config/opencode": true, ".config/gh": true, ".local": true, ".local/share": true, ".local/share/opencode": true}
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -54,6 +54,8 @@ func sanitizeArchive(data []byte) ([]byte, error) {
 				ok = base == "auth.json" || base == "config.toml"
 			case ".config/opencode":
 				ok = base == "opencode.json" || base == "opencode.jsonc"
+			case ".config/gh":
+				ok = base == "hosts.yml"
 			case ".local/share/opencode":
 				ok = base == "auth.json"
 			case ".":
@@ -73,6 +75,12 @@ func sanitizeArchive(data []byte) ([]byte, error) {
 					return nil, e
 				}
 				n = ".config/opencode/opencode.json"
+			}
+			if parent == ".config/gh" {
+				content, e = loginprofile.PortableGitHubHosts(content)
+				if e != nil {
+					return nil, e
+				}
 			}
 			if seen[n] {
 				return nil, fmt.Errorf("choose only one configuration for each destination")
@@ -145,6 +153,10 @@ func ProfileFilesArchive(agent string, files map[string][]byte) ([]byte, error) 
 		case "codex":
 			if name == "auth.json" || name == "config.toml" {
 				dest = ".codex/" + name
+			}
+		case "github":
+			if name == "hosts.yml" {
+				dest = ".config/gh/hosts.yml"
 			}
 		}
 		if dest == "" {

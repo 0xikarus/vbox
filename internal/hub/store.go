@@ -167,10 +167,11 @@ type Profile struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
 	Agent string `json:"agent"`
+	Model string `json:"model,omitempty"`
 }
 
 func (s *Store) Profiles() ([]Profile, error) {
-	rows, err := s.db.Query(`SELECT id,name,agent FROM profiles ORDER BY rowid`)
+	rows, err := s.db.Query(`SELECT id,name,agent,archive FROM profiles ORDER BY rowid`)
 	if err != nil {
 		return nil, err
 	}
@@ -178,22 +179,25 @@ func (s *Store) Profiles() ([]Profile, error) {
 	out := []Profile{}
 	for rows.Next() {
 		var p Profile
-		if err = rows.Scan(&p.ID, &p.Name, &p.Agent); err != nil {
+		var archive []byte
+		if err = rows.Scan(&p.ID, &p.Name, &p.Agent, &archive); err != nil {
 			return nil, err
 		}
+		p.Model = profileModel(p.Agent, archive)
+		clear(archive)
 		out = append(out, p)
 	}
 	return out, rows.Err()
 }
 func (s *Store) SaveProfile(name, agent string, data []byte) (Profile, error) {
-	if len(name) < 1 || len(name) > 100 || (agent != "claude" && agent != "codex" && agent != "opencode") {
+	if len(name) < 1 || len(name) > 100 || (agent != "claude" && agent != "codex" && agent != "opencode" && agent != "github") {
 		return Profile{}, errors.New("invalid profile")
 	}
 	clean, err := sanitizeArchive(data)
 	if err != nil {
 		return Profile{}, err
 	}
-	p := Profile{"hp-" + Token()[:24], name, agent}
+	p := Profile{ID: "hp-" + Token()[:24], Name: name, Agent: agent, Model: profileModel(agent, clean)}
 	_, err = s.db.Exec(`INSERT INTO profiles VALUES(?,?,?,?)`, p.ID, p.Name, p.Agent, clean)
 	return p, err
 }

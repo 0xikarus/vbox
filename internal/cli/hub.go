@@ -83,7 +83,9 @@ All management commands accept --host, --data and --url. Hub shutdown retains wo
 	agent := fs.String("agent", "opencode", "opencode, claude or codex")
 	modelSource := fs.String("model-source", "", "OpenCode model configuration: profile or custom")
 	endpoint := fs.String("model-url", "", "local model API URL")
-	model := fs.String("model", "", "model ID")
+	model := fs.String("model", "", "custom endpoint model ID")
+	agentModel := fs.String("agent-model", "", "per-box agent model override")
+	agentEffort := fs.String("reasoning-effort", "", "per-box reasoning effort")
 	vision := fs.Bool("model-vision", false, "enable image input")
 	goal := fs.String("goal", "", "initial goal delivered once ready")
 	text := fs.String("text", "", "chat message")
@@ -93,8 +95,8 @@ All management commands accept --host, --data and --url. Hub shutdown retains wo
 	proxy := fs.String("proxy", "none", "none,tor,warp")
 	yes := fs.Bool("yes", false, "confirm permanent box deletion")
 	var sources, profileIDs stringList
-	fs.Var(&sources, "profile", "APP=PATH profile import")
-	fs.Var(&profileIDs, "profile-id", "saved profile ID")
+	fs.Var(&sources, "profile", "APP=PATH or github=HOST:USER profile import")
+	fs.Var(&profileIDs, "profile-id", "saved agent or GitHub profile ID")
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
@@ -311,7 +313,7 @@ All management commands accept --host, --data and --url. Hub shutdown retains wo
 		}
 		err = request("DELETE", "profiles/"+url.PathEscape(name), nil, &result)
 	case "profile-upload":
-		archive, e := standaloneProfileArchive([]string{name})
+		archive, e := a.standaloneProfileArchive(ctx, []string{name})
 		if e != nil {
 			return e
 		}
@@ -319,7 +321,7 @@ All management commands accept --host, --data and --url. Hub shutdown retains wo
 		app, _, _ := strings.Cut(name, "=")
 		err = request("POST", "profiles", map[string]any{"name": *profileName, "agent": app, "archive": archive}, &result)
 	case "create":
-		spec := hubservice.Spec{Name: name, CPU: *cpu, Agent: *agent, ModelSource: *modelSource, ModelURL: *endpoint, Model: *model, Goal: *goal, Profiles: profileIDs}
+		spec := hubservice.Spec{Name: name, CPU: *cpu, Agent: *agent, ModelSource: *modelSource, ModelURL: *endpoint, Model: *model, Goal: *goal, Profiles: profileIDs, AgentModel: *agentModel, AgentReasoningEffort: *agentEffort}
 		suppliedMemory := false
 		fs.Visit(func(f *flag.Flag) {
 			if f.Name == "model-vision" {
@@ -375,8 +377,9 @@ All management commands accept --host, --data and --url. Hub shutdown retains wo
 			if e != nil {
 				return e
 			}
+			profiles = append(profiles, a.standaloneGitHubProfiles(ctx)...)
 			for _, p := range profiles {
-				if p.Component != "opencode" && p.Component != "claude" && p.Component != "codex" {
+				if p.Component != "opencode" && p.Component != "claude" && p.Component != "codex" && p.Component != "github" {
 					continue
 				}
 				f := &formField{Label: p.Component + " / " + p.Name, Value: "Skip", Choices: []string{"Skip", "Import"}, Checkbox: true, Detail: p.Directory}
@@ -416,7 +419,7 @@ All management commands accept --host, --data and --url. Hub shutdown retains wo
 			}
 		}
 		for _, source := range sources {
-			archive, e := standaloneProfileArchive([]string{source})
+			archive, e := a.standaloneProfileArchive(ctx, []string{source})
 			if e != nil {
 				return e
 			}

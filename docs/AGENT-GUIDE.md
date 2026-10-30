@@ -39,7 +39,11 @@ and API commands. `Dockerfile.hub` packages only the trusted manager and Docker
 client. Workers use `Dockerfile.standalone`, retain their own native runtime and
 never receive the host Docker socket or hub credentials. Hub autostart is opt-in
 (`hub install --autostart`); `hub up` starts an installed manager manually.
-See [HUB.md](HUB.md).
+See [HUB.md](HUB.md). Saved GitHub profiles attach independently of agent
+profiles. Hub creation uses the shared controller model picker; `agentModel` and
+`agentReasoningEffort` apply to per-box copies, preserving saved credentials.
+The standalone workspace starts on chat, opens Desktop and TMUX in one lazy
+panel, and disposes viewer connections when that panel closes.
 
 Hub creation must durably reserve resources before starting Docker and inventory
 all known identities before admitting after a restart. Preserve ownership checks,
@@ -562,3 +566,10 @@ An authorized corrected attempt may set the internal metadata timestamp
 `creationAttemptStartedAt` when rearming creation; the 30-minute guard uses that
 attempt timestamp, falling back to `created_at` for original attempts. Never
 change the original creation date or leave automatic retries resetting this clock.
+
+
+Blender creation guidance is shared in `internal/boxruntime/blender_instructions.go`.
+Controller presets name their pinned Blender and Blender MCP releases. Standalone
+setup probes its installed Blender release and writes one managed guidance block
+linked into Codex/OpenCode `AGENTS.md` and Claude `CLAUDE.md`. Preserve owner
+instructions and the existing conflict rules; do not write repository files.

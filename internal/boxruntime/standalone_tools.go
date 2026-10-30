@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -112,7 +113,18 @@ func InstallStandaloneTools(ctx context.Context, home string, tools []string, pr
 		return err
 	}
 	if slices.Contains(tools, "blender") {
-		return registerOpenCodeBlender(home, filepath.Join(home, ".local/bin/blender-mcp"))
+		if err := registerOpenCodeBlender(home, filepath.Join(home, ".local/bin/blender-mcp")); err != nil {
+			return err
+		}
+		version, err := exec.CommandContext(ctx, "blender", "--version").Output()
+		if err != nil {
+			return fmt.Errorf("cannot determine installed Blender version for instructions")
+		}
+		match := regexp.MustCompile(`(?m)^Blender (5\.[0-9]+\.[0-9]+)`).FindSubmatch(version)
+		if len(match) != 2 {
+			return fmt.Errorf("installed Blender is not a recognized 5.x release")
+		}
+		return EnsureStandaloneBlenderInstructions(home, string(match[1]))
 	}
 	return nil
 }

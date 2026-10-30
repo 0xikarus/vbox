@@ -10,6 +10,7 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/loginprofile"
 )
 
 type Manager struct {
@@ -110,11 +111,20 @@ func (m *Manager) Create(spec Spec, keys ...string) (Box, error) {
 		}
 	}
 
-	if spec.Name == "" || len(spec.Name) > 100 || len(spec.Goal) > 100000 || len(spec.Profiles) > 3 || len(spec.Tools) > 20 {
+	if spec.Name == "" || len(spec.Name) > 100 || len(spec.Goal) > 100000 || len(spec.Profiles) > 4 || len(spec.Tools) > 20 {
 		return Box{}, fmt.Errorf("invalid box settings")
 	}
 	if spec.Agent != "claude" && spec.Agent != "opencode" && spec.Agent != "codex" {
 		return Box{}, fmt.Errorf("agent must be opencode, claude or codex")
+	}
+	settings := map[string][]byte{}
+	if spec.AgentModel != "" {
+		if err := loginprofile.SetModel(spec.Agent, settings, spec.AgentModel); err != nil {
+			return Box{}, err
+		}
+	}
+	if err := loginprofile.SetReasoningEffort(spec.Agent, settings, spec.AgentReasoningEffort, spec.AgentModel); err != nil {
+		return Box{}, err
 	}
 	if spec.CPU <= 0 || math.IsNaN(spec.CPU) || math.IsInf(spec.CPU, 0) || spec.CPU > m.Config.Policy.CPUs || spec.MemoryMiB < 256 || spec.MemoryMiB > m.Config.Policy.MemoryMiB {
 		return Box{}, fmt.Errorf("box exceeds the hub worker budget")

@@ -47,6 +47,10 @@ body.standalone{height:auto;min-height:100dvh;overflow:auto;padding:0;margin:0;f
 .standalone .msg .text{overflow-wrap:anywhere}.standalone .msg .meta{display:flex;gap:5px}.standalone .image-preview{border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-bg);color:var(--vb-ink);max-width:95vw;max-height:95dvh;padding:12px}.standalone .image-preview::backdrop{background:rgba(0,0,0,.7)}.standalone .image-preview img{display:block;max-width:90vw;max-height:80dvh}.standalone .image-preview button{float:right;margin-bottom:8px}
 .standalone>.chat{height:100dvh}.standalone footer{font-size:12px;color:var(--vb-ink-soft);padding:12px 20px}
 @media(max-width:850px){.standalone .combined{display:flex;flex-direction:column}.standalone .combined>.stages{border-left:0;border-top:1px solid var(--vb-line);padding:10px}.standalone .combined>.conversation{position:relative;height:70dvh;min-height:480px;order:-1}.standalone .topbar{padding:10px;gap:8px}.standalone .topbar .muted{display:none}.standalone .topbar .brand-suffix{display:none}.standalone .msg{max-width:88%}}
+.standalone .combined.chat-first{display:block;min-height:0}.standalone .chat-first>.conversation{position:relative;width:100%;height:calc(100dvh - 66px);min-height:320px}.standalone .chat-first #chat-messages{padding-inline:max(20px,calc((100% - 900px)/2));padding-block:20px}.standalone .chat-first #chat-header{background:var(--surface);border-bottom:1px solid var(--line)}.standalone .chat-first #chat-composer{width:min(100%,940px);max-width:940px;margin:0 auto;padding:12px 20px 20px}.standalone .chat-first #chat-input{background:var(--surface);border:1px solid var(--line)}.standalone .chat-first [data-role="thinking-controls"]{width:min(100%,940px);margin:auto auto 0;padding:8px 20px;flex:none}.standalone .msg .text .md-root>:first-child{margin-top:0}.standalone .msg .text .md-root>:last-child{margin-bottom:0}
+body.standalone:has(.chat-first){display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden}.standalone .chat-first{flex:1;min-height:0}.standalone .chat-first>.conversation{height:100%!important;min-height:0!important}.standalone:has(.chat-first)>.topbar{flex:none}
+.standalone .desktop-panel{width:min(1200px,96vw);max-width:96vw;max-height:94dvh;padding:0;border:1px solid var(--line);border-radius:var(--r-surface);background:var(--vb-bg);color:var(--ink);overflow-y:auto;overscroll-behavior:contain}.standalone .desktop-panel::backdrop{background:rgba(0,0,0,.55)}.standalone .desktop-panel-header{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--line)}.standalone .desktop-panel .stages{padding:14px}.standalone .desktop-panel [data-role="desktop-screen"]{height:auto;aspect-ratio:16/10;min-height:0}.standalone .desktop-panel [data-role="terminal-screen"]{height:360px;min-height:180px}.standalone #chat-header button svg{width:20px;height:20px}.standalone .msg-copy{border:0;background:none;color:inherit;cursor:pointer;font:inherit;font-size:11px;opacity:.65;margin-right:auto;padding:0}
+@media(max-width:850px){.standalone .chat-first>.conversation{height:calc(100dvh - 60px);min-height:320px}.standalone .chat-first #chat-messages{padding-inline:12px}.standalone .chat-first #chat-composer{padding-inline:12px}.standalone .desktop-panel{width:100vw;max-width:100vw;max-height:100dvh;border-radius:0}.standalone .desktop-panel .stages{padding:8px}}
 `
 
 func shell(title, body string, bases ...string) string {
@@ -68,7 +72,7 @@ func shell(title, body string, bases ...string) string {
 func workspaceContent(scope string) string {
 	if scope == "chat" {
 		return `<section id="chat-conversation" data-scope="chat" class="chat">
-<header id="chat-header"><div class="chat-header-identity"><span class="standalone-avatar" aria-hidden="true">v</span><span id="chat-header-text"><strong id="chat-header-name">Your agent</strong><span id="chat-header-state" data-role="status" role="status">Connecting…</span></span></div><span class="spacer"></span><span class="hint">Standalone</span></header>
+<header id="chat-header"><div class="chat-header-identity"><span class="standalone-avatar" aria-hidden="true">v</span><span id="chat-header-text"><strong id="chat-header-name">Your agent</strong><span id="chat-header-state" data-role="status" role="status">Connecting…</span></span></div><span class="spacer"></span>` + sharedChatButton("chat-header-desktop") + sharedChatButton("chat-header-terminal") + `</header>
 <div id="chat-messages" data-role="messages" role="log" aria-label="Conversation" aria-live="polite"></div>
 <div class="controls" data-role="thinking-controls" hidden><label for="chat-thinking">Thinking</label><select id="chat-thinking" data-role="thinking"><option value="default">Default</option></select><span data-role="thinking-status" role="status"></span></div>
 <form id="chat-composer" data-role="compose" autocomplete="off" hidden><textarea id="chat-input" data-role="text" rows="1" required maxlength="100000" aria-label="Message" placeholder="Message your agent…"></textarea><button id="send" class="primary" type="submit" aria-label="Send message" title="Send message"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button></form>
@@ -99,8 +103,23 @@ func workspaceContent(scope string) string {
 	body = strings.ReplaceAll(body, `for="`, `for="`+scope+`-`)
 	return body
 }
+
+func sharedChatButton(id string) string {
+	data, _ := webassets.ChatControls.ReadFile("chat.html")
+	source := string(data)
+	start := strings.Index(source, `<button id="`+id+`"`)
+	if start < 0 {
+		return ""
+	}
+	end := strings.Index(source[start:], "</button>")
+	if end < 0 {
+		return ""
+	}
+	return source[start : start+end+len("</button>")]
+}
 func viewerAssets() string {
-	return `<script src="/novnc.js"></script><script src="/workspace-desktop.js"></script><script src="/xterm.js"></script><script src="/xterm-fit.js"></script><script src="/workspace-terminal.js"></script>`
+	markdown, _ := webassets.ChatControls.ReadFile("markdown.js")
+	return `<script>` + string(markdown) + `</script><script src="/novnc.js"></script><script src="/workspace-desktop.js"></script><script src="/xterm.js"></script><script src="/xterm-fit.js"></script><script src="/workspace-terminal.js"></script>`
 }
 func viewerShell(title, body string, bases ...string) string {
 	out := shell(title, body, bases...)
@@ -115,7 +134,13 @@ func workspacePage(scope string, bases ...string) string {
 	if scope == "view" {
 		title = "live view"
 	}
-	return viewerShell(title, workspaceContent(scope)+viewerAssets()+`<script>`+workspaceJS+`
+	content := workspaceContent(scope)
+	if scope == "chat" {
+		for _, id := range []string{"chat-header-desktop", "chat-header-terminal"} {
+			content = strings.Replace(content, sharedChatButton(id), "", 1)
+		}
+	}
+	return viewerShell(title, content+viewerAssets()+`<script>`+workspaceJS+`
  const scope=`+strconv.Quote(scope)+`,storageKey='vbox-standalone-token:'+window.VBOX_BASE_PATH+':'+scope,token=location.hash.slice(1)||sessionStorage.getItem(storageKey)||'';
  if(token)sessionStorage.setItem(storageKey,token);history.replaceState(null,'',location.pathname);
  bootWorkspace(scope,document.querySelector('[data-scope]'),token);
@@ -152,7 +177,7 @@ func (s *Server) messageFragment(w http.ResponseWriter, r *http.Request) {
 }
 
 const workspaceJS = `
-function bootWorkspace(scope,root,token){
+function bootWorkspace(scope,root,token,signal){
  const storageKey='vbox-standalone-token:'+window.VBOX_BASE_PATH+':'+scope;
  if(token)sessionStorage.setItem(storageKey,token);
  const headers={Authorization:'Bearer '+token,'Content-Type':'application/json'};
@@ -163,7 +188,8 @@ function bootWorkspace(scope,root,token){
   if(!r.ok)throw Error('Request failed: '+r.status);
   return r.json();
  }
- async function waitReady(){while((await api('status')).state!=='ready'){status.textContent='Waiting for agent…';await new Promise(r=>setTimeout(r,1000))}}
+ function checkActive(){if(signal?.aborted)throw new DOMException('Viewer closed','AbortError')}
+ async function waitReady(){checkActive();while((await api('status')).state!=='ready'){checkActive();status.textContent='Waiting for agent…';await new Promise(r=>setTimeout(r,1000))}checkActive()}
  if(scope==='view'){
   const img=document.createElement('img');img.alt='Live desktop, read only';role('desktop-screen').append(img);let previous;
   async function frame(){
@@ -213,6 +239,7 @@ function bootWorkspace(scope,root,token){
      const scroll=forceBottom||nearBottom();
      preview.close();for(const url of imageURLs)URL.revokeObjectURL(url);imageURLs.clear();
      box.innerHTML=content;box.dataset.content=content;
+     for(const text of box.querySelectorAll('.msg .text')){const raw=text.textContent;if(window.markdownToNodes)text.replaceChildren(window.markdownToNodes(raw));const copy=document.createElement('button');copy.type='button';copy.className='msg-copy';copy.textContent='Copy';copy.setAttribute('aria-label','Copy message');copy.onclick=async()=>{try{await navigator.clipboard.writeText(raw);copy.textContent='Copied'}catch{copy.textContent='Copy unavailable'}};text.closest('.msg').querySelector('.meta').prepend(copy)}
      if(scroll)bottom();loadImages(scroll);
     }
     status.textContent=(await api('status')).state;
@@ -234,9 +261,9 @@ function bootWorkspace(scope,root,token){
   };
   resize();refresh();setInterval(()=>refresh(),2000);
  }else if(scope==='terminal'){
-  waitReady().then(()=>api('stream-ticket?kind=terminal',{method:'POST'})).then(t=>openWorkspaceTerminal('','',s=>status.textContent=s.toLowerCase(),{root:role('terminal-screen'),keys:root.querySelector('.terminal-keys'),streamURL:standalonePath('/v1/standalone/terminal/ws?ticket='+encodeURIComponent(t.ticket))})).catch(e=>status.textContent=e.message);
+  return waitReady().then(()=>{checkActive();return api('stream-ticket?kind=terminal',{method:'POST'})}).then(t=>{checkActive();return openWorkspaceTerminal('','',s=>status.textContent=s.toLowerCase(),{root:role('terminal-screen'),keys:root.querySelector('.terminal-keys'),autoFocus:false,streamURL:standalonePath('/v1/standalone/terminal/ws?ticket='+encodeURIComponent(t.ticket))})}).catch(e=>{if(e.name!=='AbortError')status.textContent=e.message});
  }else{
-  waitReady().then(()=>api('stream-ticket',{method:'POST'})).then(t=>openWorkspaceDesktop('',s=>status.textContent=s.toLowerCase(),{root:role('desktop-screen'),controls:role('desktop-controls'),streamURL:standalonePath('/v1/standalone/desktop/ws?ticket='+encodeURIComponent(t.ticket))})).catch(e=>status.textContent=e.message);
+  return waitReady().then(()=>{checkActive();return api('stream-ticket',{method:'POST'})}).then(t=>{checkActive();return openWorkspaceDesktop('',s=>status.textContent=s.toLowerCase(),{root:role('desktop-screen'),controls:role('desktop-controls'),streamURL:standalonePath('/v1/standalone/desktop/ws?ticket='+encodeURIComponent(t.ticket))})}).catch(e=>{if(e.name!=='AbortError')status.textContent=e.message});
  }
 }
 `
