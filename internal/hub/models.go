@@ -3,6 +3,8 @@ package hub
 import (
 	"archive/tar"
 	"bytes"
+	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/0xikarus/vmbox-service/internal/loginprofile"
+	"github.com/0xikarus/vmbox-service/internal/modelcatalog"
 )
 
 func profileFiles(archive []byte) map[string][]byte {
@@ -66,6 +69,45 @@ func (s *Server) profileModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer clear(archives[0])
+	if selected.Agent == "codex" || selected.Agent == "claude" {
+		digest := sha256.Sum256(archives[0])
+		s.catalogMu.Lock()
+		cached, ok := s.catalogCache[selected.ID]
+		s.catalogMu.Unlock()
+		if ok && cached.Digest == digest && time.Now().Before(cached.Expires) {
+			output(w, 200, cached.Catalog)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+		defer cancel()
+		select {
+		case s.catalogSlot <- struct{}{}:
+			defer func() { <-s.catalogSlot }()
+		case <-ctx.Done():
+			http.Error(w, "model catalog timed out; retry shortly", 503)
+			return
+		}
+		s.catalogMu.Lock()
+		cached, ok = s.catalogCache[selected.ID]
+		s.catalogMu.Unlock()
+		if ok && cached.Digest == digest && time.Now().Before(cached.Expires) {
+			output(w, 200, cached.Catalog)
+			return
+		}
+		files := profileFiles(archives[0])
+		defer clearProfileFiles(files)
+		models, err := s.CatalogQuery(ctx, selected.Agent, files)
+		if err != nil || len(models) == 0 {
+			http.Error(w, "could not load live "+selected.Agent+" models; check or refresh this profile and retry", 502)
+			return
+		}
+		result := liveCatalog{Source: map[string]string{"codex": "Codex account catalog", "claude": "Anthropic live catalog · account access checked at launch"}[selected.Agent], Models: models}
+		s.catalogMu.Lock()
+		s.catalogCache[selected.ID] = cachedCatalog{Digest: digest, Expires: time.Now().Add(time.Minute), Catalog: result}
+		s.catalogMu.Unlock()
+		output(w, 200, result)
+		return
+	}
 	files := profileFiles(archives[0])
 	defer clearProfileFiles(files)
 	models := []string{}
@@ -88,6 +130,28 @@ func (s *Server) profileModels(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(models)
 	output(w, 200, map[string]any{"source": "Saved profile models · exact IDs accepted; account access checked at launch", "models": models})
+}
+
+type liveCatalog struct {
+	Source string                `json:"source"`
+	Models []modelcatalog.Choice `json:"models"`
+}
+type cachedCatalog struct {
+	Digest  [32]byte
+	Expires time.Time
+	Catalog liveCatalog
+}
+
+func (s *Server) queryLiveModels(ctx context.Context, agent string, files map[string][]byte) ([]modelcatalog.Choice, error) {
+	if agent == "claude" {
+		return modelcatalog.QueryClaude(ctx, &http.Client{Timeout: 20 * time.Second}, files, "https://api.anthropic.com/v1/models?limit=1000")
+	}
+	if engine, ok := s.Manager.Engine.(interface {
+		CodexModels(context.Context, map[string][]byte) ([]modelcatalog.Choice, error)
+	}); ok {
+		return engine.CodexModels(ctx, files)
+	}
+	return nil, fmt.Errorf("native Codex catalog is unavailable")
 }
 
 func (s *Server) localModels(w http.ResponseWriter, r *http.Request) {

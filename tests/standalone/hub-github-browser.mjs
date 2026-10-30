@@ -9,7 +9,7 @@ test('GitHub upload remains independent of the agent and is attached explicitly'
  const source=await readFile('internal/hub/page.go','utf8');
  const picker=await readFile('internal/controller/web/model-picker.js','utf8');
  const html=source.match(/const hubPage = `([\s\S]*)`/)[1].replace('<script>',()=>'<script>'+picker+'</script><script>');
- const profiles=[{id:'hp-agent',name:'Claude fixture',agent:'claude',model:'sonnet'}];
+ const profiles=[{id:'hp-agent',name:'Claude fixture',agent:'claude',model:'sonnet'},{id:'hp-codex',name:'Codex fixture',agent:'codex',model:'old-saved-model'}];
  let uploaded,created,browser;
  const server=http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://fixture').pathname;
@@ -18,7 +18,8 @@ test('GitHub upload remains independent of the agent and is attached explicitly'
   let body='';for await(const part of req)body+=part;
   if(path==='/api/status')return res.end(JSON.stringify({allocated:{running:0,cpus:0,memoryMiB:0},host:{availableMiB:4096,diskFreeMiB:8192},policy:{maxRunning:2,cpus:1,memoryMiB:2048},defaults:{agent:'claude',cpu:.25,memoryMiB:256}}));
   if(path==='/api/profiles'&&req.method==='POST'){uploaded=JSON.parse(body);const p={id:'hp-github',name:uploaded.name,agent:'github'};profiles.push(p);return res.end(JSON.stringify(p))}
-  if(path==='/api/profiles/hp-agent/models')return res.end(JSON.stringify({source:'Fixture profile',models:['sonnet']}));
+  if(path==='/api/profiles/hp-agent/models')return res.end(JSON.stringify({source:'Claude live fixture',models:[{id:'claude-live-model',label:'Live Claude',reasoning:true,reasoningEfforts:['low','high']}]}));
+  if(path==='/api/profiles/hp-codex/models')return res.end(JSON.stringify({source:'Codex account fixture',models:[{id:'codex-live-model',label:'Live Codex',reasoning:true,reasoningEfforts:['low','high']}]}));
   if(path==='/api/profiles')return res.end(JSON.stringify(profiles));
   if(path==='/api/boxes'&&req.method==='POST'){created=JSON.parse(body);res.statusCode=202;return res.end(JSON.stringify({id:'hb-fixture',state:'queued'}))}
   if(path==='/api/boxes')return res.end(JSON.stringify([{id:'hb-queued',spec:{name:'Queued box',cpu:.25,memoryMiB:256,agent:'claude'},state:'queued',desired:'running',url:'/boxes/hb-queued/'},{id:'hb-stopped',spec:{name:'Stopped box',cpu:.25,memoryMiB:256,agent:'claude'},state:'stopped',desired:'stopped',url:'/boxes/hb-stopped/'}]));
@@ -43,7 +44,7 @@ test('GitHub upload remains independent of the agent and is attached explicitly'
   assert.equal(await page.$eval('#create-form select[name=agent]',n=>n.value),'claude','GitHub upload changed the selected agent');
   await page.evaluate(()=>document.querySelector('#create-form').closest('details').open=true);
   await page.select('#create-form select[name=profile]','hp-agent');
-  await page.click('.model-picker-open');await page.waitForSelector('.model-picker-dialog[open]');await page.waitForSelector('.model-picker-option[data-model=opus]');await page.click('.model-picker-option[data-model=opus]');await page.click('.model-picker-apply');
+  await page.click('.model-picker-open');await page.waitForSelector('.model-picker-dialog[open]');await page.waitForSelector('.model-picker-option[data-model=claude-live-model]');await page.click('.model-picker-option[data-model=claude-live-model]');assert.equal(await page.$('.model-picker-option[data-model=opus]'),null,'static aliases must not replace the live account catalog');await page.click('.model-picker-apply');
   await page.type('#create-form input[name=name]','Disposable fixture');
   await page.click('#create-form button.primary');
   try { await page.waitForFunction(()=>document.querySelector('#status').textContent==='Box queued') }
@@ -52,8 +53,15 @@ test('GitHub upload remains independent of the agent and is attached explicitly'
    const details=await page.evaluate(()=>({url:location.href,openDialog:!!document.querySelector('dialog[open]'),submit:document.querySelector('#create-form button.primary').outerHTML,handler:typeof document.querySelector('#create-form').onsubmit,status:document.querySelector('#status').textContent,invalid:[...document.querySelector('#create-form').elements].filter(e=>e.willValidate&&!e.validity.valid).map(e=>({name:e.name,error:e.validationMessage}))}));
    throw Error(error.message+' '+JSON.stringify(details));
   }
-  assert.equal(created.agent,'claude');assert.equal(created.agentModel,'opus');assert.deepEqual(created.profiles,['hp-agent','hp-github']);
+  assert.equal(created.agent,'claude');assert.equal(created.agentModel,'claude-live-model');assert.deepEqual(created.profiles,['hp-agent','hp-github']);
   await page.select('#create-form select[name=agent]','codex');
   assert.equal(await page.$eval('#create-form select[name=githubProfile]',n=>n.value),'hp-github');
+  await page.select('#create-form select[name=profile]','hp-codex');await page.click('.model-picker-open');
+  await page.waitForSelector('.model-picker-option[data-model=codex-live-model]');
+  assert.equal(await page.$('.model-picker-option[data-model="gpt-5.6-sol"]'),null,'live Codex models must not be mixed with guesses');
+  await page.click('.model-picker-option[data-model=codex-live-model]');await page.select('.model-picker-effort','high');await page.click('.model-picker-apply');
+  await page.type('#create-form input[name=name]','Codex fixture');await page.click('#create-form button.primary');
+  await page.waitForFunction(()=>document.querySelector('#create-form input[name=name]').value==='');
+  assert.equal(created.agent,'codex');assert.equal(created.agentModel,'codex-live-model');assert.equal(created.agentReasoningEffort,'high');assert.deepEqual(created.profiles,['hp-codex','hp-github']);
  }finally{await browser?.close();await new Promise(resolve=>server.close(resolve))}
 });

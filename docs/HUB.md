@@ -288,7 +288,14 @@ to custom mode. Exact IDs remain available when a catalog is unavailable.
 
 API creation accepts `agentModel` and `agentReasoningEffort` alongside `profiles`.
 CLI creation accepts `--agent-model ID --reasoning-effort LEVEL`.
-`GET /api/profiles/PROFILE_ID/models` returns saved model IDs without credentials;
+`GET /api/profiles/PROFILE_ID/models` queries the selected Codex account through
+its native app-server, or Claude through Anthropic’s live catalog. These queries
+reuse the controller’s catalog implementation and return model IDs and supported
+reasoning levels without credentials. Results are cached for 60 seconds and
+invalidated when the profile changes; a failed query keeps only the saved default
+and exact-ID entry available. Codex probes use one disposable, capped container
+at a time and never start a box or mount the Docker socket into the probe.
+OpenCode profiles retain their declared model choices.
 `GET /api/models?endpoint=URL` queries a custom OpenAI-compatible endpoint.
 
 Workspaces open on chat, using the controller's chat styles, shared desktop and

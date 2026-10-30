@@ -12,6 +12,7 @@ import (
 	"time"
 
 	webassets "github.com/0xikarus/vmbox-service/internal/controller/web"
+	"github.com/0xikarus/vmbox-service/internal/modelcatalog"
 	"github.com/0xikarus/vmbox-service/internal/standalone"
 )
 
@@ -21,20 +22,27 @@ type session struct {
 	Cancel  context.CancelFunc
 }
 type Server struct {
-	context   context.Context
-	Manager   *Manager
-	mu        sync.Mutex
-	sessions  map[string]session
-	password  standalone.PasswordHash
-	token     string
-	lastLogin time.Time
-	clientMu  sync.Mutex
-	clients   map[string]*workerClient
+	context      context.Context
+	Manager      *Manager
+	mu           sync.Mutex
+	sessions     map[string]session
+	password     standalone.PasswordHash
+	token        string
+	lastLogin    time.Time
+	clientMu     sync.Mutex
+	clients      map[string]*workerClient
+	CatalogQuery func(context.Context, string, map[string][]byte) ([]modelcatalog.Choice, error)
+	catalogMu    sync.Mutex
+	catalogCache map[string]cachedCatalog
+	catalogSlot  chan struct{}
 }
 
 func NewServer(m *Manager) *Server {
 	c := m.config()
 	s := &Server{context: context.Background(), Manager: m, password: c.Password, token: c.APIToken, sessions: map[string]session{}, clients: map[string]*workerClient{}}
+	s.catalogCache = map[string]cachedCatalog{}
+	s.catalogSlot = make(chan struct{}, 1)
+	s.CatalogQuery = s.queryLiveModels
 	m.ready = s.ready
 	m.goal = s.goal
 	return s
