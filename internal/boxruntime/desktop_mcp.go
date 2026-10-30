@@ -50,7 +50,7 @@ func desktopMCPTools() []map[string]any {
 	makeTool := func(name, description string, properties map[string]any, required ...string) map[string]any {
 		switch name {
 		case "take_screenshot", "capture_window", "get_agent_box_screenshot", "remote_control_box":
-			description += " The PNG has a 24-pixel header above the captured content showing Cursor: Xpx Ypx in original desktop coordinates (or unavailable). For clicks, exclude the header from image Y, then undo thumbnail scaling or add window offsets; never add the header to desktop coordinates."
+			description += " The PNG has a 24-pixel footer below the captured content showing Cursor: Xpx Ypx in original desktop coordinates (or unavailable). Captured pixels retain their original image coordinates. For clicks, undo thumbnail scaling or add window offsets; the footer is outside the captured content and needs no Y correction."
 		}
 		if required == nil {
 			required = []string{}
@@ -865,7 +865,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if err != nil {
 			return nil, err
 		}
-		pixels, err = screenshotWithCursorHeader(pixels)
+		pixels, err = screenshotWithCursorFooter(pixels)
 		if err != nil {
 			return nil, err
 		}
@@ -881,7 +881,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if err != nil {
 			return nil, err
 		}
-		pixels, err = screenshotWithCursorHeader(pixels)
+		pixels, err = screenshotWithCursorFooter(pixels)
 		if err != nil {
 			return nil, err
 		}
@@ -1160,7 +1160,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if err != nil {
 			return nil, fmt.Errorf("window capture unavailable: %w", err)
 		}
-		pixels, err := screenshotWithCursorHeader(captured.Bytes())
+		pixels, err := screenshotWithCursorFooter(captured.Bytes())
 		if err != nil {
 			return nil, err
 		}
@@ -1180,7 +1180,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if err := CaptureDesktop(ctx, assignment, &png); err != nil {
 			return nil, fmt.Errorf("desktop capture unavailable; check that this box's desktop is running")
 		}
-		pixels, err := screenshotWithCursorHeader(png.Bytes())
+		pixels, err := screenshotWithCursorFooter(png.Bytes())
 		if err != nil {
 			return nil, err
 		}

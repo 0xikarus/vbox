@@ -62,7 +62,7 @@ Check out a reviewed revision containing `internal/sharedworker/container_linux.
 The commands below use `main`; pin a reviewed commit for repeatable deployments.
 
 ```sh
-git clone --branch main https://github.com/0xikarus/vmbox-service.git /opt/vmbox-service
+git clone --branch main https://github.com/0xikarus/vbox.git /opt/vmbox-service
 cd /opt/vmbox-service
 GOTOOLCHAIN=auto go build -buildvcs=false -trimpath \
   -o /usr/local/bin/vmbox-shared-worker-isolated ./cmd/vmbox-shared-worker

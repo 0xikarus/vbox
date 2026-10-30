@@ -7,12 +7,19 @@ import puppeteer from 'puppeteer-core';
 
 const root=resolve('internal/controller/web');
 const pages={'/':'index.html','/chat':'chat.html','/grid':'grid.html','/boxes/test-box':'workspace.html'};
-let server,browser,base;
+let server,browser,base,authenticated=false,delayedPath='',releaseDelayed;
 
 before(async()=>{
  server=http.createServer(async(request,response)=>{
   const path=new URL(request.url,'http://test').pathname;
-  if(path.startsWith('/v1/')){response.writeHead(401,{'Content-Type':'application/json'});response.end(JSON.stringify({error:'Invalid controller token'}));return}
+  if(path.startsWith('/v1/')){
+   if(delayedPath&&path==='/v1/browser-session'&&request.method==='POST'){authenticated=true;response.writeHead(204);response.end();return}
+   if(authenticated){
+    if(path===delayedPath){await new Promise(resolve=>{releaseDelayed=resolve});response.writeHead(503,{'Content-Type':'application/json'});response.end(JSON.stringify({error:'Fixture data unavailable'}));return}
+    response.setHeader('Content-Type','application/json');response.end(JSON.stringify(path==='/v1/whoami'?{role:'owner',accountId:'test'}:path==='/v1/logical-boxes'?[]:{}));return;
+   }
+   response.writeHead(401,{'Content-Type':'application/json'});response.end(JSON.stringify({error:'Invalid controller token'}));return;
+  }
   const file=pages[path]||path.slice(1);
   if(!/^[a-zA-Z0-9.-]+$/.test(file)){response.writeHead(404);response.end();return}
   try{
@@ -51,5 +58,21 @@ test('all web pages use the same centered login panel and show sign-in errors th
   await page.waitForFunction(()=>document.querySelector('#login-error').textContent.length>0);
   assert.equal(await page.$eval('#login',form=>form.hidden),false,path);
   await page.close();
+ }
+});
+
+test('desktop login opens the controller before slow data requests finish',async()=>{
+ for(const [path,blocked,app] of [['/','/v1/capabilities','#app'],['/chat','/v1/whoami','#chat-app']]){
+  authenticated=false;delayedPath=blocked;releaseDelayed=null;
+  const page=await browser.newPage();await page.setViewport({width:1280,height:900});
+  try{
+   await page.goto(base+path);await page.waitForSelector('#login:not([hidden])');
+   await page.type('#login-token','valid-token');await page.click('#login button');
+   await page.waitForFunction(selector=>document.querySelector('#login').hidden&&!document.querySelector(selector).hidden,{timeout:3000},app);
+   assert.ok(releaseDelayed,blocked+' is still pending when the login panel closes');
+   releaseDelayed();
+   await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Fixture data unavailable'),{timeout:3000});
+   assert.equal(await page.$eval('#login',form=>form.hidden),true,'a data failure must not reopen login');
+  }finally{releaseDelayed?.();await page.close();authenticated=false;delayedPath='';releaseDelayed=null}
  }
 });

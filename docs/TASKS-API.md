@@ -390,6 +390,9 @@ mapping of opaque labels to saved names; task service tokens cannot access it.
 Revoking a token prevents new API requests and prevents its queued tasks from
 starting. Already running tasks still finish normally.
 
+For an agent that should delegate tasks through this API directly, share
+[`skills/vbox-tasks/SKILL.md`](../skills/vbox-tasks/SKILL.md).
+
 Run the standard-library Python example:
 
 ```sh
@@ -411,3 +414,34 @@ or terminal may be unavailable; the outcome and uploaded result files remain
 saved, and workspace cleanup continues. No task API permission gives a service
 access to unrelated controller endpoints. A control link can access the entire
 workspace through its terminal, including credentials imported into that box.
+
+### MCP bridge for external agents
+
+`scripts/vbox_task_mcp.py` is a local stdio MCP server for delegating work to
+temporary task boxes. It uses only Python 3's standard library. Create a task
+service credential in **Tasks → Service API access and profile mapping** and
+grant only the login profiles that this agent may use. Configure the MCP client
+to launch the script with these environment variables (keep the token in the
+client's private credential store):
+
+```text
+command: python3
+args: /absolute/path/to/vmbox-service/scripts/vbox_task_mcp.py
+env:
+  VMBOX_CONTROLLER_URL: https://your-controller.example
+  VMBOX_TASK_TOKEN: <task service token>
+```
+
+The bridge exposes `list_task_profiles`, `list_login_profiles`, `create_task`,
+`get_task`, `list_tasks`, and `get_task_events`. Call `list_task_profiles`, then
+`create_task` with `name`, `goal`, a unique `request_id`, and `task_profile`.
+The tool returns the queued task immediately. Poll `get_task` about every 30
+seconds until the state is terminal; read `result.text` or `failure` and save
+needed results before `deleteAt`. An uncertain create call should be retried
+with the **same** `request_id` and arguments; `list_tasks` can recover its ID.
+Without a saved task profile, call `list_login_profiles` and pass `agent` plus
+`login_profile_id` to `create_task`; optional model and resource settings are
+available for that custom form. The bridge creates no control links and has no
+access to unrelated boxes or owner APIs. It speaks MCP over stdio using the
+2025-11-25 handshake; clients that probe newer discovery first can fall back
+to that version.

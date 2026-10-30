@@ -42,7 +42,9 @@ Profiles include model, resources, saved logins and tools; edits affect future t
 
 Third-party services use scoped tokens, anonymous profile IDs and simple
 30-second polling. See [Tasks API](docs/TASKS-API.md) and the
-[Python API example](scripts/examples/tasks_api.py).
+[Python API example](scripts/examples/tasks_api.py). Share the
+[task API skill](skills/vbox-tasks/SKILL.md) with an external agent, or connect
+the optional [task MCP bridge](scripts/vbox_task_mcp.py).
 
 ## Quick start
 
@@ -57,13 +59,26 @@ During box creation, choose the desktop size (1024 × 640 by default or 1280 × 
 For terminal access on Linux or macOS, install Git, OpenSSH, and Go 1.26 or Docker, then:
 
 ```bash
-git clone https://github.com/0xikarus/vmbox-service.git
-cd vmbox-service
+git clone https://github.com/0xikarus/vbox.git
+cd vbox
 ./install.sh
 vbox connect https://YOUR-CONTROLLER
 vbox new builder
 vbox builder
 ```
+
+To prepare a standalone instance with its own desktop, TMUX and chat:
+
+```bash
+./install.sh --standalone
+vbox standalone create my-box --mode container
+```
+
+For multiple boxes behind one URL on the same host, use `vbox hub install --host YOUR_SSH_ALIAS`. Autostart is off unless you pass `--autostart`; use `vbox hub up` to start a stopped hub manually. The [hub guide](docs/HUB.md) covers resource budgets, queued creation, profiles and its API.
+
+For a remote Docker host, add `--host YOUR_SSH_ALIAS` to both commands. The
+installer builds the image and the creation wizard starts the instance. See
+[standalone setup](docs/STANDALONE.md) for local models, passwords and tools.
 
 The CLI is named `vbox`; `vmbox` is a compatibility symlink. Run `vbox help` for other commands.
 

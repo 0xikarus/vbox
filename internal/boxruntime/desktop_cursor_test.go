@@ -22,20 +22,20 @@ func assertScreenshotPixelsPreserved(t *testing.T, original, annotated []byte) {
 		t.Fatal(err)
 	}
 	if dst.Bounds().Dx() < src.Bounds().Dx() || dst.Bounds().Dy() != src.Bounds().Dy()+24 {
-		t.Fatalf("header changed content dimensions: %v -> %v", src.Bounds(), dst.Bounds())
+		t.Fatalf("footer changed content dimensions: %v -> %v", src.Bounds(), dst.Bounds())
 	}
 	for y := 0; y < src.Bounds().Dy(); y++ {
 		for x := 0; x < src.Bounds().Dx(); x++ {
 			before := color.NRGBAModel.Convert(src.At(x, y))
-			after := color.NRGBAModel.Convert(dst.At(x, y+24))
+			after := color.NRGBAModel.Convert(dst.At(x, y))
 			if before != after {
 				t.Fatalf("covered or changed desktop pixel at %d,%d: %v != %v", x, y, before, after)
 			}
 		}
 	}
-	// The top-left header must contain visible lettering, not just empty padding.
+	// The bottom-left footer must contain visible lettering, not just empty padding.
 	ink := 0
-	for y := 0; y < 24; y++ {
+	for y := src.Bounds().Dy(); y < dst.Bounds().Dy(); y++ {
 		for x := 8; x < 56; x++ {
 			r, g, b, _ := dst.At(x, y).RGBA()
 			if r > 50000 && g > 50000 && b > 50000 {
@@ -44,11 +44,11 @@ func assertScreenshotPixelsPreserved(t *testing.T, original, annotated []byte) {
 		}
 	}
 	if ink == 0 {
-		t.Fatal("header has no visible text at the top left")
+		t.Fatal("footer has no visible text at the top left")
 	}
 }
 
-func TestScreenshotCursorHeaderPreservesContent(t *testing.T) {
+func TestScreenshotCursorFooterPreservesContent(t *testing.T) {
 	for _, size := range []image.Point{{1024, 640}, {320, 200}, {23, 15}} {
 		t.Run(size.String(), func(t *testing.T) {
 			frame := image.NewRGBA(image.Rectangle{Max: size})
@@ -67,7 +67,7 @@ func TestScreenshotCursorHeaderPreservesContent(t *testing.T) {
 			if got := capturePNGCursor(captured.Bytes()); got == nil || *got != cursor {
 				t.Fatalf("lost original desktop coordinates: %v", got)
 			}
-			annotated, err := screenshotWithCursorHeader(captured.Bytes())
+			annotated, err := screenshotWithCursorFooter(captured.Bytes())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -77,9 +77,9 @@ func TestScreenshotCursorHeaderPreservesContent(t *testing.T) {
 			if err := encodeCapture(&moved, frame, &cursor); err != nil {
 				t.Fatal(err)
 			}
-			movedHeader, err := screenshotWithCursorHeader(moved.Bytes())
-			if err != nil || bytes.Equal(annotated, movedHeader) {
-				t.Fatal("pointer movement did not change visible header", err)
+			movedFooter, err := screenshotWithCursorFooter(moved.Bytes())
+			if err != nil || bytes.Equal(annotated, movedFooter) {
+				t.Fatal("pointer movement did not change visible footer", err)
 			}
 		})
 	}
@@ -94,7 +94,7 @@ func TestScreenshotCursorUnavailableAndMalformedMetadata(t *testing.T) {
 	if capturePNGCursor(plain.Bytes()) != nil {
 		t.Fatal("invented cursor for legacy capture")
 	}
-	annotated, err := screenshotWithCursorHeader(plain.Bytes())
+	annotated, err := screenshotWithCursorFooter(plain.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestScreenshotCursorUnavailableAndMalformedMetadata(t *testing.T) {
 			t.Fatalf("accepted out-of-range coordinates %v", bad)
 		}
 	}
-	if _, err := screenshotWithCursorHeader([]byte("not a PNG")); err == nil {
+	if _, err := screenshotWithCursorFooter([]byte("not a PNG")); err == nil {
 		t.Fatal("accepted non-image")
 	}
 }

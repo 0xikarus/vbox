@@ -59,23 +59,40 @@ func TestClaudeCreationDoesNotRequireOneShotCompletion(t *testing.T) {
 
 func TestOpenCodeCreationChecksModelWithoutGeneratingAnAnswer(t *testing.T) {
 	for _, tc := range []struct {
-		model, inventory string
-		valid            bool
+		model, inventory, refreshed string
+		valid, shouldRefresh        bool
 	}{
-		{"openrouter/fixture", "openrouter/fixture\nother/model\n", true},
-		{"openrouter/fixture", "openrouter/fixture-new\n", false},
-		{"stealth/removed", "openrouter/fixture\n", false},
-		{"openrouter/fixture", "openrouter/fixture\r\n", true},
+		{"openrouter/fixture", "openrouter/fixture\nother/model\n", "", true, false},
+		{"openrouter/fixture", "openrouter/fixture-new\n", "openrouter/fixture\n", true, true},
+		{"openrouter/fixture", "openrouter/fixture-new\n", "openrouter/fixture-new\n", false, true},
+		{"stealth/removed", "openrouter/fixture\n", "openrouter/fixture\n", false, true},
+		{"openrouter/fixture", "openrouter/fixture\r\n", "", true, false},
 	} {
-		p := &loginCheckProvider{results: []provider.ExecResult{{}, {Stdout: tc.inventory}}}
+		p := &loginCheckProvider{results: []provider.ExecResult{{}, {Stdout: tc.inventory}, {Stdout: tc.refreshed}}}
 		err := verifyProvisionedLogin(context.Background(), p, "service", "opencode", "", "", tc.model)
 		var rejected *loginVerificationError
 		if (err == nil) != tc.valid || (!tc.valid && !errors.As(err, &rejected)) {
 			t.Fatalf("model %s err=%v", tc.model, err)
 		}
-		if len(p.commands) != 2 || strings.Join(p.commands[1], " ") != "opencode models" {
+		wantCommands := 2
+		if tc.shouldRefresh {
+			wantCommands = 3
+		}
+		if len(p.commands) != wantCommands || strings.Join(p.commands[1], " ") != "opencode models" {
 			t.Fatalf("model check generated an answer: %v", p.commands)
 		}
+		if tc.shouldRefresh && strings.Join(p.commands[2], " ") != "opencode models --refresh" {
+			t.Fatalf("model refresh command = %v", p.commands[2])
+		}
+	}
+}
+
+func TestOpenCodeModelRefreshFailureRemainsRecoverable(t *testing.T) {
+	p := &loginCheckProvider{results: []provider.ExecResult{{}, {Stdout: "openrouter/old\n"}, {ExitCode: 1, Stderr: "secret-token"}}}
+	err := verifyProvisionedLogin(context.Background(), p, "service", "opencode", "", "", "openrouter/new")
+	var terminal *loginVerificationError
+	if err == nil || errors.As(err, &terminal) || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("unsafe or terminal refresh error: %v", err)
 	}
 }
 

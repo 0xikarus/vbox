@@ -28,6 +28,11 @@ func warpAptEntry(release []byte) (string, error) {
 	if (values["ID"] != "debian" && values["ID"] != "ubuntu") || !warpCodename.MatchString(values["VERSION_CODENAME"]) {
 		return "", fmt.Errorf("Cloudflare WARP preset requires a supported Debian or Ubuntu worker image")
 	}
+	// The standalone Blender image uses Debian sid; Cloudflare publishes its
+	// Debian client under the supported stable-suite name, not sid/forky.
+	if values["ID"] == "debian" && (values["VERSION_CODENAME"] == "forky" || values["VERSION_CODENAME"] == "sid") {
+		values["VERSION_CODENAME"] = "trixie"
+	}
 	return "deb [signed-by=" + warpKeyring + "] https://pkg.cloudflareclient.com/ " + values["VERSION_CODENAME"] + " main\n", nil
 }
 

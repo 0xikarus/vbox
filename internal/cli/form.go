@@ -15,6 +15,7 @@ type formField struct {
 	Value        string
 	Choices      []string
 	Hidden       bool
+	ReadOnly     bool
 	When         func() bool
 	Secret       bool
 	List         bool
@@ -173,6 +174,9 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 			return
 		}
 		f := rows[selected]
+		if f.ReadOnly {
+			return
+		}
 		if f.List {
 			return
 		}
@@ -351,6 +355,9 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 					continue
 				}
 				return nil
+			}
+			if rows[selected].ReadOnly {
+				continue
 			}
 			if rows[selected].Action != nil {
 				status = rows[selected].Label + "…"

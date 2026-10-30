@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,20 @@ const (
 )
 
 type Config struct {
+	// CreateStopped allows trusted provisioning of private files before any
+	// workload process starts. The fleet default remains an immediate start.
+	// StopOnSuccess preserves an intentional standalone shutdown while restarting crashes.
+	StopOnSuccess bool
+	// Hub workers restart only through durable admission control.
+	NoRestart     bool
+	BoundedLogs   bool
+	CreateStopped bool
+	MemorySwapMiB *int64
+	// PublishGateway is opt-in for a standalone web gateway. Ordinary fleet
+	// workers never publish a port through this configuration.
+	PublishGateway   bool
+	GatewayAddress   string
+	GatewayPort      int
 	Context          string
 	Host             string
 	TLSVerify        bool
@@ -106,6 +121,9 @@ func labels(owner provider.Owner) []string {
 }
 
 func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (provider.Box, error) {
+	if p.cfg.PublishGateway && (net.ParseIP(p.cfg.GatewayAddress) == nil || p.cfg.GatewayPort < 0 || p.cfg.GatewayPort > 65535) {
+		return provider.Box{}, fmt.Errorf("invalid gateway IP or port")
+	}
 	if err := provider.ValidateName(req.Name); err != nil {
 		return provider.Box{}, err
 	}
@@ -145,13 +163,33 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if err := p.verifyLabels(ctx, "network", network, req.Owner); err != nil {
 		return provider.Box{}, err
 	}
-	args := []string{"container", "create", "--name", container, "--network", network, "--mount", "type=volume,src=" + volume + ",dst=/data", "--restart", "unless-stopped"}
+	restartPolicy := "unless-stopped"
+	if p.cfg.StopOnSuccess {
+		restartPolicy = "on-failure"
+	}
+	if p.cfg.NoRestart {
+		restartPolicy = "no"
+	}
+	args := []string{"container", "create", "--name", container, "--network", network, "--mount", "type=volume,src=" + volume + ",dst=/data", "--restart", restartPolicy}
+	if p.cfg.BoundedLogs {
+		args = append(args, "--log-driver", "local", "--log-opt", "max-size=10m", "--log-opt", "max-file=3")
+	}
 	args = append(args, labelArgs...)
+	if p.cfg.PublishGateway {
+		port := ""
+		if p.cfg.GatewayPort != 0 {
+			port = strconv.Itoa(p.cfg.GatewayPort)
+		}
+		args = append(args, "--publish", net.JoinHostPort(p.cfg.GatewayAddress, port)+":8080")
+	}
 	if req.Resources.CPU > 0 {
 		args = append(args, "--cpus", strconv.FormatFloat(req.Resources.CPU, 'f', -1, 64))
 	}
 	if req.Resources.MemoryMiB > 0 {
 		args = append(args, "--memory", fmt.Sprintf("%dm", req.Resources.MemoryMiB))
+	}
+	if p.cfg.MemorySwapMiB != nil {
+		args = append(args, "--memory-swap", fmt.Sprintf("%dm", *p.cfg.MemorySwapMiB))
 	}
 	if req.Resources.PIDs > 0 {
 		args = append(args, "--pids-limit", strconv.FormatInt(req.Resources.PIDs, 10))
@@ -168,8 +206,10 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if result, err := p.run(ctx, args...); err != nil || result.ExitCode != 0 {
 		return provider.Box{}, commandError("create container", result, err)
 	}
-	if result, err := p.run(ctx, "container", "start", container); err != nil || result.ExitCode != 0 {
-		return provider.Box{}, commandError("start container", result, err)
+	if !p.cfg.CreateStopped {
+		if result, err := p.run(ctx, "container", "start", container); err != nil || result.ExitCode != 0 {
+			return provider.Box{}, commandError("start container", result, err)
+		}
 	}
 	return p.Inspect(ctx, req.Name)
 }
@@ -311,29 +351,62 @@ func (p *Provider) Resize(ctx context.Context, id string, resources provider.Res
 
 func (p *Provider) Delete(ctx context.Context, id string, owner provider.Owner) error {
 	box, err := p.Inspect(ctx, id)
-	if errors.Is(err, provider.ErrNotFound) {
-		return nil
+	containerExists := err == nil
+	if err != nil && !errors.Is(err, provider.ErrNotFound) {
+		return err
 	}
+	if containerExists {
+		if err := provider.VerifyOwner(box.Owner, owner); err != nil {
+			return err
+		}
+	}
+	container, volume, network := names(id)
+	networkExists, err := p.ownedResourceExists(ctx, "network", network, owner)
 	if err != nil {
 		return err
 	}
-	if err := provider.VerifyOwner(box.Owner, owner); err != nil {
+	volumeExists, err := p.ownedResourceExists(ctx, "volume", volume, owner)
+	if err != nil {
 		return err
 	}
-	container, volume, network := names(id)
-	if err := p.verifyLabels(ctx, "network", network, owner); err != nil {
-		return err
+	var commands [][]string
+	if containerExists {
+		commands = append(commands, []string{"container", "rm", "--force", container})
 	}
-	if err := p.verifyLabels(ctx, "volume", volume, owner); err != nil {
-		return err
+	if networkExists {
+		commands = append(commands, []string{"network", "rm", network})
 	}
-	for _, args := range [][]string{{"container", "rm", "--force", container}, {"network", "rm", network}, {"volume", "rm", volume}} {
+	if volumeExists {
+		commands = append(commands, []string{"volume", "rm", volume})
+	}
+	for _, args := range commands {
 		result, err := p.run(ctx, args...)
 		if err != nil || (result.ExitCode != 0 && !strings.Contains(string(result.Stderr), "No such")) {
 			return commandError("delete owned Docker resource", result, err)
 		}
 	}
 	return nil
+}
+
+func (p *Provider) ownedResourceExists(ctx context.Context, kind, name string, owner provider.Owner) (bool, error) {
+	result, err := p.run(ctx, kind, "inspect", name, "--format", "{{json .Labels}}")
+	if err != nil {
+		return false, err
+	}
+	if result.ExitCode != 0 {
+		message := strings.ToLower(string(result.Stderr))
+		missing := strings.Contains(message, "no such volume") || strings.Contains(message, "no such network") || strings.Contains(message, "no such object") || (kind == "network" && strings.Contains(message, "network "+name+" not found"))
+		if missing {
+			return false, nil
+		}
+		return false, commandError("inspect owned "+kind, result, nil)
+	}
+	var values map[string]string
+	if err = json.Unmarshal(bytes.TrimSpace(result.Stdout), &values); err != nil {
+		return false, fmt.Errorf("invalid resource ownership metadata")
+	}
+	err = provider.VerifyOwner(provider.Owner{AccountID: values[labelAccount], BoxID: values[labelBox], RunID: values[labelRun], Lease: values[labelLease]}, owner)
+	return err == nil, err
 }
 
 func (p *Provider) verifyLabels(ctx context.Context, kind, name string, owner provider.Owner) error {
@@ -400,11 +473,25 @@ func (p *Provider) Deploy(ctx context.Context, id, image string) (provider.Box, 
 	if err := json.Unmarshal(details.Stdout, &rows); err != nil || len(rows) != 1 {
 		return provider.Box{}, fmt.Errorf("decode container command: %w", err)
 	}
+	// Resolve the replacement image before removing a recoverable container.
+	local, localErr := p.run(ctx, "image", "inspect", image)
+	if localErr != nil || local.ExitCode != 0 {
+		pulled, pullErr := p.run(ctx, "image", "pull", image)
+		if pullErr != nil || pulled.ExitCode != 0 {
+			return provider.Box{}, commandError("pull replacement image", pulled, pullErr)
+		}
+	}
+	environment := map[string]string{}
+	for _, entry := range rows[0].Config.Env {
+		if key, value, ok := strings.Cut(entry, "="); ok {
+			environment[key] = value
+		}
+	}
 	result, err := p.run(ctx, "container", "rm", "--force", container)
 	if err != nil || result.ExitCode != 0 {
 		return provider.Box{}, commandError("remove old container", result, err)
 	}
-	return p.Create(ctx, provider.CreateRequest{Name: id, Image: image, Resources: box.Resources, Owner: box.Owner, Command: rows[0].Config.Cmd})
+	return p.Create(ctx, provider.CreateRequest{Name: id, Image: image, Resources: box.Resources, Owner: box.Owner, Command: rows[0].Config.Cmd, Env: environment})
 }
 
 func (p *Provider) Connection(_ context.Context, id string) (provider.Connection, error) {

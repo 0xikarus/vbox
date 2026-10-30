@@ -4501,10 +4501,14 @@ function pairTileStatus(tile,mode,label){
 
  /* ---------- auth ---------- */
  function showLogin(message=''){providersNav?.setOwner(false);$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
+ function showChatShell(){
+  $('#login').hidden=true;$('#login-error').textContent='';$('#error').textContent='';$('#logout').hidden=false;appEl.hidden=false;applySidebarWidth();applyThreadWidth();
+  doodle('Loading chats…');
+ }
  $('#login').onsubmit=async event=>{
   event.preventDefault();
   $('#login-error').textContent='';
-  try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){showLogin(e.message)}
+  try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();owner=false;providersNav?.setOwner(false);document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=true);showChatShell();await enter()}catch(e){showLogin(e.message)}
  };
  $('#logout').onclick=async()=>{
   cancelHeartbeatCommand(false);
@@ -4533,7 +4537,7 @@ function pairTileStatus(tile,mode,label){
  };
  async function enter(initial=false){
   try{
-   const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';await loadChatGroups(who.accountId||'default');await loadReadMarkers();
+   const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';showChatShell();await loadChatGroups(who.accountId||'default');await loadReadMarkers();
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
    window.VMBoxWorkspaceNav?.updateUsagePill($('#usage-toggle'),null,owner);
    providersNav?.setOwner(owner);
@@ -4541,8 +4545,6 @@ function pairTileStatus(tile,mode,label){
    $('#commands-toggle').hidden=!owner;
    $('#ai-settings-toggle').hidden=!owner;
    $('#roles-toggle').hidden=!owner;
-   $('#login').hidden=true;$('#login-error').textContent='';$('#error').textContent='';$('#logout').hidden=false;appEl.hidden=false;applySidebarWidth();applyThreadWidth();
-   doodle('Loading chats…');
    try{await loadBoxes();if(owner)initInspectPrototype()}finally{doodle('')}
    const params=new URLSearchParams(location.hash.slice(1)),id=params.get('box'),pair=params.get('pair');
    if(pair&&owner){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match)await openPair(match)}
@@ -4552,7 +4554,7 @@ function pairTileStatus(tile,mode,label){
    if(owner){clearInterval(usageTimer);void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)}
    schedule();renderInstallState();renderPushState();void checkPushState({repair:true});
    clearInterval(readSyncTimer);readSyncTimer=setInterval(()=>void loadReadMarkers(),30000);
-  }catch(e){showLogin(initial&&e.message==='Please log in to the controller.'?'':e.message)}
+  }catch(e){doodle('');if(!$('#login').hidden||(initial&&appEl.hidden))showLogin(initial&&e.message==='Please log in to the controller.'?'':e.message);else $('#error').textContent='Could not load chats. Use Refresh to retry. '+e.message}
  }
  addEventListener('pagehide',()=>{
   if(pendingReadMarkers.size)try{void fetch('/v1/chat-read-markers',{method:'PUT',credentials:'same-origin',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(pendingReadMarkers))})}catch{}
@@ -5141,7 +5143,7 @@ let usagePending=null,usageGeneration=0;
    const heading=mk('div');heading.className='credential-slot-heading';heading.append(mk('strong',title));
    const detail=mk('div',credentialLabel(ref));detail.className='credential-slot-account';
    const queued=boxCredentialState.pendingSet||(boxCredentialState.pending||[]).length>0;
-   const note=mk('p',queued&&credentialIdentity(ref)!==credentialIdentity(saved)?'Pending restart · applies on next start':ref?'Applied':'No account connected');note.className='credential-slot-note';
+   const note=mk('p',queued&&boxCredentialTarget?.state==='attaching'?'Applying during startup':queued&&credentialIdentity(ref)!==credentialIdentity(saved)?'Pending restart · applies on next start':ref?'Applied':'No account connected');note.className='credential-slot-note';
    const actions=mk('div');actions.className='credential-slot-actions';
    const change=mk('button','Change');change.type='button';change.className='credential-slot-change';change.setAttribute('aria-label','Change '+title);change.disabled=boxCredentialBusy||!options.length;
    if(!options.length)change.title='Save a '+title+' profile in Box settings first';

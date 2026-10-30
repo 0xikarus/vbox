@@ -111,7 +111,7 @@ func run() error {
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 		defer cancel()
 		if args[0] == "desktop-terminal-attach" {
-			return boxruntime.NativeAttach(ctx, runtime.Root, args[1], args[2], args[3])
+			return boxruntime.NativeDesktopAttach(ctx, runtime.Root, args[1], args[2], args[3])
 		}
 		return boxruntime.RunDesktopTerminal(ctx, runtime.Root, args[1], args[2], args[3])
 	case "desktop-browser":

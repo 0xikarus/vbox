@@ -6,7 +6,8 @@ package controller
 // recreating it. An agent profile also selects the matching harness. While the
 // agent slot changes on a running box stop stale agent sessions immediately;
 // GitHub-only edits leave the agent session alone. While the box is hibernated
-// or detached, the selection is queued for the next start. Managed
+// or detached, the selection is queued for the next start. During attachment,
+// a queued selection may be replaced before the box becomes ready. Managed
 // instructions and ordinary workspace files are not changed.
 
 import (
@@ -15,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
@@ -195,20 +197,20 @@ func (s *Server) putBoxLoginProfiles(w http.ResponseWriter, r *http.Request, p P
 			state.Note = fmt.Sprintf("Agent login applied. %s is now the box harness; stale agent conversations were closed so the next message starts with these credentials.", selectedProfileAgent(box.DefaultAgent, request.Profiles))
 		}
 		writeJSON(w, http.StatusOK, state)
-	case v1.LogicalBoxHibernated, v1.LogicalBoxDetached:
+	case v1.LogicalBoxHibernated, v1.LogicalBoxDetached, v1.LogicalBoxAttaching:
 		encoded, err := json.Marshal(request.Profiles)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("could not encode the profile selection"))
 			return
 		}
 		defaultAgent := selectedProfileAgent(box.DefaultAgent, request.Profiles)
-		result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE logical_boxes SET default_agent=$4,metadata=jsonb_set(jsonb_set(metadata,'{pendingLoginProfiles}',$3::jsonb),'{pendingLoginProfilesSet}','true'::jsonb),updated_at=now() WHERE account_id=$1 AND id=$2 AND state IN ('hibernated','detached')`, p.AccountID, box.ID, encoded, defaultAgent)
+		result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE logical_boxes SET default_agent=$4,metadata=jsonb_set(jsonb_set(metadata,'{pendingLoginProfiles}',$3::jsonb),'{pendingLoginProfilesSet}','true'::jsonb),updated_at=now() WHERE account_id=$1 AND id=$2 AND state IN ('hibernated','detached','attaching')`, p.AccountID, box.ID, encoded, defaultAgent)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("could not queue the profile selection"))
 			return
 		}
 		if changed, _ := result.RowsAffected(); changed != 1 {
-			writeError(w, http.StatusConflict, fmt.Errorf("box state changed; retry when the box is stopped"))
+			writeError(w, http.StatusConflict, fmt.Errorf("box state changed; retry after its current transition"))
 			return
 		}
 		state, err = s.boxLoginProfileState(r.Context(), p.AccountID, box.ID)
@@ -216,7 +218,10 @@ func (s *Server) putBoxLoginProfiles(w http.ResponseWriter, r *http.Request, p P
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("credential references unavailable"))
 			return
 		}
-		state.Note = "Credential changes saved and will be applied on the next start."
+		state.Note = "Credential changes saved and will be applied during startup."
+		if box.State == v1.LogicalBoxHibernated || box.State == v1.LogicalBoxDetached {
+			state.Note = "Credential changes saved and will be applied on the next start."
+		}
 		writeJSON(w, http.StatusOK, state)
 	default:
 		writeError(w, http.StatusConflict, fmt.Errorf("wait for the box to finish its current transition, then edit imported profiles"))
@@ -326,7 +331,7 @@ func (s *Server) provisionPendingBoxProfiles(ctx context.Context, prov provider.
 	if err := validateBoxProfileSelection(state.Pending); err != nil {
 		return fmt.Errorf("queued login profiles are no longer valid; edit imported profiles and try again: %w", err)
 	}
-	slots := changedBoxProfileSlots(state.Imported, state.Pending)
+	slots := pendingProfileSlots(state.Imported, state.Pending)
 	changedRefs := make([]v1.LoginProfileRef, 0, len(state.Pending))
 	for _, ref := range state.Pending {
 		if slots[profileRefSlot(ref)] {
@@ -344,9 +349,15 @@ func (s *Server) provisionPendingBoxProfiles(ctx context.Context, prov provider.
 	}
 	defer tx.Rollback()
 	var id string
-	err = tx.QueryRowContext(transferCtx, `SELECT id::text FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state IN ('attaching','running') AND slot_id=$3 AND assignment_generation=$4 AND fencing_token=$5 AND volume_id=$6 FOR UPDATE`, accountID, assignment.Box.ID, assignment.Slot.ID, assignment.Box.AssignmentGeneration, assignment.FencingToken, assignment.Box.VolumeID).Scan(&id)
+	var lockedPending []byte
+	var lockedPendingSet bool
+	err = tx.QueryRowContext(transferCtx, `SELECT id::text,COALESCE(metadata->'pendingLoginProfiles','[]'::jsonb),COALESCE((metadata->>'pendingLoginProfilesSet')::boolean,false) FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state IN ('attaching','running') AND slot_id=$3 AND assignment_generation=$4 AND fencing_token=$5 AND volume_id=$6 FOR UPDATE`, accountID, assignment.Box.ID, assignment.Slot.ID, assignment.Box.AssignmentGeneration, assignment.FencingToken, assignment.Box.VolumeID).Scan(&id, &lockedPending, &lockedPendingSet)
 	if err != nil {
 		return fmt.Errorf("credential destination assignment changed")
+	}
+	var currentPending []v1.LoginProfileRef
+	if json.Unmarshal(lockedPending, &currentPending) != nil || lockedPendingSet != state.PendingSet || !slices.Equal(currentPending, state.Pending) {
+		return fmt.Errorf("queued login profiles changed during allocation; retry with the current selection")
 	}
 	defaultAgent := selectedProfileAgent(assignment.Box.DefaultAgent, state.Pending)
 	if err := s.transferProfileFilesForSlots(transferCtx, tx, prov, accountID, assignment.Box.ID, assignment.Slot.ServiceID, assignment.Box.VolumeID, state.Pending, defaultAgent, slots); err != nil {
@@ -358,4 +369,17 @@ func (s *Server) provisionPendingBoxProfiles(ctx context.Context, prov provider.
 		}
 	}
 	return tx.Commit()
+}
+
+func pendingProfileSlots(imported, pending []v1.LoginProfileRef) map[string]bool {
+	slots := changedBoxProfileSlots(imported, pending)
+	// A failed transfer may have written the rejected profile's files before its
+	// database transaction rolled back. Re-selecting the recorded profile must
+	// restore its actual files, even though the references compare equal.
+	if slices.Equal(imported, pending) {
+		for _, ref := range pending {
+			slots[profileRefSlot(ref)] = true
+		}
+	}
+	return slots
 }

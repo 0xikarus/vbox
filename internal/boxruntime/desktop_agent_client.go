@@ -17,6 +17,8 @@ import (
 )
 
 type DesktopAgentConfig struct {
+	// Mode explicitly opts into the private standalone loopback transport.
+	Mode       string `json:"mode,omitempty"`
 	Controller string `json:"controller"`
 	Assignment string `json:"assignment"`
 	Token      string `json:"token"`
@@ -53,7 +55,8 @@ func readDesktopAgentConfig(assignment string) (DesktopAgentConfig, error) {
 		return config, fmt.Errorf("desktop agent credential invalid")
 	}
 	u, err := url.Parse(config.Controller)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+	local := err == nil && config.Mode == "standalone" && u.Scheme == "http" && u.Hostname() == "127.0.0.1" && (u.Path == "" || u.Path == "/")
+	if err != nil || (u.Scheme != "https" && !local) || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return config, fmt.Errorf("secure controller endpoint required")
 	}
 	return config, nil

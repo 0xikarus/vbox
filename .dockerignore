@@ -1,6 +1,7 @@
 *
 !tmux.conf
 !Dockerfile
+!Dockerfile.standalone
 !.dockerignore
 !scripts/
 !scripts/worker-entrypoint.sh
@@ -11,3 +12,5 @@
 !cmd/**
 !internal/
 !internal/**
+
+!Dockerfile.hub

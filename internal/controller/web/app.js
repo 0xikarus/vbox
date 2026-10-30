@@ -230,7 +230,12 @@ async function deleteBoxWhenReady(box,onWait){
  }
 }
 // Restore same-tab navigation without storing credentials in JavaScript storage.
-async function restoreLogin(){try{await api('/v1/browser-session');await refresh();$('#login').hidden=true;$('#app').hidden=false;openProfileFromLink()}catch{}}
+async function enterManagement(){
+ ownerTools=false;workspaceNav?.setOwner(false);document.querySelectorAll('[data-owner]:not(.modal)').forEach(node=>node.hidden=true);
+ $('#login').hidden=true;$('#login-error').textContent='';$('#app').hidden=false;
+ try{await refresh();openProfileFromLink()}catch(err){if($('#login').hidden){$('#error').className='flash error';$('#error').textContent='Could not load controller data. Use Refresh to retry. '+err.message}}
+}
+async function restoreLogin(){try{await api('/v1/browser-session');await enterManagement()}catch{}}
 window.addEventListener('DOMContentLoaded',restoreLogin);
 function dataTable(headers,rows){const wrap=node('div');wrap.className='table-wrap';const table=node('table');table.className='markets';const head=node('tr');for(const h of headers)head.append(node('th',h));table.append(head);for(const values of rows){const row=node('tr');row.className='row';for(const value of values){const cell=node('td');cell.append(tableText(value));row.append(cell)}table.append(row)}wrap.append(table);return wrap}
 function kpi(pairs){const k=node('div');k.className='kpi';for(const [label,value] of pairs){const s=node('span',label+' ');s.append(node('b',String(value)));k.append(s)}return k}
@@ -857,7 +862,7 @@ async function refresh(){
  renderProviderTypes(schema);renderNotifications(notifications);defaults=null;
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent=d.inferred?'Choose a default provider. Currently using '+d.provider+' / '+d.providerCredential+'.':'Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent=providers.length?'Choose a default provider. Open a pool and select Use as default.':'Choose a default provider. Add one to get started.'}}
 }
-$('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#login-error').textContent='';$('#app').hidden=false;openProfileFromLink()}));
+$('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await enterManagement()}));
 $('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;renderOwnerDiskWarning();roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;$('#role-editor-inline').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());closeProviderPanel();$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
 $('#refresh').addEventListener('click',action(refresh));
 $('#logout').addEventListener('click',()=>mailPanel?.setOwner(false));
@@ -1090,7 +1095,7 @@ function renderBoxCredentials(){
   const heading=node('div');heading.className='credential-slot-heading';heading.append(node('strong',title));
   const account=node('div',boxCredentialLabel(ref));account.className='credential-slot-account';
   const queued=boxCredentialState.pendingSet||(boxCredentialState.pending||[]).length>0;
-  const note=node('p',queued&&JSON.stringify(ref)!==JSON.stringify(saved)?'Pending restart · applies on next start':ref?'Applied':'No account connected');note.className='credential-slot-note';
+  const note=node('p',queued&&boxCredentialTarget?.state==='attaching'?'Applying during startup':queued&&JSON.stringify(ref)!==JSON.stringify(saved)?'Pending restart · applies on next start':ref?'Applied':'No account connected');note.className='credential-slot-note';
   const actions=node('div');actions.className='credential-slot-actions';
   const change=node('button','Change');change.type='button';change.className='credential-slot-change';change.setAttribute('aria-label','Change '+title);change.disabled=boxCredentialBusy||!options.length;
   if(!options.length)change.title='Save a '+title+' profile first';

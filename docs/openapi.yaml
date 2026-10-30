@@ -754,7 +754,7 @@ paths:
   /v1/logical-boxes/{id}/login-profiles:
     put:
       summary: Replace a box's full imported credential reference list
-      description: Include the unchanged slot when changing or removing the other. An empty list clears both portable credential slots. Running boxes apply changed slots immediately; hibernated or detached boxes queue the full selection for their next start.
+      description: Include the unchanged slot when changing or removing the other. An empty list clears both portable credential slots. Running boxes apply changed slots immediately; hibernated or detached boxes queue the full selection for their next start. Attaching boxes can replace a queued selection, including one that failed credential verification; the next attach attempt restores and verifies the new selection before readiness.
       parameters: [{$ref: '#/components/parameters/ID'}]
       requestBody:
         required: true

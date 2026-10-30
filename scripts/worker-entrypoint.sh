@@ -77,7 +77,18 @@ if [[ -f /var/lib/vmbox-worker/config.json && -x /usr/local/bin/vmbox-worker-age
 fi
 
 if [[ $# -gt 0 ]]; then
-	exec sudo -n -H -u vmbox -- env HOME=/data/home USER=vmbox LOGNAME=vmbox SHELL=/bin/bash PATH="/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:$PATH" "$@"
+	standalone_env=()
+	if [[ "${1##*/}" == vmbox-standalone ]]; then
+		/usr/local/bin/vmbox-standalone --prepare-tools
+	fi
+	if [[ "${1##*/}" == vmbox-standalone ]]; then
+		# sudo intentionally strips inherited credentials. Forward only the
+		# standalone instance's explicit, non-secret launcher settings.
+		for setting in VMBOX_TOOLS VMBOX_AGENT VMBOX_MODEL_URL VMBOX_MODEL VMBOX_MODEL_VISION VMBOX_CHROMIUM_NO_SANDBOX VMBOX_WEB_BASE_PATH VMBOX_HUB_MANAGED; do
+			if [[ -v "$setting" ]]; then standalone_env+=("$setting=${!setting}"); fi
+		done
+	fi
+	exec sudo -n -H -u vmbox -- env HOME=/data/home USER=vmbox LOGNAME=vmbox SHELL=/bin/bash PATH="/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:$PATH" "${standalone_env[@]}" "$@"
 fi
 
 cd /

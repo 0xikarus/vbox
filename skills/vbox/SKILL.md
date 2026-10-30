@@ -18,7 +18,7 @@ hibernate sibling work, or delete data.
 
 ## Install and authenticate
 
-From a checkout of `https://github.com/0xikarus/vmbox-service`:
+From a checkout of `https://github.com/0xikarus/vbox`:
 
 ```bash
 ./install.sh

@@ -122,6 +122,16 @@ func NativeSessions(ctx context.Context, expected string) (v1.SessionInventory, 
 }
 
 func NativeAttach(ctx context.Context, root, assignment, id, incarnation string) error {
+	return nativeAttach(ctx, root, assignment, id, incarnation, false)
+}
+
+// A standalone desktop mirrors the agent while the browser terminal controls
+// its dimensions. This avoids two viewers continually resizing one application.
+func NativeDesktopAttach(ctx context.Context, root, assignment, id, incarnation string) error {
+	config, err := readDesktopAgentConfig(assignment)
+	return nativeAttach(ctx, root, assignment, id, incarnation, err == nil && config.Mode == "standalone")
+}
+func nativeAttach(ctx context.Context, root, assignment, id, incarnation string, ignoreSize bool) error {
 	if !nativeAssignment.MatchString(assignment) || !nativeID.MatchString(id) {
 		return fmt.Errorf("invalid attach identity")
 	}
@@ -146,7 +156,11 @@ func NativeAttach(ctx context.Context, root, assignment, id, incarnation string)
 	// The check and attach execute in the same tmux server command queue. IDs
 	// are never reused within a server. A new allocation installs a new fence.
 	condition := "#{&&:#{==:#{@vmbox_assignment}," + assignment + "},#{==:#{@vmbox_server_incarnation}," + parts[1] + "}}"
-	cmd := exec.CommandContext(ctx, "tmux", "if-shell", "-F", "-t", id, condition, "attach-session -t '"+id+"'", "display-message 'assignment changed; reconnect'")
+	attach := "attach-session "
+	if ignoreSize {
+		attach += "-f ignore-size "
+	}
+	cmd := exec.CommandContext(ctx, "tmux", "if-shell", "-F", "-t", id, condition, attach+"-t '"+id+"'", "display-message 'assignment changed; reconnect'")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

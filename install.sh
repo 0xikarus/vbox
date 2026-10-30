@@ -5,6 +5,11 @@ bin="${VMBOX_INSTALL_DIR:-$HOME/.local/bin}"
 rc="${VMBOX_SHELL_RC:-$HOME/.bashrc}"
 update_rc=1
 uninstall=0
+standalone=0
+standalone_host=""
+standalone_image="vbox-standalone:dev"
+image_option=0
+standalone_docker=(docker)
 build_go_binary() {
   local output="$1" package="$2" target_os="$3" target_arch="$4" ldflags="${5:-}"
   local -a build_args=(build -buildvcs=false -trimpath)
@@ -38,11 +43,40 @@ while (($#)); do
  --no-shell-update) update_rc=0 ;;
  --shell-rc) shift; rc="${1:?Missing shell rc path}" ;;
  --uninstall) uninstall=1 ;;
- -h|--help) echo 'Usage: install.sh [--no-shell-update] [--shell-rc PATH] [--uninstall]'; exit ;;
+ --standalone) standalone=1 ;;
+ --host) shift; standalone_host="${1:?Missing SSH target}" ;;
+ --image) shift; standalone_image="${1:?Missing standalone image tag}"; image_option=1 ;;
+ -h|--help) echo 'Usage: install.sh [--standalone [--host SSH_ALIAS] [--image TAG]] [--no-shell-update] [--shell-rc PATH] [--uninstall]'; exit ;;
  *) echo "Unknown option: $1" >&2; exit 2 ;;
  esac
  shift
 done
+if (( ! standalone )) && { [[ -n "$standalone_host" ]] || ((image_option)); }; then
+ echo '--host and --image require --standalone' >&2
+ exit 2
+fi
+if ((standalone && uninstall)); then
+ echo 'Choose --standalone or --uninstall' >&2
+ exit 2
+fi
+if ((standalone)); then
+ command -v docker >/dev/null 2>&1 || { echo 'Docker is required for standalone installation.' >&2; exit 1; }
+ if [[ -n "$standalone_host" ]]; then
+  if [[ "$standalone_host" == -* || "$standalone_host" == *[/[:space:]]* ]]; then
+   echo '--host must be an SSH config alias or user@host' >&2; exit 2
+  fi
+  standalone_docker+=(--host "ssh://$standalone_host")
+ fi
+ if [[ -z "$standalone_image" || "$standalone_image" == -* ]]; then
+  echo 'Invalid standalone image tag' >&2; exit 2
+ fi
+ target_platform="$("${standalone_docker[@]}" info --format '{{.OSType}}/{{.Architecture}}')" || {
+  echo 'Cannot reach the target Docker engine. Start Docker or check the SSH target.' >&2; exit 1;
+ }
+ case "$target_platform" in linux/amd64|linux/x86_64|linux/arm64|linux/aarch64) ;;
+ *) echo 'Standalone requires a Linux amd64 or arm64 Docker engine.' >&2; exit 1 ;;
+ esac
+fi
 if ((uninstall)); then
  rm -f -- "$bin/vbox" "$bin/vmbox"
  echo 'Removed vbox CLI (and its vmbox alias). Contexts, credentials, legacy bundles, and remote resources were preserved.'
@@ -54,6 +88,10 @@ mkdir -p "$bin"
 output="$(mktemp "$bin/.vmbox-build.XXXXXX")"
 trap 'rm -f -- "$output"' EXIT
 build_go_binary "$output" ./cmd/vbox "$cli_os" "$cli_arch"
+if ((standalone)); then
+ echo "Building standalone image $standalone_image on ${standalone_host:-the current Docker engine}…"
+ "${standalone_docker[@]}" build --file "$root/Dockerfile.standalone" --tag "$standalone_image" "$root"
+fi
 chmod 755 "$output"
 mv -f -- "$output" "$bin/vbox"
 # Compatibility alias: the CLI was previously installed as `vmbox`.
@@ -66,7 +104,15 @@ if ((update_rc)); then
   printf '\nexport PATH=%s:$PATH # vmbox-service\n' "$quoted_bin" >> "$rc"
  fi
 fi
-echo "Installed $bin/vbox (controller-only; no provider tools or deployment bundle)"
+echo "Installed $bin/vbox"
 echo "Compatibility alias: $bin/vmbox -> vbox"
-echo 'Configure: vbox connect https://YOUR-CONTROLLER'
-echo 'Provide controller authentication securely through VMBOX_CONTROLLER_TOKEN.'
+if ((standalone)); then
+ echo "Standalone image ready: $standalone_image"
+ printf 'Create an instance: vbox standalone create my-box --mode container'
+ [[ -z "$standalone_host" ]] || printf ' --host %q' "$standalone_host"
+ [[ "$standalone_image" == vbox-standalone:dev ]] || printf ' --image %q' "$standalone_image"
+ printf '\n'
+else
+ echo 'Configure: vbox connect https://YOUR-CONTROLLER'
+ echo 'Provide controller authentication securely through VMBOX_CONTROLLER_TOKEN.'
+fi

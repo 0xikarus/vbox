@@ -30,6 +30,24 @@ the original slot and volume can be verified. The retry keeps the original
 assignment fence and volume. A failed initial creation with a placeholder
 volume is not eligible for this path.
 
+## Single-host hub
+
+`internal/hub` owns the SQLite registry, admission policy, queue, host manager,
+HTTP API and authenticated worker proxy. `internal/instance` is the lifecycle
+module shared with standalone CLI; `internal/cli/hub*.go` supplies installation
+and API commands. `Dockerfile.hub` packages only the trusted manager and Docker
+client. Workers use `Dockerfile.standalone`, retain their own native runtime and
+never receive the host Docker socket or hub credentials. Hub autostart is opt-in
+(`hub install --autostart`); `hub up` starts an installed manager manually.
+See [HUB.md](HUB.md).
+
+Hub creation must durably reserve resources before starting Docker and inventory
+all known identities before admitting after a restart. Preserve ownership checks,
+private loopback worker ports, box-scoped browser storage, old-password checks,
+viewer revocation, idempotent initial-goal delivery, and stopped/deleted intent.
+Disk headroom is a periodic guard, not a volume quota. Tests must use a separate
+hub directory and explicitly labeled disposable workers.
+
 ## Code map
 
 `Dockerfile` preinstalls Python/pip/venv/pipx, pinned uv/uvx, Node/npm/npx,
@@ -529,9 +547,10 @@ A completed login/provider preflight that rejects the selected profile or model
 ends creation with `state=failed`, `restorationState=creation-failed`, and a safe
 failure reason. The fenced slot stays draining and the volume is retained;
 reconciliation must not reinstall the CLI and replay this failed creation.
-Transport interruptions remain recoverable. OpenCode validates the effective copied model against `opencode models`; it
-does not generate an answer during setup. This catches unavailable model IDs
-without blocking box startup on inference latency. Provider credit/quota and
+Transport interruptions remain recoverable. OpenCode validates the effective
+copied model against `opencode models` and refreshes the model cache once if it
+is missing. It does not generate an answer during setup. This catches unavailable
+model IDs without blocking box startup on inference latency. Provider credit/quota and
 request failures remain visible when the agent is used. Raw CLI output is never
 returned in verification errors. Chat shows
 the failure reason. Choose a working profile/model before creating a replacement;

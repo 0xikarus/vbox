@@ -126,7 +126,21 @@ export default {
           return;
         }
         submitted.add(input.messageID);
-        const result = await api.client.session.promptAsync({sessionID, parts: input.parts});
+        // Standalone owner selection affects only the next web-chat submission.
+        // Fleet sessions and ordinary TUI prompts keep their native selection.
+        let variant;
+        try {
+          const config = JSON.parse(await fs.readFile(path.join(os.homedir(), '.config/vmbox/desktop-agent.json'), 'utf8'));
+          if (config.mode === 'standalone') {
+            const setting = JSON.parse(await fs.readFile(path.join(os.homedir(), '.config/vmbox/standalone-thinking.json'), 'utf8'));
+            const caps = JSON.parse(await fs.readFile(path.join(os.homedir(), '.config/vmbox/model-capabilities.json'), 'utf8'));
+            if (Array.isArray(caps.efforts)) {
+              const effort = caps.efforts.includes(setting.mode) ? setting.mode : caps.default;
+              if (caps.efforts.includes(effort)) variant = 'thinking-' + effort;
+            }
+          }
+        } catch {}
+        const result = await api.client.session.promptAsync({sessionID, parts: input.parts, ...(variant ? {variant} : {})});
         if (result.error) throw Error('Prompt submission failed');
         for (let attempt = 0; attempt < 50; attempt++) {
           const current = visibleSession();

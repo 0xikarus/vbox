@@ -113,6 +113,12 @@ parsed:
 		}
 		return nil
 	}
+	if args[0] == "standalone" {
+		return a.standalone(ctx, args[1:])
+	}
+	if args[0] == "hub" {
+		return a.hub(ctx, args[1:])
+	}
 	file, err := config.Load(a.ConfigPath)
 	if err != nil {
 		return err

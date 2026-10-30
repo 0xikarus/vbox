@@ -59,15 +59,16 @@ func verifyProvisionedLogin(ctx context.Context, p provider.Provider, service, a
 		if err != nil || r.ExitCode != 0 || strings.TrimSpace(r.Stdout) == "" {
 			return fmt.Errorf("OpenCode model availability check could not complete; retry when the worker is reachable")
 		}
-		found := false
-		for _, id := range strings.Split(r.Stdout, "\n") {
-			if strings.TrimSpace(id) == model {
-				found = true
-				break
+		if !openCodeInventoryContains(r.Stdout, model) {
+			// OpenCode's cached models.dev inventory can lag behind a provider's
+			// live catalog. Refresh it once before rejecting a newly added model.
+			r, err = p.Exec(ctx, service, []string{"opencode", "models", "--refresh"}, provider.ExecOptions{})
+			if err != nil || r.ExitCode != 0 || strings.TrimSpace(r.Stdout) == "" {
+				return fmt.Errorf("OpenCode model availability check could not complete; retry when the worker is reachable")
 			}
-		}
-		if !found {
-			return &loginVerificationError{"selected OpenCode model is unavailable; choose an available provider/model in the profile settings"}
+			if !openCodeInventoryContains(r.Stdout, model) {
+				return &loginVerificationError{"selected OpenCode model is unavailable; choose an available provider/model in the profile settings"}
+			}
 		}
 	}
 	// Claude's auth status is sufficient for its interactive TUI. Codex keeps
@@ -89,4 +90,13 @@ func verifyProvisionedLogin(ctx context.Context, p provider.Provider, service, a
 		}
 	}
 	return nil
+}
+
+func openCodeInventoryContains(inventory, model string) bool {
+	for _, id := range strings.Split(inventory, "\n") {
+		if strings.TrimSpace(id) == model {
+			return true
+		}
+	}
+	return false
 }

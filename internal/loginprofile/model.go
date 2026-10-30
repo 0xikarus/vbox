@@ -298,3 +298,13 @@ func normalizeJSONC(data []byte) []byte {
 	}
 	return clean
 }
+
+// OpenCodeJSON converts a copied JSON/JSONC configuration without changing its
+// provider credentials, selected model or other values.
+func OpenCodeJSON(data []byte) ([]byte, error) {
+	var config map[string]json.RawMessage
+	if json.Unmarshal(normalizeJSONC(data), &config) != nil || config == nil {
+		return nil, fmt.Errorf("invalid OpenCode configuration")
+	}
+	return json.MarshalIndent(config, "", "  ")
+}

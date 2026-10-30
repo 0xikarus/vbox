@@ -1,0 +1,42 @@
+# The standalone image supports amd64 and arm64 and contains no model server.
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS standalone-build
+ARG TARGETOS TARGETARCH
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd ./cmd
+COPY internal ./internal
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /out/vmbox-standalone ./cmd/vmbox-standalone
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /out/vmbox-runtime ./cmd/vmbox-runtime
+
+FROM node:22-bookworm-slim AS standalone-node
+# Debian sid provides native Blender 5 packages on both amd64 and arm64.
+# Keep Node pinned to the same supported release while using that userspace.
+FROM debian:sid-slim AS standalone-base
+COPY --from=standalone-node /usr/local/ /usr/local/
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8 HOME=/data/home
+ARG OPENCODE_VERSION=1.18.32
+ARG CLAUDE_VERSION=2.1.282
+ARG CODEX_VERSION=0.157.0
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  bash ca-certificates curl git jq openssh-client python3 sudo tini tmux util-linux \
+  tigervnc-standalone-server openbox chromium chromium-sandbox xdotool xprintidle \
+  xterm dbus-x11 fonts-dejavu-core tint2 pcmanfm xdg-user-dirs adwaita-icon-theme libgl1-mesa-dri \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --gid 10001 vmbox \
+  && useradd --uid 10001 --gid vmbox --home-dir /data/home --shell /bin/bash --no-create-home vmbox \
+  && mkdir -p /data/home /data/workspace /data/.vmbox \
+  && chown -R vmbox:vmbox /data && chmod 0700 /data/home
+RUN npm install --global opencode-ai@${OPENCODE_VERSION} @anthropic-ai/claude-code@${CLAUDE_VERSION} @openai/codex@${CODEX_VERSION} \
+  && rm -rf /root/.npm /root/.cache /root/.config /root/.claude /tmp/* \
+  && chown -R vmbox:vmbox /data
+COPY tmux.conf /etc/vmbox/tmux.conf
+COPY scripts/worker-entrypoint.sh /usr/local/bin/vmbox-entrypoint
+COPY scripts/worker-agent-trust.sh /usr/local/bin/worker-agent-trust.sh
+ENV VMBOX_CHROMIUM_NO_SANDBOX=true
+WORKDIR /data/workspace
+
+FROM standalone-base AS standalone
+COPY --from=standalone-build /out/ /usr/local/bin/
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/usr/local/bin/vmbox-entrypoint"]
+CMD ["vmbox-standalone"]

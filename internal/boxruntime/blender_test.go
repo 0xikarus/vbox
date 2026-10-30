@@ -191,3 +191,39 @@ printf 'pipx %s\n' "$*" >> "$PACKAGE_LOG"
 	}
 	t.Setenv("FAKE_BLENDER_MCP", server)
 }
+
+func TestStandaloneRepairsBridgeAfterPythonImageUpgrade(t *testing.T) {
+	home, bin := t.TempDir(), t.TempDir()
+	server := filepath.Join(home, ".local/bin/blender-mcp")
+	if err := os.MkdirAll(filepath.Dir(server), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(server, []byte("#!/removed/python3.11\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(t.TempDir(), "repair")
+	t.Setenv("PATH", bin)
+	t.Setenv("REPAIR_LOG", log)
+	if err := os.WriteFile(filepath.Join(bin, "pipx"), []byte("#!/bin/sh\nprintf '%s' \"$*\" > \"$REPAIR_LOG\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := repairStandaloneBlenderBridge(context.Background(), home, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(log)
+	if err != nil || string(b) != "reinstall --python python3 blender-mcp" {
+		t.Fatalf("missing interpreter repair: %s %v", b, err)
+	}
+	if err := os.Remove(log); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(server, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := repairStandaloneBlenderBridge(context.Background(), home, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Fatal("healthy bridge must be retained")
+	}
+}

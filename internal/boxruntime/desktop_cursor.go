@@ -20,7 +20,7 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-const screenshotHeaderHeight = 24
+const screenshotFooterHeight = 24
 const cursorPNGKeyword = "vbox-cursor\x00"
 
 // Read the real X11 pointer, including owner movements. Failure must not prevent
@@ -104,9 +104,9 @@ func capturePNGCursor(pixels []byte) *image.Point {
 	return nil
 }
 
-// Add canvas ABOVE the screenshot, never on top of desktop pixels. Apply after
+// Add canvas BELOW the screenshot, never on top of desktop pixels. Apply after
 // thumbnailing/cropping so the label stays readable and uses desktop coordinates.
-func screenshotWithCursorHeader(pixels []byte) ([]byte, error) {
+func screenshotWithCursorFooter(pixels []byte) ([]byte, error) {
 	config, err := png.DecodeConfig(bytes.NewReader(pixels))
 	if err != nil || config.Width < 1 || config.Height < 1 || config.Width > 4096 || config.Height > 4096 {
 		return nil, fmt.Errorf("invalid desktop screenshot")
@@ -120,10 +120,10 @@ func screenshotWithCursorHeader(pixels []byte) ([]byte, error) {
 		label = fmt.Sprintf("Cursor: %dpx %dpx", cursor.X, cursor.Y)
 	}
 	width := max(frame.Bounds().Dx(), font.MeasureString(basicfont.Face7x13, label).Ceil()+16)
-	result := image.NewRGBA(image.Rect(0, 0, width, frame.Bounds().Dy()+screenshotHeaderHeight))
+	result := image.NewRGBA(image.Rect(0, 0, width, frame.Bounds().Dy()+screenshotFooterHeight))
 	draw.Draw(result, result.Bounds(), image.NewUniform(color.RGBA{R: 24, G: 26, B: 30, A: 255}), image.Point{}, draw.Src)
-	draw.Draw(result, image.Rect(0, screenshotHeaderHeight, frame.Bounds().Dx(), result.Bounds().Max.Y), frame, frame.Bounds().Min, draw.Src)
-	drawer := font.Drawer{Dst: result, Src: image.White, Face: basicfont.Face7x13, Dot: fixed.P(8, 16)}
+	draw.Draw(result, image.Rect(0, 0, frame.Bounds().Dx(), frame.Bounds().Dy()), frame, frame.Bounds().Min, draw.Src)
+	drawer := font.Drawer{Dst: result, Src: image.White, Face: basicfont.Face7x13, Dot: fixed.P(8, frame.Bounds().Dy()+16)}
 	drawer.DrawString(label)
 	var encoded bytes.Buffer
 	err = png.Encode(&encoded, result)

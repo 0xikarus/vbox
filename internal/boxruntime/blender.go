@@ -138,7 +138,7 @@ func installBlenderMCPBinary(ctx context.Context, home, blender string, progress
 			return err
 		}
 	}
-	cmd = exec.CommandContext(ctx, blender, "--background", "--python-expr", "import bpy; bpy.ops.preferences.addon_enable(module='blender_mcp'); bpy.ops.wm.save_userpref()")
+	cmd = exec.CommandContext(ctx, blender, "--background", "--python-exit-code", "1", "--python-expr", "import bpy, addon_utils, requests; bpy.ops.preferences.addon_enable(module='blender_mcp'); assert addon_utils.check('blender_mcp')[1], 'Blender MCP add-on did not enable'; bpy.ops.wm.save_userpref()")
 	cmd.Env = append(os.Environ(), "HOME="+home)
 	cmd.Stdout, cmd.Stderr = progress, progress
 	if err := cmd.Run(); err != nil {

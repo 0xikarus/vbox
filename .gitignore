@@ -15,3 +15,6 @@ Codex conversation.md
 /docs/screenshots/agent-roles/*.png
 /vmbox-clip-*.webm
 /vmbox-draft-*.png
+
+# Standalone host-test Python bytecode.
+/tests/standalone/__pycache__/

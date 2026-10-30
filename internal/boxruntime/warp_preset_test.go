@@ -32,3 +32,12 @@ func TestWarpCooldownOnlyAppliesToEdgeHandshakeFailures(t *testing.T) {
 		}
 	}
 }
+
+func TestStandaloneDebianDevelopmentUsesPublishedWarpRepository(t *testing.T) {
+	for _, suite := range []string{"sid", "forky"} {
+		entry, err := warpAptEntry([]byte("ID=debian\nVERSION_CODENAME=" + suite + "\n"))
+		if err != nil || !strings.Contains(entry, " trixie main") {
+			t.Fatalf("%s: %s %v", suite, entry, err)
+		}
+	}
+}

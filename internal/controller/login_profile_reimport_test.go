@@ -206,6 +206,38 @@ func TestPutBoxLoginProfilesRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestPutBoxLoginProfilesReplacesQueuedSelectionWhileAttaching(t *testing.T) {
+	store, mock := testStore(t)
+	imported := []byte(`[{"application":"codex","name":"working"}]`)
+	pending := []byte(`[{"application":"codex","name":"rejected"}]`)
+	mock.ExpectQuery(`SELECT id::text,account_id::text,owner_user_id::text,name,provider`).WithArgs("a", "box-1").
+		WillReturnRows(logicalBoxRows("box-1", "attaching"))
+	mock.ExpectQuery(`SELECT COALESCE\(metadata->'importedLoginProfiles'`).WithArgs("a", "box-1").
+		WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending", "pending_set"}).AddRow(imported, true, pending, true))
+	mock.ExpectExec(`UPDATE logical_boxes SET default_agent`).WithArgs("a", "box-1", []byte(`[]`), "opencode").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SELECT COALESCE\(metadata->'importedLoginProfiles'`).WithArgs("a", "box-1").
+		WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending", "pending_set"}).AddRow(imported, true, []byte(`[]`), true))
+	request := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"profiles":[]}`))
+	request.SetPathValue("id", "box-1")
+	response := httptest.NewRecorder()
+	(&Server{Store: store}).putBoxLoginProfiles(response, request, Principal{AccountID: "a", UserID: "u", Role: "owner"})
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "applied during startup") {
+		t.Fatalf("attaching selection was not replaced: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPendingProfileSlotsReappliesRecordedSelection(t *testing.T) {
+	refs := []v1.LoginProfileRef{{Application: "codex", Name: "working"}, {Application: "github", Name: "work"}}
+	slots := pendingProfileSlots(refs, refs)
+	if !slots["agent"] || !slots["github"] {
+		t.Fatalf("re-selecting recorded profiles would leave failed transfer files in place: %v", slots)
+	}
+}
+
 func TestSelectedAgentProfileControlsBoxHarness(t *testing.T) {
 	if got := selectedProfileAgent("claude", []v1.LoginProfileRef{{Application: "codex", Name: "work"}}); got != "codex" {
 		t.Fatalf("Codex profile left box on %q", got)
@@ -525,8 +557,8 @@ func TestHibernatedGitHubRemovalIsSavedAndAppliedOnNextStart(t *testing.T) {
 
 	stateQuery(pending, true)
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id::text FROM logical_boxes`).WithArgs("a", "box-1", "slot", int64(1), "fence", "volume").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("box-1"))
+	mock.ExpectQuery(`SELECT id::text,COALESCE\(metadata->'pendingLoginProfiles'`).WithArgs("a", "box-1", "slot", int64(1), "fence", "volume").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "pending", "pending_set"}).AddRow("box-1", pending, true))
 	mock.ExpectExec(`UPDATE logical_boxes SET default_agent`).WithArgs("a", "box-1", pending, "codex").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
@@ -549,8 +581,8 @@ func TestEmptyPendingSelectionStillProvisionsOnWake(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending", "pending_set"}).
 			AddRow(`[{"application":"github","name":"work"}]`, true, `[]`, true))
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id::text FROM logical_boxes`).WithArgs("a", "box-1", "slot", int64(1), "fence", "volume").
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("box-1"))
+	mock.ExpectQuery(`SELECT id::text,COALESCE\(metadata->'pendingLoginProfiles'`).WithArgs("a", "box-1", "slot", int64(1), "fence", "volume").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "pending", "pending_set"}).AddRow("box-1", []byte(`[]`), true))
 	mock.ExpectExec(`UPDATE logical_boxes SET default_agent`).WithArgs("a", "box-1", []byte(`[]`), "codex").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
@@ -561,6 +593,26 @@ func TestEmptyPendingSelectionStillProvisionsOnWake(t *testing.T) {
 	}
 	if transport.writes != 1 || len(transport.files) != 0 || !slices.Contains(transport.removes, "/data/home/.config/gh/hosts.yml") {
 		t.Fatalf("queued GitHub removal was not transferred: writes=%d files=%v remove=%v", transport.writes, transport.files, transport.removes)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProvisionPendingBoxProfilesRejectsChangedSelectionAfterLock(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery(`SELECT COALESCE\(metadata->'importedLoginProfiles'`).WithArgs("a", "box-1").
+		WillReturnRows(sqlmock.NewRows([]string{"imported", "verified", "pending", "pending_set"}).
+			AddRow(`[{"application":"github","name":"work"}]`, true, `[]`, true))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id::text,COALESCE\(metadata->'pendingLoginProfiles'`).WithArgs("a", "box-1", "slot", int64(1), "fence", "volume").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "pending", "pending_set"}).
+			AddRow("box-1", []byte(`[{"application":"github","name":"new"}]`), true))
+	mock.ExpectRollback()
+	assignment := fleetAssignment{Box: v1.LogicalBox{ID: "box-1", AccountID: "a", VolumeID: "volume", AssignmentGeneration: 1}, Slot: v1.ComputeSlot{ID: "slot", ServiceID: "service"}, FencingToken: "fence"}
+	err := (&Server{Store: store}).provisionPendingBoxProfiles(context.Background(), nil, "a", assignment)
+	if err == nil || !strings.Contains(err.Error(), "queued login profiles changed") {
+		t.Fatalf("stale selection was applied: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
