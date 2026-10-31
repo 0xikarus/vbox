@@ -12,11 +12,19 @@ import (
 	"strings"
 )
 
-type thinkingCapabilities struct {
+// ModelCapabilities describes only values explicitly advertised by the backend.
+type ModelCapabilities struct {
 	Efforts []string `json:"efforts"`
 	Default string   `json:"default,omitempty"`
 	Source  string   `json:"source,omitempty"`
 	Context int      `json:"context,omitempty"`
+}
+
+type thinkingCapabilities = ModelCapabilities
+
+// DiscoverModelCapabilities reads metadata and the selected model's template; it never generates a completion.
+func DiscoverModelCapabilities(ctx context.Context, endpoint, model string) ModelCapabilities {
+	return discoverThinking(ctx, endpoint, model)
 }
 
 func capabilitiesPath(home string) string {

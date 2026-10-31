@@ -103,8 +103,10 @@
     if(selected?.reasoningEfforts?.length)return selected.reasoningEfforts;
     return ['low','medium','high','xhigh',...(/^(gpt-6-astra|gpt-5\.6-sol)$/.test(current())?['max']:[])];
    }
+   if(application==='custom')return findModel(current())?.reasoningEfforts||[];
    if(application==='opencode'){
     const selected=findModel(current());
+    if(selected?.reasoningEfforts?.length)return selected.reasoningEfforts;
     if(selected?.reasoning===false)return [];
     return ['low','medium','high','max'];
    }
@@ -116,7 +118,7 @@
    for(const level of levels()){const option=make('option','',level==='xhigh'?'Extra high':level[0].toUpperCase()+level.slice(1));option.value=level;effort.append(option)}
    effort.value=[...effort.options].some(option=>option.value===prior)?prior:'';
    effort.disabled=effort.options.length===1;
-   effortNote.textContent=application==='opencode'?(effort.disabled?'Provider reports no reasoning-effort control for this model.':'OpenCode uses model variants; available levels depend on the provider and model.'):effort.disabled?'This model has no configurable reasoning level.':'Default keeps the uploaded profile or model setting.';
+   effortNote.textContent=application==='custom'?(effort.disabled?'The endpoint has not advertised reasoning levels for this model. Loaded models may expose additional metadata.':'Supported reasoning levels reported by your endpoint.'):application==='opencode'?(effort.disabled?'Provider reports no reasoning-effort control for this model.':'OpenCode uses model variants; available levels depend on the provider and model.'):effort.disabled?'This model has no configurable reasoning level.':'Default keeps the uploaded profile or model setting.';
   }
   function choose(id){selectedModel=id;renderEffort();render();displayPreview()}
   function previewRows(){

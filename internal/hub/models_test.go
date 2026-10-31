@@ -134,6 +134,10 @@ func TestCodexCatalogRunsIsolatedWithPrivateStdinAndOwnershipCleanup(t *testing.
 func TestCustomModelCatalogIsAuthenticatedAndBounded(t *testing.T) {
 	s, cookie := authenticated(t)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/props" {
+			http.NotFound(w, r)
+			return
+		}
 		if r.URL.Path != "/v1/models" {
 			t.Error("wrong catalog path")
 		}
@@ -146,5 +150,43 @@ func TestCustomModelCatalogIsAuthenticatedAndBounded(t *testing.T) {
 	}
 	if w := call(s, "GET", route, cookie, ""); w.Code != 200 || !strings.Contains(w.Body.String(), "local-fixture") {
 		t.Fatal("custom model catalog unavailable")
+	}
+}
+
+func TestCustomDiscoveryIncludesReasoningAndDoesNotLoadOtherModels(t *testing.T) {
+	s, cookie := authenticated(t)
+	propsCalls := 0
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			fmt.Fprint(w, `{"data":[{"id":"loaded","name":"Loaded fixture","owned_by":"llama-swap","status":{"value":"loaded"}},{"id":"idle","owned_by":"llama-swap","status":{"value":"unloaded"}},{"id":"declared","owned_by":"llama-swap","supported_reasoning_efforts":["low","high"]}]}`)
+		case "/props":
+			propsCalls++
+			if r.URL.Query().Get("model") != "loaded" {
+				t.Error("discovery would load another model")
+			}
+			json.NewEncoder(w).Encode(map[string]any{"model_alias": "loaded", "chat_template": `{% if reasoning_effort not in ('xhigh', 'medium', 'low') %}bad{% endif %}`, "default_generation_settings": map[string]int{"n_ctx": 65536}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+	w := call(s, "GET", "/api/models?endpoint="+url.QueryEscape(backend.URL+"/v1"), cookie, "")
+	var result struct{ Models []modelcatalog.Choice }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || len(result.Models) != 3 {
+		t.Fatal("discovery failed")
+	}
+	if strings.Join(result.Models[0].ReasoningEfforts, ",") != "xhigh,medium,low" || result.Models[0].Context != 65536 {
+		t.Fatal("declared template capabilities lost")
+	}
+	if propsCalls != 1 || len(result.Models[1].ReasoningEfforts) != 0 {
+		t.Fatal("unloaded model was probed")
+	}
+	if strings.Join(result.Models[2].ReasoningEfforts, ",") != "low,high" {
+		t.Fatal("explicit model metadata lost")
+	}
+	box, err := s.Manager.Create(Spec{Name: "custom reasoning fixture", Agent: "opencode", ModelSource: "custom", ModelURL: backend.URL + "/v1", Model: "loaded", AgentReasoningEffort: "medium"})
+	if err != nil || box.Spec.AgentReasoningEffort != "medium" {
+		t.Fatalf("custom selection not retained: %v", err)
 	}
 }

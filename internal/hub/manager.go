@@ -123,7 +123,11 @@ func (m *Manager) Create(spec Spec, keys ...string) (Box, error) {
 			return Box{}, err
 		}
 	}
-	if err := loginprofile.SetReasoningEffort(spec.Agent, settings, spec.AgentReasoningEffort, spec.AgentModel); err != nil {
+	if spec.Agent == "opencode" && spec.ModelSource == "custom" {
+		if spec.AgentReasoningEffort != "" && !validModelEfforts([]string{spec.AgentReasoningEffort}) {
+			return Box{}, fmt.Errorf("invalid custom reasoning effort")
+		}
+	} else if err := loginprofile.SetReasoningEffort(spec.Agent, settings, spec.AgentReasoningEffort, spec.AgentModel); err != nil {
 		return Box{}, err
 	}
 	if spec.CPU <= 0 || math.IsNaN(spec.CPU) || math.IsInf(spec.CPU, 0) || spec.CPU > m.Config.Policy.CPUs || spec.MemoryMiB < 256 || spec.MemoryMiB > m.Config.Policy.MemoryMiB {

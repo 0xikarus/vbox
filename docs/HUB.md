@@ -286,6 +286,14 @@ credentials and leaving the reusable profile unchanged. Custom OpenCode
 endpoints load their `/models` list on demand; endpoint fields remain exclusive
 to custom mode. Exact IDs remain available when a catalog is unavailable.
 
+Custom endpoints automatically fetch their model list when the endpoint is
+entered or changed. The picker refreshes cached catalogs after 30 seconds.
+Reasoning choices come from explicit model metadata or a loaded model’s chat
+template; unloaded llama-swap models are not started just to inspect choices.
+If an endpoint advertises no reasoning levels, only its default is offered.
+The selected level is retained in the box settings and applied to OpenCode’s
+actual `thinking-LEVEL` variant and the chat Thinking selector on first boot.
+
 API creation accepts `agentModel` and `agentReasoningEffort` alongside `profiles`.
 CLI creation accepts `--agent-model ID --reasoning-effort LEVEL`.
 `GET /api/profiles/PROFILE_ID/models` queries the selected Codex account through
