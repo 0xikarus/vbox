@@ -36,3 +36,18 @@ func TestThinkingDiscoveryUsesTemplateAllowedValues(t *testing.T) {
 		t.Fatal("interpreted dynamic template expressions")
 	}
 }
+
+func TestThinkingDiscoveryAcceptsBooleanReasoningFlag(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(`{"data":[{"id":"fixture","capabilities":{"reasoning":true},"supported_reasoning_efforts":["low","xhigh"]}]}`))
+	}))
+	defer server.Close()
+	caps := discoverThinking(context.Background(), server.URL+"/v1", "fixture")
+	if len(caps.Efforts) != 2 || caps.Efforts[1] != "xhigh" {
+		t.Fatal("boolean reasoning metadata hid declared effort choices")
+	}
+}

@@ -141,7 +141,7 @@ func TestCustomModelCatalogIsAuthenticatedAndBounded(t *testing.T) {
 		if r.URL.Path != "/v1/models" {
 			t.Error("wrong catalog path")
 		}
-		json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"id": "local-fixture"}}})
+		json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "local-fixture", "capabilities": map[string]bool{"reasoning": true}}}})
 	}))
 	defer provider.Close()
 	route := "/api/models?endpoint=" + url.QueryEscape(provider.URL+"/v1")

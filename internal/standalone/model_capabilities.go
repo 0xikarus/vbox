@@ -89,9 +89,7 @@ func discoverThinking(ctx context.Context, endpoint, model string) thinkingCapab
 			ID           string   `json:"id"`
 			Efforts      []string `json:"supported_reasoning_efforts"`
 			Capabilities struct {
-				Reasoning struct {
-					Efforts []string `json:"effort"`
-				}
+				Reasoning json.RawMessage `json:"reasoning"`
 			}
 		}
 	}
@@ -102,7 +100,11 @@ func discoverThinking(ctx context.Context, endpoint, model string) thinkingCapab
 			}
 			values := m.Efforts
 			if len(values) == 0 {
-				values = m.Capabilities.Reasoning.Efforts
+				var reasoning struct {
+					Efforts []string `json:"effort"`
+				}
+				_ = json.Unmarshal(m.Capabilities.Reasoning, &reasoning)
+				values = reasoning.Efforts
 			}
 			valid := len(values) > 0 && len(values) <= 16
 			for _, v := range values {

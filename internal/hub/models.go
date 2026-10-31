@@ -187,9 +187,7 @@ func (s *Server) localModels(w http.ResponseWriter, r *http.Request) {
 				Value string `json:"value"`
 			} `json:"status"`
 			Capabilities struct {
-				Reasoning struct {
-					Efforts []string `json:"effort"`
-				} `json:"reasoning"`
+				Reasoning json.RawMessage `json:"reasoning"`
 			} `json:"capabilities"`
 		} `json:"data"`
 	}
@@ -210,7 +208,11 @@ func (s *Server) localModels(w http.ResponseWriter, r *http.Request) {
 		}
 		efforts := entry.Efforts
 		if len(efforts) == 0 {
-			efforts = entry.Capabilities.Reasoning.Efforts
+			var reasoning struct {
+				Efforts []string `json:"effort"`
+			}
+			_ = json.Unmarshal(entry.Capabilities.Reasoning, &reasoning)
+			efforts = reasoning.Efforts
 		}
 		if !validModelEfforts(efforts) {
 			efforts = nil
