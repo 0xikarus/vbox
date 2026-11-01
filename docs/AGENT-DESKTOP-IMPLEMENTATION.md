@@ -46,19 +46,10 @@ Reconnecting refreshes this configuration, including after reassignment.
   `type_text`, `press_keys`: bounded coordinates and literal input.
 - `generate_password`, `secret_request`, `type_secret`: opaque references and status.
 
-MCP screenshot images (including saved files, window captures and remote control
-results) have a 24-pixel footer added below the captured content. It shows
-`Cursor: Xpx Ypx` at the bottom left, using the actual pointer sampled at capture time
-in original desktop coordinates. No desktop pixels are covered. The footer is
-added after thumbnail reduction or window cropping so its text remains readable;
-very narrow window captures gain right-hand padding to fit the label. If the
-pointer cannot be read, or a remote worker runs older code, it shows
-`Cursor: unavailable`. Window captures still report the pointer's desktop
-position when it is outside that window. Pointer sampling and framebuffer capture
-are separate reads, so a moving pointer can differ slightly from the visible cursor.
-For image-based clicks, undo thumbnail scaling or add the window's desktop offset;
-no Y correction is needed because captured pixels remain at the image origin. Mouse tools continue to accept desktop
-coordinates. Browser previews and desktop streams have no added footer.
+MCP screenshot images, saved files and remote-control results contain only the
+captured pixels, with no added cursor label, footer or canvas padding. For
+image-based clicks, undo thumbnail scaling or add the window's desktop offset.
+Mouse tools continue to accept desktop coordinates.
 
 Capture reads the worker's mode-0600 Unix VNC socket. There is no public VNC listener
 and no UI-canvas capture. New desktops use 1024×640; worker-generated previews

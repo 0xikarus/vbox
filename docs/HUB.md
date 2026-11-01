@@ -135,7 +135,11 @@ selected implicitly; attaching a profile grants that box the account's access.
 
 Shutdown stops the hub manager, retaining worker containers and data. Use
 `vbox hub up --host home-server` to resume it without rebuilding or changing its
-autostart policy. Deleting a box removes only resources whose ownership
+autostart policy. The PGX portal at `http://pgx.local/` also offers **Start hub**
+when stopped and **Stop hub** when running, behind the portal login. Stop affects
+only the owned hub manager: worker containers keep running and files are retained.
+Hub pages become reachable again after Start. Neither action enables autostart.
+Deleting a box removes only resources whose ownership
 labels match this hub and box: container, volume, network and instance directory.
 A missing container does not prevent cleanup of its owned volume/network. The
 registry keeps a deletion tombstone, clears the worker password, and does not

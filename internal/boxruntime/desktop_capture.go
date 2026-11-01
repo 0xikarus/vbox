@@ -2,6 +2,7 @@ package boxruntime
 
 import (
 	"context"
+	"image/png"
 	"io"
 	"net"
 	"time"
@@ -34,12 +35,11 @@ func captureDesktop(ctx context.Context, assignment string, output io.Writer, th
 	if err != nil {
 		return err
 	}
-	cursor := captureCursor(ctx, frame.Bounds())
 	if _, err = NativeSessions(ctx, assignment); err != nil {
 		return err
 	}
 	if thumbnail {
 		frame = desktop.Thumbnail(frame, 320, 200)
 	}
-	return encodeCapture(output, frame, cursor)
+	return png.Encode(output, frame)
 }

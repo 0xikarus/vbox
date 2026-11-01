@@ -354,8 +354,7 @@ func TestAgentBoxScreenshotToolReturnsControllerPNG(t *testing.T) {
 	var imageBytes bytes.Buffer
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	img.Set(0, 0, color.RGBA{R: 255, A: 255})
-	cursor := image.Pt(650, 500)
-	if err := encodeCapture(&imageBytes, img, &cursor); err != nil {
+	if err := png.Encode(&imageBytes, img); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -395,7 +394,9 @@ func TestAgentBoxScreenshotToolReturnsControllerPNG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertScreenshotPixelsPreserved(t, imageBytes.Bytes(), decoded)
+	if !bytes.Equal(imageBytes.Bytes(), decoded) {
+		t.Fatal("MCP changed screenshot bytes or added a cursor footer")
+	}
 }
 
 func TestRemoteControlBoxToolPostsActionAndReturnsFreshPNG(t *testing.T) {
@@ -446,7 +447,9 @@ func TestRemoteControlBoxToolPostsActionAndReturnsFreshPNG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertScreenshotPixelsPreserved(t, imageBytes.Bytes(), decoded)
+	if !bytes.Equal(imageBytes.Bytes(), decoded) {
+		t.Fatal("MCP changed screenshot bytes or added a cursor footer")
+	}
 }
 
 func TestAgentBoxConfigToolUsesExplicitMode(t *testing.T) {
